@@ -8,3 +8,8 @@ coverage/
 test-results/
 playwright-report/
 .DS_Store
+.demo-results/
+hosted-evidence/
+examples/dilution-validation/drafts/
+examples/dilution-validation/packages/
+examples/dilution-validation/runs/

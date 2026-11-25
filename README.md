@@ -69,3 +69,32 @@ npm run verify:package
 Live-provider authoring quality evaluations remain pending; fixture-based tests
 verify adapters and spending controls without paid calls. No package has been
 published. See [release notes](CHANGELOG.md) for the implementation boundary.
+
+## Scientific validation sandbox
+
+[Dilution Bench](examples/dilution-app/README.md) is a standard laboratory dilution
+planner with unit conversion, retained preparations, CSV export, and four deliberate
+defects. It includes independent requirements, reference calculations, and a
+prepared validation protocol.
+
+```sh
+npm run demo:dilution       # Open http://127.0.0.1:4174; deliberately faulty by default
+npm run validate:dilution   # Compare faulty and corrected modes using one approval
+```
+
+The comparison retains reports and evidence locally and makes no provider calls.
+You can also use the supplied requirements to test AI authoring against the app.
+
+For online demos, the [deployment guide](docs/deployment.md) configures two free
+Render services that deploy from `main` after GitHub Actions passes. The
+[hosted CLI testing guide](docs/testing-hosted-dilution.md) covers prepared-protocol
+and AI-authoring workflows, isolated test data, expected failures, and reports.
+
+```sh
+npm run validate:dilution:hosted -- \
+  --correct-url https://YOUR-CORRECT-SERVICE.onrender.com \
+  --faulty-url https://YOUR-FAULTY-SERVICE.onrender.com
+```
+
+Use the actual service URLs after the one-time Render setup. The **Hosted dilution
+validation** Actions workflow runs the same comparison and retains its evidence.

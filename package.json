@@ -10,7 +10,8 @@
   "exports": {
     ".": "./dist/index.js",
     "./runtime": "./dist/runtime/index.js",
-    "./example": "./dist/examples/sample-app/server.js"
+    "./example": "./dist/examples/sample-app/server.js",
+    "./dilution-example": "./dist/examples/dilution-app/server.js"
   },
   "files": [
     "bin",
@@ -32,10 +33,14 @@
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "check": "npm run format:check && npm run typecheck && npm test && npm run build",
-    "format": "prettier --write src tests scripts examples/sample-app/server.ts '*.ts'",
-    "format:check": "prettier --check src tests scripts examples/sample-app/server.ts '*.ts'",
+    "format": "prettier --write src tests scripts 'examples/**/*.ts' '*.ts'",
+    "format:check": "prettier --check src tests scripts 'examples/**/*.ts' '*.ts'",
     "verify:package": "node scripts/verify-package.mjs",
     "demo": "tsx examples/sample-app/server.ts",
+    "demo:dilution": "tsx examples/dilution-app/server.ts",
+    "validate:dilution": "npm run build && node scripts/validate-dilution.mjs",
+    "prepare:dilution": "node scripts/prepare-dilution.mjs",
+    "validate:dilution:hosted": "npm run build && node scripts/validate-hosted-dilution.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {

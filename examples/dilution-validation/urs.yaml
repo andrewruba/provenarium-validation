@@ -1,0 +1,137 @@
+schema_version: 1
+document:
+  id: URS-DILUTION-BENCH
+  revision: '1'
+  title: Dilution Bench user requirements
+  intended_use: Prepare synthetic single-step laboratory dilutions from a known stock concentration
+    using C1V1 = C2V2, retain preparation records during a local session, and export a preparation
+    worksheet. This is a training and validation target, not a system for clinical or regulated
+    laboratory use.
+  description: A public local workbench with concentration and volume unit selection, server-side
+    input validation, preparation records, and a CSV interface. Expected values below are
+    independently specified arithmetic examples; they are not derived from application outputs.
+    Start qualification with an empty workspace. All workflows use synthetic data.
+  roles:
+    - laboratory user
+  interfaces:
+    - name: Preparation CSV
+      direction: out
+      format: UTF-8 CSV
+      transfer: manual browser download
+      data: Identifiers, normalized concentrations, final volume, stock volume and diluent volume.
+    - name: Preparation HTTP interface
+      direction: both
+      format: JSON
+      transfer: local HTTP
+      data: Synthetic preparation inputs, validation errors and retained normalized preparations.
+families:
+  - id: installation
+    title: Local installation
+    requirements:
+      - id: URS-IQ-001
+        title: Reachable dilution workbench
+        statement:
+          The public application shall identify itself as Dilution Bench at the health interface,
+          return HTTP 200, and present the Prepare a dilution form without requiring credentials.
+  - id: calculation
+    title: Scientific calculation and units
+    requirements:
+      - id: URS-CALC-001
+        title: Dilution calculation and precision
+        statement:
+          For valid inputs, calculate stock volume V1 = (C2 × V2) / C1 and diluent volume = V2 − V1
+          after normalizing units. Show stock volume and diluent volume in mL and target
+          concentration in mg/mL, rounded to three decimal places. The independently specified
+          reference calculations shall agree within an absolute tolerance of 0.0005 of the displayed
+          unit. Calculations shall retain unrounded numerical values internally.
+        references:
+          - references/calculation-examples.csv
+        details:
+          - 10 mg/mL stock, 2 mg/mL target and 10 mL final volume yield 2.000 mL stock and 8.000 mL
+            diluent.
+          - 'Equal stock and target concentration is valid: 2 mg/mL stock, 2 mg/mL target and 1 mL
+            final volume yield 1.000 mL stock and 0.000 mL diluent.'
+          - 3 mg/mL stock, 1 mg/mL target and 1 mL final volume yield displayed stock 0.333 mL and
+            diluent 0.667 mL; stored stock is 1/3 mL and stored diluent is 2/3 mL within 1e-12.
+      - id: URS-UNIT-001
+        title: Concentration units
+        statement:
+          Stock and target concentration shall each accept mg/mL and ug/mL. Normalize 1000 ug/mL to
+          1 mg/mL before calculation. Reference cases shall agree within 0.0005 mL for volumes and
+          0.0005 mg/mL for displayed concentration.
+        references:
+          - references/calculation-examples.csv
+        details:
+          - 10 mg/mL stock, 100 ug/mL target and 10 mL final volume yield 0.100 mL stock, 9.900 mL
+            diluent, and 0.100 mg/mL target.
+          - 10000 ug/mL stock, 2 mg/mL target and 10 mL final volume yield 2.000 mL stock, 8.000 mL
+            diluent, and 2.000 mg/mL target.
+      - id: URS-UNIT-002
+        title: Final volume units
+        statement:
+          Final volume shall accept mL and uL. Normalize 1000 uL to 1 mL before calculation. With
+          10 mg/mL stock and 2 mg/mL target, a final volume of 1000 uL shall yield 0.200 mL stock
+          and 0.800 mL diluent within 0.0005 mL.
+        references:
+          - references/calculation-examples.csv
+  - id: input
+    title: Inputs and record integrity
+    requirements:
+      - id: URS-INPUT-001
+        title: Concentration and volume limits
+        statement:
+          Stock concentration, target concentration and final volume are required finite numbers.
+          Each normalized value shall be greater than zero and at most 1000000000 in its canonical
+          unit (mg/mL or mL). Target concentration shall not exceed stock concentration. Only the
+          declared concentration and volume units shall be accepted. For well-formed requests whose
+          field values are strings or numbers, invalid inputs shall return HTTP 422 with a nonempty
+          error and shall not retain a record.
+        details:
+          - Zero final volume shall be rejected with Final volume must be greater than zero. and
+            shall not create a record.
+          - Missing, negative, nonfinite and over-limit numerical inputs shall be rejected for each
+            numerical field. Zero stock or target concentration shall also be rejected.
+          - A target concentration greater than stock concentration shall be rejected. Unsupported
+            stock, target and volume units shall be rejected.
+      - id: URS-ID-001
+        title: Sample identifier format
+        statement:
+          Sample ID is required. Trim leading and trailing spaces, then accept 1 to 32 ASCII
+          characters beginning with a letter or digit and followed only by letters, digits,
+          underscore, dot or hyphen. Invalid identifiers shall return HTTP 422 and shall not create
+          records. Identifiers are case-sensitive.
+        details:
+          - One-character and 32-character identifiers, underscore/dot/hyphen after the first
+            character, and identifiers with leading/trailing spaces shall be accepted and retained
+            after trimming.
+          - Empty, whitespace-only, 33-character, leading-underscore and embedded-space identifiers
+            shall be rejected.
+          - The distinct identifiers Q and q shall coexist.
+      - id: URS-ID-002
+        title: Duplicate protection
+        statement:
+          An identifier already present after trimming shall be rejected with HTTP 409 and the
+          message Sample ID already exists. The original record is unchanged. The original numerical
+          values shall remain unchanged and there shall still be exactly one row for that
+          identifier.
+      - id: URS-RECORD-001
+        title: Retained preparation records
+        statement:
+          'Within one server lifetime, saved preparations shall remain available after navigating
+          away and reopening Saved preparations. The record table shall show one row per preparation
+          with the six columns defined for CSV export, the trimmed identifier and all normalized
+          numerical inputs and calculated outputs. Numeric values shall display three decimal
+          places. Data are intentionally in-memory: restarting the server starts an empty workspace;
+          persistent storage and access control are outside this demonstration scope.'
+  - id: export
+    title: Exported worksheet
+    requirements:
+      - id: URS-CSV-001
+        title: CSV export
+        statement:
+          Download CSV shall produce a UTF-8 CSV with one row per retained preparation, sorted by
+          Sample ID in ASCII lexical order. Column order shall be Sample ID, Stock (mg/mL), Target
+          (mg/mL), Final volume (mL), Stock volume (mL), Diluent volume (mL). All numerical values
+          shall use the units named in the headers and three decimal places, matching displayed
+          records. No records may be omitted or duplicated.
+open_questions: []

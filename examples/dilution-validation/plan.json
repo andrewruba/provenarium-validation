@@ -1,0 +1,3396 @@
+{
+  "schema_version": 1,
+  "runtime_version": 1,
+  "id": "PLAN-DILUTION-BENCH",
+  "title": "Dilution Bench installation and operational qualification",
+  "urs_revision": "1",
+  "target": {
+    "url": "http://127.0.0.1:4174",
+    "allowed_origins": ["http://127.0.0.1:4174"]
+  },
+  "environment": {
+    "locale": "en-US",
+    "timezone": "UTC",
+    "viewport": {
+      "width": 1280,
+      "height": 900
+    },
+    "timeout_ms": 3000
+  },
+  "access": [
+    {
+      "id": "visitor",
+      "role": "laboratory user",
+      "state": "signed_out",
+      "mode": "anonymous",
+      "purpose": "Exercise the public local dilution workbench with synthetic preparation data.",
+      "cases": [
+        "IQ-REACHABLE",
+        "OQ-CSV-EXPORT",
+        "OQ-BASELINE",
+        "OQ-UNIT-CONVERSION",
+        "OQ-VOLUME-UNITS",
+        "OQ-EQUAL-CONCENTRATION",
+        "OQ-ZERO-VOLUME",
+        "OQ-INVALID-INPUTS",
+        "OQ-IDENTIFIERS",
+        "OQ-DUPLICATE-ID",
+        "OQ-RECORDS"
+      ],
+      "distinct_from": []
+    }
+  ],
+  "obligations": [
+    {
+      "id": "CL-IQ",
+      "requirement_id": "URS-IQ-001",
+      "source": "URS-IQ-001/statement",
+      "statement": "Reachable public form and named health response.",
+      "assertion_ids": ["IQ-HEALTH-STATUS", "IQ-HEALTH-NAME", "IQ-FORM"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-ROUNDING",
+      "requirement_id": "URS-CALC-001",
+      "source": "URS-CALC-001/details/2",
+      "statement": "Three-place display with unrounded stored arithmetic.",
+      "assertion_ids": [
+        "ROUND-STOCK-DISPLAY",
+        "ROUND-DILUENT-DISPLAY",
+        "ROUND-STOCK-RAW",
+        "ROUND-DILUENT-RAW"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-CSV",
+      "requirement_id": "URS-CSV-001",
+      "source": "URS-CSV-001/statement",
+      "statement": "Complete two-record CSV: headers, ASCII ordering, values, units, precision and row count.",
+      "assertion_ids": ["CSV-TABLE", "CSV-EXACT-CONTENT"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-CALC-BASELINE",
+      "requirement_id": "URS-CALC-001",
+      "source": "URS-CALC-001/details/0",
+      "statement": "Independent baseline mass-balance calculation and three-place result display.",
+      "assertion_ids": [
+        "BASELINE-STOCK",
+        "BASELINE-DILUENT",
+        "BASELINE-TARGET",
+        "BASELINE-STOCK-DP",
+        "BASELINE-DILUENT-DP",
+        "BASELINE-TARGET-DP"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-UNIT-TARGET",
+      "requirement_id": "URS-UNIT-001",
+      "source": "URS-UNIT-001/details/0",
+      "statement": "Normalize target ug/mL to mg/mL before calculating.",
+      "assertion_ids": ["UNIT-TARGET-STOCK", "UNIT-TARGET-DILUENT", "UNIT-TARGET-CANONICAL"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-UNIT-STOCK",
+      "requirement_id": "URS-UNIT-001",
+      "source": "URS-UNIT-001/details/1",
+      "statement": "Normalize stock ug/mL to mg/mL before calculating.",
+      "assertion_ids": ["UNIT-STOCK-VOLUME", "UNIT-STOCK-DILUENT", "UNIT-STOCK-CANONICAL"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-VOLUME-UNITS",
+      "requirement_id": "URS-UNIT-002",
+      "source": "URS-UNIT-002/statement",
+      "statement": "Convert microlitres to mL before dilution calculation.",
+      "assertion_ids": ["VOLUME-STOCK", "VOLUME-DILUENT"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-CALC-EQUAL",
+      "requirement_id": "URS-CALC-001",
+      "source": "URS-CALC-001/details/1",
+      "statement": "Equality is valid and requires no diluent.",
+      "assertion_ids": ["EQUAL-STOCK", "EQUAL-DILUENT"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-ZERO-VOLUME",
+      "requirement_id": "URS-INPUT-001",
+      "source": "URS-INPUT-001/details/0",
+      "statement": "Reject zero final volume at both interfaces without retention.",
+      "assertion_ids": [
+        "ZERO-STATUS",
+        "ZERO-ERROR",
+        "ZERO-ALERT",
+        "ZERO-API-ABSENT",
+        "ZERO-BROWSER-ABSENT"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-NUMERIC-INPUTS",
+      "requirement_id": "URS-INPUT-001",
+      "source": "URS-INPUT-001/details/1",
+      "statement": "Required positive finite numerical fields and maximum canonical value. Exact rejected examples are listed in the procedure.",
+      "assertion_ids": [
+        "INVALID-NUM-1-STATUS",
+        "INVALID-NUM-1-ERROR",
+        "INVALID-NUM-1-ABSENT",
+        "INVALID-NUM-2-STATUS",
+        "INVALID-NUM-2-ERROR",
+        "INVALID-NUM-2-ABSENT",
+        "INVALID-NUM-3-STATUS",
+        "INVALID-NUM-3-ERROR",
+        "INVALID-NUM-3-ABSENT",
+        "INVALID-NUM-4-STATUS",
+        "INVALID-NUM-4-ERROR",
+        "INVALID-NUM-4-ABSENT",
+        "INVALID-NUM-5-STATUS",
+        "INVALID-NUM-5-ERROR",
+        "INVALID-NUM-5-ABSENT",
+        "INVALID-NUM-6-STATUS",
+        "INVALID-NUM-6-ERROR",
+        "INVALID-NUM-6-ABSENT",
+        "INVALID-NUM-7-STATUS",
+        "INVALID-NUM-7-ERROR",
+        "INVALID-NUM-7-ABSENT",
+        "INVALID-NUM-8-STATUS",
+        "INVALID-NUM-8-ERROR",
+        "INVALID-NUM-8-ABSENT",
+        "INVALID-NUM-9-STATUS",
+        "INVALID-NUM-9-ERROR",
+        "INVALID-NUM-9-ABSENT",
+        "INVALID-NUM-10-STATUS",
+        "INVALID-NUM-10-ERROR",
+        "INVALID-NUM-10-ABSENT",
+        "INVALID-NUM-11-STATUS",
+        "INVALID-NUM-11-ERROR",
+        "INVALID-NUM-11-ABSENT",
+        "INVALID-NUM-12-STATUS",
+        "INVALID-NUM-12-ERROR",
+        "INVALID-NUM-12-ABSENT",
+        "INVALID-NUM-13-STATUS",
+        "INVALID-NUM-13-ERROR",
+        "INVALID-NUM-13-ABSENT",
+        "INVALID-NUM-14-STATUS",
+        "INVALID-NUM-14-ERROR",
+        "INVALID-NUM-14-ABSENT"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-RANGE-UNITS",
+      "requirement_id": "URS-INPUT-001",
+      "source": "URS-INPUT-001/details/2",
+      "statement": "Target cannot exceed stock; unrecognized units are rejected.",
+      "assertion_ids": [
+        "INVALID-RANGE-15-STATUS",
+        "INVALID-RANGE-15-ERROR",
+        "INVALID-RANGE-15-ABSENT",
+        "INVALID-RANGE-16-STATUS",
+        "INVALID-RANGE-16-ERROR",
+        "INVALID-RANGE-16-ABSENT",
+        "INVALID-RANGE-17-STATUS",
+        "INVALID-RANGE-17-ERROR",
+        "INVALID-RANGE-17-ABSENT",
+        "INVALID-RANGE-18-STATUS",
+        "INVALID-RANGE-18-ERROR",
+        "INVALID-RANGE-18-ABSENT"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-ID-VALID",
+      "requirement_id": "URS-ID-001",
+      "source": "URS-ID-001/details/0",
+      "statement": "One and 32-character boundaries, permitted punctuation and whitespace trimming.",
+      "assertion_ids": [
+        "ID-MIN-STATUS",
+        "ID-MIN-RETAINED",
+        "ID-CASE-STATUS",
+        "ID-CASE-RETAINED",
+        "ID-MAX-STATUS",
+        "ID-MAX-RETAINED",
+        "ID-TRIM-STATUS",
+        "ID-TRIM-RETAINED"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-ID-INVALID",
+      "requirement_id": "URS-ID-001",
+      "source": "URS-ID-001/details/1",
+      "statement": "Reject empty, overlength and syntactically invalid identifiers.",
+      "assertion_ids": [
+        "ID-REJECT-EMPTY-STATUS",
+        "ID-REJECT-EMPTY-ABSENT",
+        "ID-REJECT-SPACE-STATUS",
+        "ID-REJECT-SPACE-ABSENT",
+        "ID-REJECT-LONG-STATUS",
+        "ID-REJECT-LONG-ABSENT",
+        "ID-REJECT-PREFIX-STATUS",
+        "ID-REJECT-PREFIX-ABSENT",
+        "ID-REJECT-EMBEDDED-STATUS",
+        "ID-REJECT-EMBEDDED-ABSENT"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-ID-CASE",
+      "requirement_id": "URS-ID-001",
+      "source": "URS-ID-001/details/2",
+      "statement": "Uppercase and lowercase single-character IDs both remain present.",
+      "assertion_ids": ["ID-CASE-UPPER-RETAINED", "ID-CASE-RETAINED"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-DUPLICATE",
+      "requirement_id": "URS-ID-002",
+      "source": "URS-ID-002/statement",
+      "statement": "Trimmed duplicate is rejected with the specified error; one unchanged original row remains.",
+      "assertion_ids": [
+        "DUPLICATE-STATUS",
+        "DUPLICATE-ERROR",
+        "DUPLICATE-COUNT",
+        "DUPLICATE-ORIGINAL"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-RECORDS",
+      "requirement_id": "URS-RECORD-001",
+      "source": "URS-RECORD-001/statement",
+      "statement": "Normalized inputs and outputs are retained once and displayed after navigation.",
+      "assertion_ids": ["RECORD-HEADER", "RECORD-VALUES", "RECORD-COUNT"],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-NUMERIC-UPPER",
+      "requirement_id": "URS-INPUT-001",
+      "source": "URS-INPUT-001/statement",
+      "statement": "Quantities exactly at the canonical maximum are accepted.",
+      "assertion_ids": ["UPPER-ACCEPTED", "UPPER-STOCK", "UPPER-DILUENT"],
+      "manual_case_ids": []
+    }
+  ],
+  "cases": [
+    {
+      "id": "IQ-REACHABLE",
+      "title": "Public workbench and health response",
+      "classification": "IQ",
+      "requirements": ["URS-IQ-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "IQ-REACHABLE-CHECK",
+          "instruction": "Open the public preparation page and inspect the health response.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "request",
+              "url": "/health",
+              "method": "GET",
+              "as": "health"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "IQ-HEALTH-STATUS",
+              "variable": "health.status",
+              "comparison": "equals",
+              "expected": 200
+            },
+            {
+              "id": "IQ-HEALTH-NAME",
+              "variable": "health.body.application",
+              "comparison": "equals",
+              "expected": "Dilution Bench"
+            },
+            {
+              "id": "IQ-FORM",
+              "locator": {
+                "by": "role",
+                "value": "Prepare a dilution",
+                "role": "heading",
+                "exact": true
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "IQ-REACHABLE-CHECK-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "IQ-REACHABLE-CHECK-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-CSV-EXPORT",
+      "title": "CSV worksheet contents and rounding",
+      "classification": "OQ",
+      "requirements": ["URS-CSV-001", "URS-CALC-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "CSV-SEED-Z",
+          "instruction": "Save EXPORT-Z with 10 mg/mL stock, 2 mg/mL target, and 10 mL final volume.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "EXPORT-Z"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "CSV-Z-SAVED",
+              "locator": {
+                "by": "testId",
+                "value": "result-sample-id",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "EXPORT-Z"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "CSV-SEED-Z-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "CSV-SEED-A",
+          "instruction": "Save EXPORT-A second, using 3 mg/mL stock, 1 mg/mL target and 1 mL final volume; verify independently rounded results.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "EXPORT-A"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "roundingRecords"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ROUND-STOCK-DISPLAY",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "0.333"
+            },
+            {
+              "id": "ROUND-DILUENT-DISPLAY",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "0.667"
+            },
+            {
+              "id": "ROUND-STOCK-RAW",
+              "variable": "roundingRecords.body.plans.0.stockMl",
+              "comparison": "numeric",
+              "expected": 0.3333333333333333,
+              "tolerance": 1e-12
+            },
+            {
+              "id": "ROUND-DILUENT-RAW",
+              "variable": "roundingRecords.body.plans.0.diluentMl",
+              "comparison": "numeric",
+              "expected": 0.6666666666666666,
+              "tolerance": 1e-12
+            }
+          ],
+          "evidence": [
+            {
+              "id": "CSV-SEED-A-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "CSV-SEED-A-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "CSV-DOWNLOAD",
+          "instruction": "Download the CSV; compare every header and row, including ASCII ordering, units, rounding and absence of extra rows.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/records"
+            },
+            {
+              "op": "download",
+              "locator": {
+                "by": "role",
+                "value": "Download CSV",
+                "role": "link",
+                "exact": true
+              },
+              "save_as": "worksheet"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "CSV-TABLE",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records",
+                "exact": true
+              },
+              "read": "table",
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                ["EXPORT-A", "3.000", "1.000", "1.000", "0.333", "0.667"],
+                ["EXPORT-Z", "10.000", "2.000", "10.000", "2.000", "8.000"]
+              ]
+            },
+            {
+              "id": "CSV-EXACT-CONTENT",
+              "variable": "worksheet.text",
+              "comparison": "equals",
+              "expected": "Sample ID,Stock (mg/mL),Target (mg/mL),Final volume (mL),Stock volume (mL),Diluent volume (mL)\r\nEXPORT-A,3.000,1.000,1.000,0.333,0.667\r\nEXPORT-Z,10.000,2.000,10.000,2.000,8.000\r\n"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "CSV-DOWNLOAD-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "CSV-DOWNLOAD-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            },
+            {
+              "id": "CSV-FILE",
+              "kind": "download",
+              "variable": "worksheet",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-BASELINE",
+      "title": "Standard dilution calculation",
+      "classification": "OQ",
+      "requirements": ["URS-CALC-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "BASELINE-CALCULATE",
+          "instruction": "Prepare 10 mL of 2 mg/mL solution from 10 mg/mL stock.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "BASELINE"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "BASELINE-STOCK",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "BASELINE-DILUENT",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 8,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "BASELINE-TARGET",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "BASELINE-STOCK-DP",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "2.000"
+            },
+            {
+              "id": "BASELINE-DILUENT-DP",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "8.000"
+            },
+            {
+              "id": "BASELINE-TARGET-DP",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "2.000"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "BASELINE-CALCULATE-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "BASELINE-CALCULATE-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-UNIT-CONVERSION",
+      "title": "Mixed concentration units",
+      "classification": "OQ",
+      "requirements": ["URS-UNIT-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "UNIT-TARGET",
+          "instruction": "Enter 10 mg/mL stock, 100 ug/mL target and 10 mL final volume.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "UNIT-TARGET"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "100"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "ug/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "UNIT-TARGET-STOCK",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 0.1,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "UNIT-TARGET-DILUENT",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 9.9,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "UNIT-TARGET-CANONICAL",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 0.1,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "UNIT-TARGET-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "UNIT-TARGET-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "UNIT-STOCK",
+          "instruction": "Enter 10000 ug/mL stock, 2 mg/mL target and 10 mL final volume.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "UNIT-STOCK"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "10000"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "ug/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "UNIT-STOCK-VOLUME",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "UNIT-STOCK-DILUENT",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 8,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "UNIT-STOCK-CANONICAL",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "UNIT-STOCK-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "UNIT-STOCK-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-VOLUME-UNITS",
+      "title": "Microlitre final volume",
+      "classification": "OQ",
+      "requirements": ["URS-UNIT-002"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "VOLUME-CALCULATE",
+          "instruction": "Enter 10 mg/mL stock, 2 mg/mL target and 1000 uL final volume.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "VOLUME-UNITS"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "1000"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "uL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "VOLUME-STOCK",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 0.2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "VOLUME-DILUENT",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 0.8,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "VOLUME-CALCULATE-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "VOLUME-CALCULATE-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-EQUAL-CONCENTRATION",
+      "title": "Equal-concentration boundary",
+      "classification": "OQ",
+      "requirements": ["URS-CALC-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "EQUAL-CALCULATE",
+          "instruction": "Prepare 1 mL at the same 2 mg/mL concentration as stock.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "EQUAL-CONCENTRATION"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "EQUAL-STOCK",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 1,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "EQUAL-DILUENT",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 0,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "EQUAL-CALCULATE-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "EQUAL-CALCULATE-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-ZERO-VOLUME",
+      "title": "Reject a zero-volume preparation",
+      "classification": "OQ",
+      "requirements": ["URS-INPUT-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "ZERO-REJECT",
+          "instruction": "Submit zero final volume through HTTP and the browser, then confirm that no zero-volume record is retained.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "ZERO-API",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "0",
+                "volumeUnit": "mL"
+              },
+              "as": "zeroRequest"
+            },
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "ZERO-BROWSER"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "0"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "zeroRecords"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ZERO-STATUS",
+              "variable": "zeroRequest.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "ZERO-ERROR",
+              "variable": "zeroRequest.body.error",
+              "comparison": "equals",
+              "expected": "Final volume must be greater than zero."
+            },
+            {
+              "id": "ZERO-ALERT",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "comparison": "equals",
+              "expected": "Final volume must be greater than zero."
+            },
+            {
+              "id": "ZERO-API-ABSENT",
+              "variable": "zeroRecords.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"ZERO-API\""
+            },
+            {
+              "id": "ZERO-BROWSER-ABSENT",
+              "variable": "zeroRecords.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"ZERO-BROWSER\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ZERO-REJECT-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "ZERO-REJECT-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-INVALID-INPUTS",
+      "title": "Reject invalid quantities and unsupported units",
+      "classification": "OQ",
+      "requirements": ["URS-INPUT-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "NUMERIC-UPPER-BOUNDARY",
+          "instruction": "Accept quantities exactly at the maximum canonical boundary: stock and target 1000000000 mg/mL, final volume 1000000000 mL.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "NUMERIC-UPPER",
+                "stockConcentration": "1000000000",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "1000000000",
+                "targetUnit": "mg/mL",
+                "finalVolume": "1000000000",
+                "volumeUnit": "mL"
+              },
+              "as": "upper"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "UPPER-ACCEPTED",
+              "variable": "upper.status",
+              "comparison": "equals",
+              "expected": 201
+            },
+            {
+              "id": "UPPER-STOCK",
+              "variable": "upper.body.plan.stockMl",
+              "comparison": "equals",
+              "expected": 1000000000
+            },
+            {
+              "id": "UPPER-DILUENT",
+              "variable": "upper.body.plan.diluentMl",
+              "comparison": "equals",
+              "expected": 0
+            }
+          ],
+          "evidence": [
+            {
+              "id": "NUMERIC-UPPER-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-1",
+          "instruction": "Reject stockConcentration = \"\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-1",
+                "stockConcentration": "",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-1-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-1-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-1-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-1\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-2",
+          "instruction": "Reject stockConcentration = \"-1\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-2",
+                "stockConcentration": "-1",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-2-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-2-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-2-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-2\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-2-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-3",
+          "instruction": "Reject stockConcentration = \"Infinity\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-3",
+                "stockConcentration": "Infinity",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-3-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-3-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-3-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-3\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-3-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-4",
+          "instruction": "Reject stockConcentration = \"1000000001\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-4",
+                "stockConcentration": "1000000001",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-4-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-4-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-4-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-4\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-4-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-5",
+          "instruction": "Reject stockConcentration = \"0\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-5",
+                "stockConcentration": "0",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-5-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-5-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-5-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-5\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-5-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-6",
+          "instruction": "Reject targetConcentration = \"\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-6",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-6-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-6-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-6-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-6\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-6-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-7",
+          "instruction": "Reject targetConcentration = \"-1\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-7",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "-1",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-7-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-7-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-7-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-7\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-7-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-8",
+          "instruction": "Reject targetConcentration = \"Infinity\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-8",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "Infinity",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-8-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-8-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-8-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-8\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-8-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-9",
+          "instruction": "Reject targetConcentration = \"1000000001\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-9",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "1000000001",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-9-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-9-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-9-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-9\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-9-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-10",
+          "instruction": "Reject targetConcentration = \"0\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-10",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "0",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-10-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-10-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-10-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-10\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-10-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-11",
+          "instruction": "Reject finalVolume = \"\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-11",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-11-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-11-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-11-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-11\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-11-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-12",
+          "instruction": "Reject finalVolume = \"-1\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-12",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "-1",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-12-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-12-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-12-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-12\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-12-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-13",
+          "instruction": "Reject finalVolume = \"Infinity\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-13",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "Infinity",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-13-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-13-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-13-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-13\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-13-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-NUM-14",
+          "instruction": "Reject finalVolume = \"1000000001\" and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-NUM-14",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "1000000001",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-NUM-14-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-NUM-14-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-NUM-14-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-NUM-14\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-NUM-14-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-RANGE-15",
+          "instruction": "Reject unsupported input targetConcentration = 11 and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-RANGE-15",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "11",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-RANGE-15-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-RANGE-15-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-RANGE-15-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-RANGE-15\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-RANGE-15-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-RANGE-16",
+          "instruction": "Reject unsupported input stockUnit = g/L and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-RANGE-16",
+                "stockConcentration": "10",
+                "stockUnit": "g/L",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-RANGE-16-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-RANGE-16-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-RANGE-16-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-RANGE-16\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-RANGE-16-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-RANGE-17",
+          "instruction": "Reject unsupported input targetUnit = g/L and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-RANGE-17",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "g/L",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-RANGE-17-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-RANGE-17-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-RANGE-17-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-RANGE-17\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-RANGE-17-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "INVALID-RANGE-18",
+          "instruction": "Reject unsupported input volumeUnit = L and confirm no record is saved.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID-RANGE-18",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "L"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "INVALID-RANGE-18-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "INVALID-RANGE-18-ERROR",
+              "variable": "rejected.body.error",
+              "comparison": "present"
+            },
+            {
+              "id": "INVALID-RANGE-18-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID-RANGE-18\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "INVALID-RANGE-18-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-IDENTIFIERS",
+      "title": "Identifier boundaries, syntax and case sensitivity",
+      "classification": "OQ",
+      "requirements": ["URS-ID-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "ID-MIN",
+          "instruction": "Accept identifier \"Q\" and retain Q.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "Q",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "created"
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-MIN-STATUS",
+              "variable": "created.status",
+              "comparison": "equals",
+              "expected": 201
+            },
+            {
+              "id": "ID-MIN-RETAINED",
+              "locator": {
+                "by": "testId",
+                "value": "record-Q",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-MIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-CASE",
+          "instruction": "Accept identifier \"q\" and retain q.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "q",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "created"
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-CASE-STATUS",
+              "variable": "created.status",
+              "comparison": "equals",
+              "expected": 201
+            },
+            {
+              "id": "ID-CASE-RETAINED",
+              "locator": {
+                "by": "testId",
+                "value": "record-q",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            },
+            {
+              "id": "ID-CASE-UPPER-RETAINED",
+              "locator": {
+                "by": "testId",
+                "value": "record-Q",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-CASE-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-MAX",
+          "instruction": "Accept identifier \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\" and retain AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "created"
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-MAX-STATUS",
+              "variable": "created.status",
+              "comparison": "equals",
+              "expected": 201
+            },
+            {
+              "id": "ID-MAX-RETAINED",
+              "locator": {
+                "by": "testId",
+                "value": "record-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-MAX-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-TRIM",
+          "instruction": "Accept identifier \"  ID_part.1-test  \" and retain ID_part.1-test.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "  ID_part.1-test  ",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "created"
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-TRIM-STATUS",
+              "variable": "created.status",
+              "comparison": "equals",
+              "expected": 201
+            },
+            {
+              "id": "ID-TRIM-RETAINED",
+              "locator": {
+                "by": "testId",
+                "value": "record-ID_part.1-test",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-TRIM-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-REJECT-EMPTY",
+          "instruction": "Reject invalid identifier \"\" without retaining it.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-REJECT-EMPTY-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "ID-REJECT-EMPTY-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-REJECT-EMPTY-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-REJECT-SPACE",
+          "instruction": "Reject invalid identifier \"   \" without retaining it.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "   ",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-REJECT-SPACE-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "ID-REJECT-SPACE-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-REJECT-SPACE-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-REJECT-LONG",
+          "instruction": "Reject invalid identifier \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\" without retaining it.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-REJECT-LONG-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "ID-REJECT-LONG-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-REJECT-LONG-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-REJECT-PREFIX",
+          "instruction": "Reject invalid identifier \"_INVALID\" without retaining it.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "_INVALID",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-REJECT-PREFIX-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "ID-REJECT-PREFIX-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"_INVALID\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-REJECT-PREFIX-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "ID-REJECT-EMBEDDED",
+          "instruction": "Reject invalid identifier \"INVALID SPACE\" without retaining it.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "INVALID SPACE",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "2",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "rejected"
+            },
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "GET",
+              "as": "retained"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "ID-REJECT-EMBEDDED-STATUS",
+              "variable": "rejected.status",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "ID-REJECT-EMBEDDED-ABSENT",
+              "variable": "retained.text",
+              "comparison": "not_contains",
+              "expected": "\"sampleId\":\"INVALID SPACE\""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "ID-REJECT-EMBEDDED-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-DUPLICATE-ID",
+      "title": "Reject duplicates and preserve the original",
+      "classification": "OQ",
+      "requirements": ["URS-ID-002"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "DUPLICATE-SEED",
+          "instruction": "Save DUPLICATE-ID with 10 mg/mL stock, 2 mg/mL target and 10 mL final volume.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "DUPLICATE-ID"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "DUPLICATE-CREATED",
+              "locator": {
+                "by": "testId",
+                "value": "result-sample-id",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "DUPLICATE-ID"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "DUPLICATE-SEED-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "DUPLICATE-REJECT",
+          "instruction": "Submit the same ID surrounded by spaces with a different target concentration, then inspect the original record.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/plans",
+              "method": "POST",
+              "body": {
+                "sampleId": "  DUPLICATE-ID  ",
+                "stockConcentration": "10",
+                "stockUnit": "mg/mL",
+                "targetConcentration": "5",
+                "targetUnit": "mg/mL",
+                "finalVolume": "10",
+                "volumeUnit": "mL"
+              },
+              "as": "duplicate"
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "DUPLICATE-STATUS",
+              "variable": "duplicate.status",
+              "comparison": "equals",
+              "expected": 409
+            },
+            {
+              "id": "DUPLICATE-ERROR",
+              "variable": "duplicate.body.error",
+              "comparison": "equals",
+              "expected": "Sample ID already exists. The original record is unchanged."
+            },
+            {
+              "id": "DUPLICATE-COUNT",
+              "locator": {
+                "by": "testId",
+                "value": "record-DUPLICATE-ID",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            },
+            {
+              "id": "DUPLICATE-ORIGINAL",
+              "locator": {
+                "by": "role",
+                "value": "Dilution records",
+                "role": "table",
+                "exact": true
+              },
+              "read": "table",
+              "comparison": "contains",
+              "expected": ["DUPLICATE-ID", "10.000", "2.000", "10.000", "2.000", "8.000"]
+            }
+          ],
+          "evidence": [
+            {
+              "id": "DUPLICATE-REJECT-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "DUPLICATE-REJECT-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-RECORDS",
+      "title": "Saved preparation survives navigation",
+      "classification": "OQ",
+      "requirements": ["URS-RECORD-001"],
+      "actor": "visitor",
+      "prerequisites": [
+        "Start the complete protocol against an empty workspace. Preserve case order; CSV export is checked before later cases create records. Use synthetic data only."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "RECORD-SAVE",
+          "instruction": "Save a named preparation, leave the page, then reopen Saved preparations.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "PERSISTENCE"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration",
+                "exact": true
+              },
+              "value": "8"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration",
+                "exact": true
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit",
+                "exact": true
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume",
+                "exact": true
+              },
+              "value": "4"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit",
+                "exact": true
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Calculate and save",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "navigate",
+              "url": "/"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Saved preparations",
+                "role": "link",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "RECORD-HEADER",
+              "locator": {
+                "by": "role",
+                "value": "Dilution records",
+                "role": "table",
+                "exact": true
+              },
+              "read": "table",
+              "comparison": "contains",
+              "expected": [
+                "Sample ID",
+                "Stock (mg/mL)",
+                "Target (mg/mL)",
+                "Final volume (mL)",
+                "Stock volume (mL)",
+                "Diluent volume (mL)"
+              ]
+            },
+            {
+              "id": "RECORD-VALUES",
+              "locator": {
+                "by": "role",
+                "value": "Dilution records",
+                "role": "table",
+                "exact": true
+              },
+              "read": "table",
+              "comparison": "contains",
+              "expected": ["PERSISTENCE", "8.000", "2.000", "4.000", "1.000", "3.000"]
+            },
+            {
+              "id": "RECORD-COUNT",
+              "locator": {
+                "by": "testId",
+                "value": "record-PERSISTENCE",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            }
+          ],
+          "evidence": [
+            {
+              "id": "RECORD-SAVE-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "RECORD-SAVE-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [],
+  "fixtures": [],
+  "references": ["references/calculation-examples.csv"],
+  "context_hashes": []
+}

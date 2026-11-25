@@ -1,0 +1,55 @@
+name: Hosted dilution validation
+
+# Run after Render reports both deployments live. Keeping this separate from
+# pre-deploy CI avoids a cycle: Render waits for CI before deploying.
+on:
+  workflow_dispatch:
+    inputs:
+      correct_url:
+        description: Corrected Render service URL (https://...onrender.com)
+        required: true
+        type: string
+      faulty_url:
+        description: Deliberately faulty Render service URL (https://...onrender.com)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-dilution-validation
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Validate both hosted versions using the CLI
+        env:
+          CORRECT_URL: ${{ inputs.correct_url }}
+          FAULTY_URL: ${{ inputs.faulty_url }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: >-
+          node scripts/validate-hosted-dilution.mjs
+          --correct-url "$CORRECT_URL"
+          --faulty-url "$FAULTY_URL"
+          --commit "$EXPECTED_COMMIT"
+          --output hosted-evidence
+      - name: Retain reports and observations even if comparison fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-dilution-evidence-${{ github.run_id }}
+          path: hosted-evidence/
+          if-no-files-found: warn
+          retention-days: 14

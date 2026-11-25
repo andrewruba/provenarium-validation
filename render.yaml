@@ -1,0 +1,36 @@
+# Render connects to this private GitHub repository once. Subsequent main-branch
+# deploys wait for GitHub Actions checks; no deploy-hook or API-key secret is used.
+services:
+  - type: web
+    name: provenarium-dilution-faulty
+    runtime: node
+    plan: free
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node dist/examples/dilution-app/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 26.13.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: DILUTION_MODE
+        value: faulty
+
+  - type: web
+    name: provenarium-dilution-correct
+    runtime: node
+    plan: free
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node dist/examples/dilution-app/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 26.13.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: DILUTION_MODE
+        value: correct
