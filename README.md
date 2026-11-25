@@ -72,29 +72,30 @@ published. See [release notes](CHANGELOG.md) for the implementation boundary.
 
 ## Scientific validation sandbox
 
-[Dilution Bench](examples/dilution-app/README.md) is a standard laboratory dilution
-planner with unit conversion, retained preparations, CSV export, and four deliberate
-defects. It includes independent requirements, reference calculations, and a
-prepared validation protocol.
+Try the browser-only **Dilution Bench** demos on GitHub Pages:
+
+- [Corrected app](https://andrewruba.github.io/provenarium-validation/correct/)
+- [Deliberately faulty app](https://andrewruba.github.io/provenarium-validation/faulty/)
+
+Both use the standard `C₁V₁ = C₂V₂` dilution equation, unit selection, browser-local
+preparation records, and CSV export. The faulty version has four deliberate
+calculation, input, duplicate-record, and export defects. Independent requirements
+and reference calculations define the intended results.
 
 ```sh
-npm run demo:dilution       # Open http://127.0.0.1:4174; deliberately faulty by default
-npm run validate:dilution   # Compare faulty and corrected modes using one approval
+npm run validate:dilution:pages -- \
+  --correct-url https://andrewruba.github.io/provenarium-validation/correct/ \
+  --faulty-url https://andrewruba.github.io/provenarium-validation/faulty/
 ```
 
-The comparison retains reports and evidence locally and makes no provider calls.
-You can also use the supplied requirements to test AI authoring against the app.
+The prepared comparison uses the main CLI without provider calls and retains
+reports and evidence locally. Expect 11 passes for the corrected app and seven
+passes plus four failures for the faulty app. Read the [CLI testing guide](docs/testing-hosted-dilution.md)
+for step-by-step commands, AI authoring, data isolation, and report interpretation.
 
-For online demos, the [deployment guide](docs/deployment.md) configures two free
-Render services that deploy from `main` after GitHub Actions passes. The
-[hosted CLI testing guide](docs/testing-hosted-dilution.md) covers prepared-protocol
-and AI-authoring workflows, isolated test data, expected failures, and reports.
-
-```sh
-npm run validate:dilution:hosted -- \
-  --correct-url https://YOUR-CORRECT-SERVICE.onrender.com \
-  --faulty-url https://YOUR-FAULTY-SERVICE.onrender.com
-```
-
-Use the actual service URLs after the one-time Render setup. The **Hosted dilution
-validation** Actions workflow runs the same comparison and retains its evidence.
+`npm run demo:pages` previews both static versions locally. GitHub Actions publishes
+them after verification passes on `main`; see the [deployment guide](docs/deployment.md).
+The **Published Pages validation** workflow checks the live site and retains its
+reports. The [original Node example](examples/dilution-app/README.md) remains
+available with `npm run demo:dilution` and `npm run validate:dilution` for backend
+HTTP validation scenarios.

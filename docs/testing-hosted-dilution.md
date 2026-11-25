@@ -1,163 +1,140 @@
-# Test the CLI against the hosted dilution demos
+# Test the CLI against the GitHub Pages demos
 
-The two services run the same scientific dilution app in corrected and deliberately
-faulty modes. The prepared protocol has 11 cases. The corrected app should pass
-all 11; the faulty app should pass seven and fail these four:
+The published targets are a standard `C₁V₁ = C₂V₂` dilution calculator with unit
+selection, saved preparations, and CSV downloads:
 
-| Case | Expected defect |
+- [Corrected version](https://andrewruba.github.io/provenarium-validation/correct/)
+- [Faulty version](https://andrewruba.github.io/provenarium-validation/faulty/)
+
+The browser-only protocol has 11 independent cases. Expected results are **11
+passed** for corrected behavior and **7 passed / 4 failed** for faulty behavior:
+
+| Case | Deliberate defect |
 | --- | --- |
-| `OQ-UNIT-CONVERSION` | Incorrect µg/mL conversion |
+| `OQ-UNIT-CONVERSION` | Incorrect microgram concentration conversion |
 | `OQ-ZERO-VOLUME` | Zero final volume accepted |
-| `OQ-DUPLICATE-ID` | Original record replaced by a duplicate |
-| `OQ-CSV-EXPORT` | Stock volume exported with incorrect units |
+| `OQ-DUPLICATE-ID` | Duplicate identifier replaces the original preparation |
+| `OQ-CSV-EXPORT` | Stock volume exported in the wrong units |
 
-Set up the services with the [deployment guide](deployment.md). Copy their actual
-HTTPS URLs from Render; the example hostnames below are placeholders. No provider
-API key is needed for the prepared protocol.
+Requirements and expected calculations are defined independently in
+[`examples/dilution-pages-validation`](../examples/dilution-pages-validation/).
+The checks use the browser UI and downloads. There are no backend API, server-side
+validation, authentication, or cross-user persistence claims in this fixture.
 
-## Install the CLI from this checkout
+## Install and run the prepared comparison
 
-Use Node.js 26:
+From a checkout with Node.js 26:
 
 ```sh
 npm ci
 npm run build
 node bin/provenarium.mjs browser install
+npm run validate:dilution:pages -- \
+  --correct-url https://andrewruba.github.io/provenarium-validation/correct/ \
+  --faulty-url https://andrewruba.github.io/provenarium-validation/faulty/
 ```
 
-## Run the complete hosted comparison
+This uses the real main CLI to generate, approve, execute, and report each target.
+It makes no provider calls and requires no API key. It automatically approves the
+supplied reviewed fixture; inspect and approve your own generated protocols using
+the manual workflow below.
+
+The comparison command succeeds only when it observes the exact expected
+outcomes. The normal `provenarium run` command still returns nonzero for a failed
+qualification. Reports, observations, screenshots, CSV traceability, and CLI logs
+are retained under `.demo-results/`; the terminal prints their locations. Use
+`--output <parent-directory>` to choose another location or `--pdf` to add PDFs.
+
+The targets have different URLs, so each receives a separate approval. The source
+requirements and expected outcomes remain identical. `--commit <full-SHA>` can
+require matching build metadata when checking a specific deployment.
+
+## Use the main CLI step by step
+
+Prepare a fresh project and scope its browser storage:
 
 ```sh
-npm run validate:dilution:hosted -- \
-  --correct-url https://YOUR-CORRECT-SERVICE.onrender.com \
-  --faulty-url https://YOUR-FAULTY-SERVICE.onrender.com
-```
-
-The command waits for each service to wake, checks that its advertised mode is
-correct, allocates a fresh test workspace on each service, and uses the **main
-CLI commands** to generate, approve, execute, and report the prepared protocol.
-It retains all generated files and reports under `.demo-results/` and prints their
-locations. `--output <directory>` chooses another parent directory; `--pdf` adds
-PDF reports.
-
-This demonstration helper automatically approves the supplied, reviewed fixture.
-For a protocol you authored yourself, use the manual workflow below and inspect
-it before approval.
-
-The comparison exits successfully only when corrected behavior passes all cases
-and faulty behavior produces exactly the four expected failures. A normal
-`provenarium run` against the faulty service still exits nonzero. Unexpected
-failures, missing cases, blocked steps, a workspace reset, or the wrong service
-mode make the comparison fail. Failures retain evidence for investigation.
-
-The two services have different target URLs, so they need **separate approved
-packages**. The supplied procedures and expected results are the same; only the
-target and workspace paths change. The local `npm run validate:dilution` comparison
-can reuse one approval because it changes behavior behind a single target URL.
-
-To require a particular deployed revision, add `--commit <full-Git-commit-SHA>`.
-The helper checks the server's reported commit. This is a useful deployment check,
-not independent proof that running code matches a source revision.
-
-## Walk through the main CLI yourself
-
-Prepare a new project for the corrected service:
-
-```sh
-node scripts/prepare-dilution.mjs \
-  --url https://YOUR-CORRECT-SERVICE.onrender.com \
-  --project .demo-results/my-correct-validation
-
-node bin/provenarium.mjs --project .demo-results/my-correct-validation urs check urs.yaml
-node bin/provenarium.mjs --project .demo-results/my-correct-validation generate \
+node scripts/prepare-pages-dilution.mjs \
+  --url https://andrewruba.github.io/provenarium-validation/correct/ \
+  --project .demo-results/pages-correct
+node bin/provenarium.mjs --project .demo-results/pages-correct urs check urs.yaml
+node bin/provenarium.mjs --project .demo-results/pages-correct generate \
   --urs urs.yaml --plan plan.json
 ```
 
-The preparation helper copies the requirements and independent calculation
-references, assigns a fresh workspace URL, and adjusts the supplied procedures to
-that target. It does not approve or execute anything and refuses to overwrite an
-existing project. Open the generated IOQ and review the procedure, expected values,
-coverage, and target before continuing. Open the printed workspace URL and wait
-until the app loads; its `health` endpoint should return HTTP 200. Free services
-can take about a minute to wake, longer than an individual protocol step's
-timeout. Warm the service again if it has been idle for 15 minutes:
+The helper writes the URS, independent references, target metadata, and a prepared
+plan bound to a random browser workspace. It does not approve or execute anything
+and refuses to overwrite an existing project. Review the generated IOQ and its
+expectations, then run:
 
 ```sh
-node bin/provenarium.mjs --project .demo-results/my-correct-validation approve
-node bin/provenarium.mjs --project .demo-results/my-correct-validation run \
-  --release-label dilution-correct
-node bin/provenarium.mjs --project .demo-results/my-correct-validation report
+node bin/provenarium.mjs --project .demo-results/pages-correct approve
+node bin/provenarium.mjs --project .demo-results/pages-correct run --release-label pages-correct
+node bin/provenarium.mjs --project .demo-results/pages-correct report
 ```
 
-Repeat with the faulty service URL and a different project directory such as
-`.demo-results/my-faulty-validation`. Label that run `dilution-faulty`. Run `report`
-after the expected nonzero `run` exit; do not join those two commands with `&&`.
+Repeat using `/faulty/` and a different project directory. Reporting should run
+even after the expected nonzero exit from a faulty run; do not connect those two
+commands with `&&`. HTML/PDF reports compare expected and actual observations;
+the CSV traceability file maps requirements to the results. Report rendering uses
+retained evidence without revisiting the application.
 
-HTML and PDF executed records show expected versus actual observations, screenshots,
-and failed steps. The CSV traceability file maps requirements to case results.
-Reporting uses retained evidence and does not contact the application again.
+## Test AI authoring
 
-## Test AI authoring instead of the supplied protocol
-
-Prepare another fresh project with the helper, then use its printed **workspace
-URL**, including the entire `/w/<id>/` path:
+Create another project with `prepare-pages-dilution.mjs`, then use the complete
+workspace URL it prints, including `?workspace=...`:
 
 ```sh
-node bin/provenarium.mjs --project .demo-results/my-ai-validation generate \
-  --urs urs.yaml --url https://YOUR-SERVICE.onrender.com/w/YOUR-WORKSPACE-ID/ \
+node scripts/prepare-pages-dilution.mjs \
+  --url https://andrewruba.github.io/provenarium-validation/faulty/ \
+  --project .demo-results/pages-ai
+node bin/provenarium.mjs --project .demo-results/pages-ai generate \
+  --urs urs.yaml \
+  --url 'https://andrewruba.github.io/provenarium-validation/faulty/?workspace=YOUR-WORKSPACE-ID' \
   --provider openai --thoroughness standard --interactive-discovery
 ```
 
-Create `.demo-results/my-ai-validation` with `prepare-dilution.mjs` first. Omit
-`--plan` for AI authoring. The copied prepared plan is not selected as authoring
-input by this command. For a blind exercise, do not link that plan, the app's
-source, or `DEFECTS.md` as context. Use `--provider anthropic` to test Anthropic.
-This path requires your provider key and incurs API usage under the displayed
-spending ceiling; it is separate from the offline checks.
+Replace the example workspace ID with the helper's actual value. Use
+`--provider anthropic` to test the other provider. This route incurs API usage
+under the displayed spending ceiling. Omit `--plan` to request AI authoring; the
+copied prepared plan is not selected by that command. For a blind exercise, do
+not link the prepared plan, application source, or defect guide as authoring
+context. Review expectations against the URS and reference calculations rather
+than accepting whatever values the faulty app displays.
 
-Review the generated protocol against the independent URS and reference
-calculations. Discovery can create synthetic records: open the same workspace
-URL and click **Clear preparations** before running the approved protocol. Keep
-the workspace URL unchanged after approval. Then use the same `approve`, `run`,
-and `report` sequence as above with your AI project directory.
+Generated cases must establish their own test data. The runner uses a fresh
+browser context for each case, so browser storage is not shared between cases.
+Keep the target URL fixed after approval. In a manual browser session, click
+**Clear preparations** before repeating a procedure or after exploratory data
+entry. Then use the normal `approve`, `run`, and `report` commands.
 
-## Fresh data and repeat runs
+## Browser data and scope
 
-Each `/w/<id>/` workspace has its own records. Use the helper-generated random IDs
-and one workspace per project. The unscoped homepage is a shared scratchpad and
-should not be used for a reproducible hosted qualification.
+Calculations execute in JavaScript and records are saved in local storage for the
+current browser, app version, URL path, and workspace. Corrected and faulty data
+are separate even though both versions use the same origin. No preparation data
+is sent to a server. Reloading or changing the visible screen preserves records
+within that browser context. Clearing preparations affects only that workspace.
 
-For a repeat run of an existing approval, click **Clear preparations** inside
-its workspace immediately before the run. This clears that workspace only. It
-does not change the approval, procedures, or other visitors' workspaces. The
-prepared protocol creates fixed sample IDs and expects no pre-existing records.
-Do not clear a workspace while a run is in progress.
+The test runner starts each case with its own browser context. Cases are
+self-contained and explicitly establish the records they need. Browser-local
+persistence can be tested within a case; shared server persistence cannot.
+Workspaces are not authentication and these are synthetic examples, not laboratory
+procedures. The app bounds each browser workspace to 500 records and surfaces
+storage failures.
 
-Workspaces are disposable: they expire after an hour without activity, and a
-service restart, redeploy, or free-instance sleep clears in-memory records. The
-automated comparison checks a workspace generation identifier before and after
-execution and rejects evidence assembled across a reset. Manual CLI use does not
-add this demo-specific check automatically; avoid deployments during a run and
-investigate interrupted or inconsistent results. A workspace URL is not an
-authentication mechanism; use synthetic data only.
+## Validate live Pages in GitHub Actions
 
-The demo bounds the number of active workspaces and records. If it reports
-capacity exhaustion, allow unused workspaces to expire or restart the demo
-service when no tests are running. No paid database is required.
+After the Pages deployment completes, open **Actions → Published Pages validation
+→ Run workflow**. The default URLs point to the two published versions. Select
+the branch whose commit is deployed. This workflow requires matching deployment
+metadata and uploads `pages-dilution-evidence-…` for 14 days, including reports from
+failed comparisons. No model-provider or hosting secret is required.
 
-## Run hosted validation in GitHub Actions
+For local static testing, start `npm run demo:pages` and substitute
+`http://127.0.0.1:4176/correct/` and `http://127.0.0.1:4176/faulty/` in the same
+comparison command.
 
-After both Render services show the intended commit as live:
-
-1. Open this repository's **Actions → Hosted dilution validation** workflow.
-2. Choose **Run workflow**, select the deployed branch/revision, and supply the
-   corrected and faulty service URLs.
-3. Read the comparison output. Download **hosted-dilution-evidence-…** from the
-   run's artifacts for the reports and observations; artifacts are kept for
-   14 days, including on failed comparisons.
-
-The workflow requires both services to report the workflow's commit SHA. It uses
-no provider key or Render API secret. The workflow is manual and separate from
-the pre-deployment checks: putting a test that waits for deployment into the same
-CI gate would prevent Render from deploying. Run it again after a deployment when
-you want fresh hosted evidence; it creates new workspaces automatically.
+The older `npm run validate:dilution` exercises the original Node demonstration,
+including its HTTP interface. Its fixture and the browser-only Pages fixture are
+intentionally distinct because they verify different application capabilities.

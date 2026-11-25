@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <title>Prepare a dilution · Dilution Bench</title>
+    <link rel="stylesheet" href="../assets/styles.css" />
+    <script src="../assets/app.js" defer></script>
+  </head>
+  <body data-app-mode="{{MODE}}" data-app-commit="{{COMMIT}}">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#prepare" aria-label="Dilution Bench home"
+          ><span class="brand-mark" aria-hidden="true">∴</span>Dilution Bench</a
+        >
+        <nav aria-label="Main navigation">
+          <a href="#prepare" id="prepare-link" aria-current="page">Prepare dilution</a>
+          <a href="#records" id="records-link">Saved preparations</a>
+          <a
+            class="download"
+            href="#download"
+            id="download-link"
+            download="dilution-preparations.csv"
+            >Download CSV</a
+          >
+        </nav>
+      </div>
+    </header>
+    <main>
+      <noscript
+        ><p class="alert">
+          JavaScript is required for this browser-only dilution calculator.
+        </p></noscript
+      >
+      <div id="messages" aria-live="polite"></div>
+      <section id="prepare-screen">
+        <p class="eyebrow">Laboratory calculations</p>
+        <h1>Prepare a dilution</h1>
+        <p class="intro">
+          Calculate the stock and diluent volumes for a single preparation. Choose your units, then
+          save the result in this browser.
+        </p>
+        <section id="results" class="results" aria-label="Calculated preparation" hidden>
+          <h2>Preparation saved</h2>
+          <p class="saved-label" role="status">
+            Sample <strong data-testid="result-sample-id"></strong> is in your saved preparations.
+          </p>
+          <div class="metrics">
+            <div class="metric">
+              <p class="metric-label">Stock to transfer</p>
+              <div class="metric-number">
+                <span data-testid="result-stock-volume"></span><span class="unit">mL</span>
+              </div>
+            </div>
+            <div class="metric">
+              <p class="metric-label">Diluent to add</p>
+              <div class="metric-number">
+                <span data-testid="result-diluent-volume"></span><span class="unit">mL</span>
+              </div>
+            </div>
+            <div class="metric">
+              <p class="metric-label">Target concentration</p>
+              <div class="metric-number">
+                <span data-testid="result-target-concentration"></span
+                ><span class="unit">mg/mL</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div class="workspace">
+          <section class="card" aria-label="Preparation inputs">
+            <div class="card-head">
+              <h2>Preparation details</h2>
+              <p>All fields are required. Results are displayed to three decimal places.</p>
+            </div>
+            <form id="preparation-form" novalidate>
+              <div class="form-body">
+                <div class="field">
+                  <label for="sampleId">Sample ID</label
+                  ><input
+                    id="sampleId"
+                    name="sampleId"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="e.g. BUFFER-001"
+                  />
+                  <p class="hint">
+                    A unique ID of up to 32 letters, numbers, periods, hyphens, or underscores.
+                  </p>
+                </div>
+                <div class="concentrations">
+                  <div class="field">
+                    <div class="pair">
+                      <div>
+                        <label for="stockConcentration">Stock concentration</label
+                        ><input
+                          id="stockConcentration"
+                          name="stockConcentration"
+                          type="text"
+                          inputmode="decimal"
+                          placeholder="10"
+                        />
+                      </div>
+                      <div>
+                        <label for="stockUnit">Stock unit</label
+                        ><select id="stockUnit" name="stockUnit">
+                          <option value="mg/mL">mg/mL</option>
+                          <option value="ug/mL">µg/mL</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <div class="pair">
+                      <div>
+                        <label for="targetConcentration">Target concentration</label
+                        ><input
+                          id="targetConcentration"
+                          name="targetConcentration"
+                          type="text"
+                          inputmode="decimal"
+                          placeholder="1"
+                        />
+                      </div>
+                      <div>
+                        <label for="targetUnit">Target unit</label
+                        ><select id="targetUnit" name="targetUnit">
+                          <option value="mg/mL">mg/mL</option>
+                          <option value="ug/mL">µg/mL</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="pair">
+                    <div>
+                      <label for="finalVolume">Final volume</label
+                      ><input
+                        id="finalVolume"
+                        name="finalVolume"
+                        type="text"
+                        inputmode="decimal"
+                        placeholder="10"
+                      />
+                    </div>
+                    <div>
+                      <label for="volumeUnit">Volume unit</label
+                      ><select id="volumeUnit" name="volumeUnit">
+                        <option value="mL">mL</option>
+                        <option value="uL">µL</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p class="hint">The total volume after adding stock and diluent.</p>
+                </div>
+              </div>
+              <div class="form-footer">
+                <p>Saved results use mg/mL and mL, regardless of the input units.</p>
+                <button type="submit">Calculate and save</button>
+              </div>
+            </form>
+          </section>
+          <aside aria-label="Calculation reference">
+            <section class="card reference">
+              <h2>The dilution equation</h2>
+              <div class="formula">C₁V₁ = C₂V₂</div>
+              <dl>
+                <dt>C₁</dt>
+                <dd>Stock concentration</dd>
+                <dt>V₁</dt>
+                <dd>Stock volume to transfer</dd>
+                <dt>C₂</dt>
+                <dd>Target concentration</dd>
+                <dt>V₂</dt>
+                <dd>Final preparation volume</dd>
+              </dl>
+              <p class="note">Diluent volume = final volume − stock volume.</p>
+            </section>
+            <section class="card reference">
+              <h2>Before you calculate</h2>
+              <p>The target concentration must be no greater than the stock concentration.</p>
+              <p>Concentrations and final volume must be positive.</p>
+              <p class="note">1 mg/mL = 1,000 µg/mL<br />1 mL = 1,000 µL</p>
+            </section>
+          </aside>
+        </div>
+      </section>
+      <section id="records-screen" hidden>
+        <p class="eyebrow">Preparation register</p>
+        <h1>Saved preparations</h1>
+        <p class="intro">
+          Review the dilution calculations saved in this browser workspace. Numeric values use mg/mL
+          and mL and are shown to three decimal places.
+        </p>
+        <section class="card table-card">
+          <div class="table-scroll">
+            <table aria-label="Dilution records">
+              <caption id="record-count">
+                0 saved preparations
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Sample ID</th>
+                  <th scope="col">Stock (mg/mL)</th>
+                  <th scope="col">Target (mg/mL)</th>
+                  <th scope="col">Final volume (mL)</th>
+                  <th scope="col">Stock volume (mL)</th>
+                  <th scope="col">Diluent volume (mL)</th>
+                </tr>
+              </thead>
+              <tbody id="record-rows"></tbody>
+            </table>
+          </div>
+          <div id="empty-records" class="empty">
+            <strong>No preparations saved yet</strong>Create a dilution to add your first result to
+            the register.
+          </div>
+          <p class="record-note">
+            Sorted by Sample ID. Download CSV to keep a copy of these browser records.
+          </p>
+        </section>
+      </section>
+      <section class="card reference reset-panel" aria-label="Browser workspace">
+        <div>
+          <h2>Browser workspace <span data-testid="workspace-id"></span></h2>
+          <p>Clear the preparations here before starting another validation run.</p>
+        </div>
+        <button id="clear-preparations" type="button">Clear preparations</button>
+      </section>
+    </main>
+    <footer>
+      <span>Synthetic validation sandbox · Records stay in this browser until cleared.</span
+      ><span>Single-step dilution · C₁V₁ = C₂V₂</span>
+    </footer>
+  </body>
+</html>

@@ -1,24 +1,26 @@
-name: Hosted dilution validation
+name: Published Pages validation
 
-# Run after Render reports both deployments live. Keeping this separate from
-# pre-deploy CI avoids a cycle: Render waits for CI before deploying.
+# Run after the Pages deployment is live; the ordinary CI suite validates the
+# same static build locally before publishing.
 on:
   workflow_dispatch:
     inputs:
       correct_url:
-        description: Corrected Render service URL (https://...onrender.com)
+        description: Full corrected Pages URL (including /correct/)
         required: true
         type: string
+        default: https://andrewruba.github.io/provenarium-validation/correct/
       faulty_url:
-        description: Deliberately faulty Render service URL (https://...onrender.com)
+        description: Full faulty Pages URL (including /faulty/)
         required: true
         type: string
+        default: https://andrewruba.github.io/provenarium-validation/faulty/
 
 permissions:
   contents: read
 
 concurrency:
-  group: hosted-dilution-validation
+  group: published-pages-validation
   cancel-in-progress: false
 
 jobs:
@@ -26,8 +28,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -40,7 +42,7 @@ jobs:
           FAULTY_URL: ${{ inputs.faulty_url }}
           EXPECTED_COMMIT: ${{ github.sha }}
         run: >-
-          node scripts/validate-hosted-dilution.mjs
+          node scripts/validate-pages-dilution.mjs
           --correct-url "$CORRECT_URL"
           --faulty-url "$FAULTY_URL"
           --commit "$EXPECTED_COMMIT"
@@ -49,7 +51,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: hosted-dilution-evidence-${{ github.run_id }}
+          name: pages-dilution-evidence-${{ github.run_id }}
           path: hosted-evidence/
           if-no-files-found: warn
           retention-days: 14

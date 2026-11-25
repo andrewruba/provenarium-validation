@@ -1,0 +1,5890 @@
+{
+  "schema_version": 1,
+  "runtime_version": 1,
+  "id": "PLAN-DILUTION-PAGES",
+  "title": "Browser dilution planner qualification",
+  "urs_revision": "1",
+  "target": {
+    "url": "http://127.0.0.1:4176/correct/",
+    "allowed_origins": [
+      "http://127.0.0.1:4176"
+    ]
+  },
+  "environment": {
+    "locale": "en-US",
+    "timezone": "UTC",
+    "viewport": {
+      "width": 1280,
+      "height": 900
+    },
+    "timeout_ms": 10000
+  },
+  "access": [
+    {
+      "id": "visitor",
+      "role": "laboratory user",
+      "state": "signed_out",
+      "mode": "anonymous",
+      "purpose": "Observe public browser-only calculations, input validation, local records and export.",
+      "cases": [
+        "IQ-REACHABLE",
+        "OQ-CSV-EXPORT",
+        "OQ-BASELINE",
+        "OQ-UNIT-CONVERSION",
+        "OQ-VOLUME-UNITS",
+        "OQ-EQUAL-CONCENTRATION",
+        "OQ-ZERO-VOLUME",
+        "OQ-INVALID-INPUTS",
+        "OQ-IDENTIFIERS",
+        "OQ-DUPLICATE-ID",
+        "OQ-RECORDS"
+      ],
+      "distinct_from": []
+    }
+  ],
+  "obligations": [
+    {
+      "id": "CL-URS-IQ-001",
+      "requirement_id": "URS-IQ-001",
+      "source": "URS-IQ-001/statement",
+      "statement": "The public static page shall identify itself as Dilution Bench and show the Prepare a dilution form without requiring an account or application server.",
+      "assertion_ids": [
+        "IQ-REACHABLE-S1-A1",
+        "IQ-REACHABLE-S1-A2",
+        "IQ-REACHABLE-S1-A3",
+        "IQ-REACHABLE-S1-A4"
+      ]
+    },
+    {
+      "id": "CL-URS-CALC-001",
+      "requirement_id": "URS-CALC-001",
+      "source": "URS-CALC-001/statement",
+      "statement": "For valid inputs, calculate stock volume V1 = (C2 × V2) / C1 and diluent volume = V2 − V1 after normalizing units. Show stock and diluent volumes in mL and target concentration in mg/mL, rounded to three decimal places. Independently specified reference calculations shall agree within an absolute tolerance of 0.0005 of the displayed unit. Equal stock and target concentration is valid and requires zero diluent.",
+      "assertion_ids": [
+        "OQ-CSV-EXPORT-S1-A1",
+        "OQ-CSV-EXPORT-S1-A2",
+        "OQ-CSV-EXPORT-S1-A3",
+        "OQ-CSV-EXPORT-S2-A1",
+        "OQ-CSV-EXPORT-S2-A2",
+        "OQ-CSV-EXPORT-S2-A3",
+        "OQ-CSV-EXPORT-S3-A1",
+        "OQ-CSV-EXPORT-S3-A2",
+        "OQ-BASELINE-S1-A1",
+        "OQ-BASELINE-S1-A2",
+        "OQ-BASELINE-S1-A3",
+        "OQ-BASELINE-S1-A4",
+        "OQ-BASELINE-S1-A5",
+        "OQ-EQUAL-CONCENTRATION-S1-A1",
+        "OQ-EQUAL-CONCENTRATION-S1-A2",
+        "OQ-EQUAL-CONCENTRATION-S1-A3"
+      ]
+    },
+    {
+      "id": "CL-URS-UNIT-001",
+      "requirement_id": "URS-UNIT-001",
+      "source": "URS-UNIT-001/statement",
+      "statement": "Stock and target concentration shall each accept mg/mL and ug/mL. Normalize 1000 ug/mL to 1 mg/mL before calculation. Stock 10 mg/mL, target 100 ug/mL and final 10 mL yield 0.100 mL stock and 9.900 mL diluent. Stock 10000 ug/mL, target 2 mg/mL and final 10 mL yield 2.000 mL stock and 8.000 mL diluent.",
+      "assertion_ids": [
+        "OQ-UNIT-CONVERSION-S1-A1",
+        "OQ-UNIT-CONVERSION-S1-A2",
+        "OQ-UNIT-CONVERSION-S1-A3",
+        "OQ-UNIT-CONVERSION-S2-A1",
+        "OQ-UNIT-CONVERSION-S2-A2",
+        "OQ-UNIT-CONVERSION-S2-A3"
+      ]
+    },
+    {
+      "id": "CL-URS-UNIT-002",
+      "requirement_id": "URS-UNIT-002",
+      "source": "URS-UNIT-002/statement",
+      "statement": "Final volume shall accept mL and uL. Normalize 1000 uL to 1 mL. With 10 mg/mL stock and 2 mg/mL target, 1000 uL final volume yields 0.200 mL stock and 0.800 mL diluent within 0.0005 mL.",
+      "assertion_ids": [
+        "OQ-VOLUME-UNITS-S1-A1",
+        "OQ-VOLUME-UNITS-S1-A2",
+        "OQ-VOLUME-UNITS-S1-A3"
+      ]
+    },
+    {
+      "id": "CL-URS-INPUT-001",
+      "requirement_id": "URS-INPUT-001",
+      "source": "URS-INPUT-001/statement",
+      "statement": "Stock concentration, target concentration and final volume are required finite decimal or scientific-notation numbers. Each normalized value shall be greater than zero and at most 1000000000 in its canonical unit (mg/mL or mL). Target concentration shall not exceed stock concentration. Empty, negative, nonfinite, over-limit and hexadecimal numerical inputs shall be rejected with a visible nonempty error without saving a record. Zero stock or target concentration shall be rejected. Zero final volume shall be rejected with Final volume must be greater than zero.",
+      "assertion_ids": [
+        "OQ-ZERO-VOLUME-S1-A1",
+        "OQ-ZERO-VOLUME-S2-A1",
+        "OQ-INVALID-INPUTS-S1-A1",
+        "OQ-INVALID-INPUTS-S2-A1",
+        "OQ-INVALID-INPUTS-S3-A1",
+        "OQ-INVALID-INPUTS-S4-A1",
+        "OQ-INVALID-INPUTS-S5-A1",
+        "OQ-INVALID-INPUTS-S6-A1",
+        "OQ-INVALID-INPUTS-S7-A1",
+        "OQ-INVALID-INPUTS-S8-A1",
+        "OQ-INVALID-INPUTS-S9-A1",
+        "OQ-INVALID-INPUTS-S10-A1",
+        "OQ-INVALID-INPUTS-S11-A1",
+        "OQ-INVALID-INPUTS-S12-A1",
+        "OQ-INVALID-INPUTS-S13-A1",
+        "OQ-INVALID-INPUTS-S14-A1",
+        "OQ-INVALID-INPUTS-S15-A1",
+        "OQ-INVALID-INPUTS-S16-A1",
+        "OQ-INVALID-INPUTS-S17-A1",
+        "OQ-INVALID-INPUTS-S18-A1",
+        "OQ-INVALID-INPUTS-S19-A1",
+        "OQ-INVALID-INPUTS-S20-A1",
+        "OQ-INVALID-INPUTS-S21-A1",
+        "OQ-INVALID-INPUTS-S22-A1",
+        "OQ-INVALID-INPUTS-S23-A1",
+        "OQ-INVALID-INPUTS-S24-A1",
+        "OQ-INVALID-INPUTS-S25-A1",
+        "OQ-INVALID-INPUTS-S26-A1",
+        "OQ-INVALID-INPUTS-S27-A1",
+        "OQ-INVALID-INPUTS-S28-A1",
+        "OQ-INVALID-INPUTS-S29-A1",
+        "OQ-INVALID-INPUTS-S30-A1",
+        "OQ-INVALID-INPUTS-S31-A1",
+        "OQ-INVALID-INPUTS-S32-A1",
+        "OQ-INVALID-INPUTS-S33-A1",
+        "OQ-INVALID-INPUTS-S34-A1",
+        "OQ-INVALID-INPUTS-S35-A1",
+        "OQ-INVALID-INPUTS-S35-A2",
+        "OQ-INVALID-INPUTS-S35-A3"
+      ]
+    },
+    {
+      "id": "CL-URS-ID-001",
+      "requirement_id": "URS-ID-001",
+      "source": "URS-ID-001/statement",
+      "statement": "Trim Sample ID, then accept 1 to 32 ASCII characters beginning with a letter or digit and followed by letters, digits, underscore, dot or hyphen. Empty, whitespace-only, 33-character, leading-underscore and embedded-space identifiers shall be rejected with a visible error without saving a record. Identifiers are case-sensitive, so Q and q shall coexist.",
+      "assertion_ids": [
+        "OQ-IDENTIFIERS-S1-A1",
+        "OQ-IDENTIFIERS-S2-A1",
+        "OQ-IDENTIFIERS-S3-A1",
+        "OQ-IDENTIFIERS-S4-A1",
+        "OQ-IDENTIFIERS-S5-A1",
+        "OQ-IDENTIFIERS-S6-A1",
+        "OQ-IDENTIFIERS-S7-A1",
+        "OQ-IDENTIFIERS-S8-A1",
+        "OQ-IDENTIFIERS-S9-A1",
+        "OQ-IDENTIFIERS-S10-A1",
+        "OQ-IDENTIFIERS-S11-A1",
+        "OQ-IDENTIFIERS-S12-A1",
+        "OQ-IDENTIFIERS-S13-A1",
+        "OQ-IDENTIFIERS-S14-A1",
+        "OQ-IDENTIFIERS-S15-A1"
+      ]
+    },
+    {
+      "id": "CL-URS-ID-002",
+      "requirement_id": "URS-ID-002",
+      "source": "URS-ID-002/statement",
+      "statement": "An identifier already present after trimming shall be rejected with Sample ID already exists. The original record is unchanged. The original numerical values shall remain unchanged and exactly one row for that identifier shall remain.",
+      "assertion_ids": [
+        "OQ-DUPLICATE-ID-S1-A1",
+        "OQ-DUPLICATE-ID-S1-A2",
+        "OQ-DUPLICATE-ID-S1-A3",
+        "OQ-DUPLICATE-ID-S2-A1",
+        "OQ-DUPLICATE-ID-S3-A1"
+      ]
+    },
+    {
+      "id": "CL-URS-RECORD-001",
+      "requirement_id": "URS-RECORD-001",
+      "source": "URS-RECORD-001/statement",
+      "statement": "Within one browser profile, saved preparations shall survive navigation and page reload in the same app mode and workspace. Saved preparations shall display one row per preparation with the six CSV columns, trimmed identifier and normalized numbers to three decimal places. Clear preparations shall remove every record in the selected app mode and workspace. Browser storage is local to that profile; server persistence, cross-device synchronization and account access controls are outside this demonstration scope.",
+      "assertion_ids": [
+        "OQ-RECORDS-S1-A1",
+        "OQ-RECORDS-S1-A2",
+        "OQ-RECORDS-S1-A3",
+        "OQ-RECORDS-S2-A1",
+        "OQ-RECORDS-S3-A1",
+        "OQ-RECORDS-S4-A1"
+      ]
+    },
+    {
+      "id": "CL-URS-CSV-001",
+      "requirement_id": "URS-CSV-001",
+      "source": "URS-CSV-001/statement",
+      "statement": "Download CSV shall produce a UTF-8 CSV with one row per retained preparation sorted by Sample ID in ASCII lexical order. Column order shall be Sample ID, Stock (mg/mL), Target (mg/mL), Final volume (mL), Stock volume (mL), Diluent volume (mL). Numeric values shall use the units in those headings and three decimal places, matching displayed records; no records shall be omitted or duplicated.",
+      "assertion_ids": [
+        "OQ-CSV-EXPORT-S1-A1",
+        "OQ-CSV-EXPORT-S1-A2",
+        "OQ-CSV-EXPORT-S1-A3",
+        "OQ-CSV-EXPORT-S2-A1",
+        "OQ-CSV-EXPORT-S2-A2",
+        "OQ-CSV-EXPORT-S2-A3",
+        "OQ-CSV-EXPORT-S3-A1",
+        "OQ-CSV-EXPORT-S3-A2"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "IQ-REACHABLE",
+      "title": "Open the public browser workbench",
+      "classification": "IQ",
+      "requirements": [
+        "URS-IQ-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "IQ-REACHABLE-S1",
+          "instruction": "Open the page and confirm the public preparation form.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "IQ-REACHABLE-S1-A1",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Dilution Bench home"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            },
+            {
+              "id": "IQ-REACHABLE-S1-A2",
+              "locator": {
+                "by": "role",
+                "role": "heading",
+                "value": "Prepare a dilution"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            },
+            {
+              "id": "IQ-REACHABLE-S1-A3",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            },
+            {
+              "id": "IQ-REACHABLE-S1-A4",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "IQ-REACHABLE-S1-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "IQ-REACHABLE-S1-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-CSV-EXPORT",
+      "title": "Compare browser worksheet and downloaded CSV",
+      "classification": "OQ",
+      "requirements": [
+        "URS-CSV-001",
+        "URS-CALC-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-CSV-EXPORT-S1",
+          "instruction": "Clear the register and prepare EXPORT-Z with the baseline calculation.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "EXPORT-Z"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-CSV-EXPORT-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-CSV-EXPORT-S1-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 8,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-CSV-EXPORT-S1-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-CSV-EXPORT-S1-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-CSV-EXPORT-S2",
+          "instruction": "Prepare EXPORT-A with the independent one-third calculation.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "EXPORT-A"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "3"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-CSV-EXPORT-S2-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 0.333,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-CSV-EXPORT-S2-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 0.667,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-CSV-EXPORT-S2-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 1,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-CSV-EXPORT-S2-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-CSV-EXPORT-S3",
+          "instruction": "Review the sorted browser records and download the CSV.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            },
+            {
+              "op": "download",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Download CSV"
+              },
+              "save_as": "worksheet"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-CSV-EXPORT-S3-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "EXPORT-A",
+                  "3.000",
+                  "1.000",
+                  "1.000",
+                  "0.333",
+                  "0.667"
+                ],
+                [
+                  "EXPORT-Z",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            },
+            {
+              "id": "OQ-CSV-EXPORT-S3-A2",
+              "variable": "worksheet.text",
+              "comparison": "equals",
+              "expected": "Sample ID,Stock (mg/mL),Target (mg/mL),Final volume (mL),Stock volume (mL),Diluent volume (mL)\r\nEXPORT-A,3.000,1.000,1.000,0.333,0.667\r\nEXPORT-Z,10.000,2.000,10.000,2.000,8.000\r\n"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-CSV-EXPORT-S3-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-CSV-EXPORT-S3-SCREEN",
+              "kind": "screenshot"
+            },
+            {
+              "id": "OQ-CSV-EXPORT-S3-DOWNLOAD",
+              "kind": "download",
+              "variable": "worksheet"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-BASELINE",
+      "title": "Calculate a standard dilution",
+      "classification": "OQ",
+      "requirements": [
+        "URS-CALC-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-BASELINE-S1",
+          "instruction": "Prepare 10 mL of 2 mg/mL from 10 mg/mL stock.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "BASELINE"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-BASELINE-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-BASELINE-S1-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 8,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-BASELINE-S1-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-BASELINE-S1-A4",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "equals",
+              "expected": "2.000",
+              "read": "text"
+            },
+            {
+              "id": "OQ-BASELINE-S1-A5",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "equals",
+              "expected": "8.000",
+              "read": "text"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-BASELINE-S1-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-BASELINE-S1-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-UNIT-CONVERSION",
+      "title": "Normalize stock and target concentration units",
+      "classification": "OQ",
+      "requirements": [
+        "URS-UNIT-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-UNIT-CONVERSION-S1",
+          "instruction": "Prepare 10 mL of 100 ug/mL from 10 mg/mL stock.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "TARGET-UNITS"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "100"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "ug/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-UNIT-CONVERSION-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 0.1,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-UNIT-CONVERSION-S1-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 9.9,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-UNIT-CONVERSION-S1-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 0.1,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-UNIT-CONVERSION-S1-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-UNIT-CONVERSION-S1-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        },
+        {
+          "id": "OQ-UNIT-CONVERSION-S2",
+          "instruction": "Prepare 10 mL of 2 mg/mL from 10000 ug/mL stock.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "STOCK-UNITS"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10000"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "ug/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-UNIT-CONVERSION-S2-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-UNIT-CONVERSION-S2-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 8,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-UNIT-CONVERSION-S2-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-UNIT-CONVERSION-S2-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-UNIT-CONVERSION-S2-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-VOLUME-UNITS",
+      "title": "Normalize microlitre final volume",
+      "classification": "OQ",
+      "requirements": [
+        "URS-UNIT-002"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-VOLUME-UNITS-S1",
+          "instruction": "Prepare 1000 uL of 2 mg/mL from 10 mg/mL stock.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "VOLUME-UNITS"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "1000"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "uL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-VOLUME-UNITS-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 0.2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-VOLUME-UNITS-S1-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 0.8,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-VOLUME-UNITS-S1-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-VOLUME-UNITS-S1-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-VOLUME-UNITS-S1-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-EQUAL-CONCENTRATION",
+      "title": "Accept the equal-concentration boundary",
+      "classification": "OQ",
+      "requirements": [
+        "URS-CALC-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-EQUAL-CONCENTRATION-S1",
+          "instruction": "Prepare 1 mL at the unchanged stock concentration.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "NEAT"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-EQUAL-CONCENTRATION-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 1,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-EQUAL-CONCENTRATION-S1-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 0,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-EQUAL-CONCENTRATION-S1-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-EQUAL-CONCENTRATION-S1-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-EQUAL-CONCENTRATION-S1-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-ZERO-VOLUME",
+      "title": "Reject zero final volume",
+      "classification": "OQ",
+      "requirements": [
+        "URS-INPUT-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-ZERO-VOLUME-S1",
+          "instruction": "Try saving zero final volume and verify the field-specific error.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "ZERO"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "0"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-ZERO-VOLUME-S1-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "comparison": "equals",
+              "expected": "Final volume must be greater than zero.",
+              "read": "text"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-ZERO-VOLUME-S1-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-ZERO-VOLUME-S1-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        },
+        {
+          "id": "OQ-ZERO-VOLUME-S2",
+          "instruction": "Verify the rejected preparation did not enter the register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-ZERO-VOLUME-S2-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-ZERO-VOLUME-S2-OBS",
+              "kind": "observation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-INVALID-INPUTS",
+      "title": "Reject invalid numerical inputs and accept the inclusive maximum",
+      "classification": "OQ",
+      "requirements": [
+        "URS-INPUT-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-INVALID-INPUTS-S1",
+          "instruction": "Reject numerical input {\"stockConcentration\":\"\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-0"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": ""
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S1-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S1-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S2",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S2-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S2-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S3",
+          "instruction": "Reject numerical input {\"stockConcentration\":\"-1\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-1"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "-1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S3-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S3-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S4",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S4-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S4-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S5",
+          "instruction": "Reject numerical input {\"stockConcentration\":\"Infinity\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-2"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "Infinity"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S5-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S5-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S6",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S6-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S6-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S7",
+          "instruction": "Reject numerical input {\"stockConcentration\":\"1000000001\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-3"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "1000000001"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S7-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S7-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S8",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S8-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S8-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S9",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-4"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": ""
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S9-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S9-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S10",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S10-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S10-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S11",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"-1\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-5"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "-1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S11-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S11-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S12",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S12-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S12-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S13",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"Infinity\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-6"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "Infinity"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S13-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S13-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S14",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S14-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S14-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S15",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"1000000001\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-7"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "1000000001"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S15-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S15-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S16",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S16-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S16-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S17",
+          "instruction": "Reject numerical input {\"finalVolume\":\"\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-8"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": ""
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S17-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S17-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S18",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S18-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S18-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S19",
+          "instruction": "Reject numerical input {\"finalVolume\":\"-1\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-9"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "-1"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S19-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S19-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S20",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S20-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S20-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S21",
+          "instruction": "Reject numerical input {\"finalVolume\":\"Infinity\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-10"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "Infinity"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S21-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S21-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S22",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S22-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S22-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S23",
+          "instruction": "Reject numerical input {\"finalVolume\":\"1000000001\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-11"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "1000000001"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S23-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S23-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S24",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S24-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S24-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S25",
+          "instruction": "Reject numerical input {\"stockConcentration\":\"0\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "0"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S25-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S25-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S26",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S26-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S26-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S27",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"0\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-13"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "0"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S27-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S27-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S28",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S28-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S28-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S29",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"11\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-14"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "11"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S29-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S29-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S30",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S30-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S30-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S31",
+          "instruction": "Reject numerical input {\"stockConcentration\":\"0x10\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-15"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "0x10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S31-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S31-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S32",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S32-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S32-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S33",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"NaN\"} and preserve the empty register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "INVALID-16"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "NaN"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S33-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S33-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S34",
+          "instruction": "Confirm no preparation was saved.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S34-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S34-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S35",
+          "instruction": "Accept the exact maximum for all normalized quantities.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "MAXIMUM"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "1000000000"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "1000000000"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "1000000000"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S35-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 1000000000,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-INVALID-INPUTS-S35-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 0,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-INVALID-INPUTS-S35-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 1000000000,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S35-OBS",
+              "kind": "observation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-IDENTIFIERS",
+      "title": "Check identifier boundaries, trimming and case sensitivity",
+      "classification": "OQ",
+      "requirements": [
+        "URS-ID-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-IDENTIFIERS-S1",
+          "instruction": "Accept Sample ID \"Q\".",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "Q"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-sample-id"
+              },
+              "comparison": "equals",
+              "expected": "Q",
+              "read": "text"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S1-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S2",
+          "instruction": "Accept Sample ID \"q\".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "q"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S2-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-sample-id"
+              },
+              "comparison": "equals",
+              "expected": "q",
+              "read": "text"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S2-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S3",
+          "instruction": "Accept Sample ID \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S3-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-sample-id"
+              },
+              "comparison": "equals",
+              "expected": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "read": "text"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S3-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S4",
+          "instruction": "Accept Sample ID \" A_b.c-d \".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": " A_b.c-d "
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S4-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-sample-id"
+              },
+              "comparison": "equals",
+              "expected": "A_b.c-d",
+              "read": "text"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S4-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S5",
+          "instruction": "Confirm all accepted identifiers coexist after trimming.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S5-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "A_b.c-d",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "Q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S5-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-IDENTIFIERS-S5-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S6",
+          "instruction": "Reject Sample ID \"\".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": ""
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S6-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S6-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S7",
+          "instruction": "Confirm rejected identifiers added no records.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S7-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "A_b.c-d",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "Q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S7-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S8",
+          "instruction": "Reject Sample ID \"  \".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "  "
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S8-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S8-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S9",
+          "instruction": "Confirm rejected identifiers added no records.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S9-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "A_b.c-d",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "Q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S9-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S10",
+          "instruction": "Reject Sample ID \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S10-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S10-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S11",
+          "instruction": "Confirm rejected identifiers added no records.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S11-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "A_b.c-d",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "Q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S11-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S12",
+          "instruction": "Reject Sample ID \"_LEADING\".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "_LEADING"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S12-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S12-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S13",
+          "instruction": "Confirm rejected identifiers added no records.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S13-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "A_b.c-d",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "Q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S13-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S14",
+          "instruction": "Reject Sample ID \"HAS SPACE\".",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "HAS SPACE"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S14-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S14-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-IDENTIFIERS-S15",
+          "instruction": "Confirm rejected identifiers added no records.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-IDENTIFIERS-S15-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "A_b.c-d",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "Q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ],
+                [
+                  "q",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-IDENTIFIERS-S15-OBS",
+              "kind": "observation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-DUPLICATE-ID",
+      "title": "Protect a saved preparation from duplicate replacement",
+      "classification": "OQ",
+      "requirements": [
+        "URS-ID-002"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-DUPLICATE-ID-S1",
+          "instruction": "Save the original preparation.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "DUPLICATE"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-DUPLICATE-ID-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-DUPLICATE-ID-S1-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 8,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-DUPLICATE-ID-S1-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-DUPLICATE-ID-S1-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-DUPLICATE-ID-S2",
+          "instruction": "Attempt the trimmed duplicate using different quantities.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": " DUPLICATE "
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "10"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "5"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-DUPLICATE-ID-S2-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]"
+              },
+              "comparison": "equals",
+              "expected": "Sample ID already exists. The original record is unchanged.",
+              "read": "text"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-DUPLICATE-ID-S2-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-DUPLICATE-ID-S2-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        },
+        {
+          "id": "OQ-DUPLICATE-ID-S3",
+          "instruction": "Confirm exactly the original values remain.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-DUPLICATE-ID-S3-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "DUPLICATE",
+                  "10.000",
+                  "2.000",
+                  "10.000",
+                  "2.000",
+                  "8.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-DUPLICATE-ID-S3-OBS",
+              "kind": "observation"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "OQ-RECORDS",
+      "title": "Retain a preparation across navigation and reload, then clear it",
+      "classification": "OQ",
+      "requirements": [
+        "URS-RECORD-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Use synthetic data; this case starts by clearing its own browser workspace."
+      ],
+      "steps": [
+        {
+          "id": "OQ-RECORDS-S1",
+          "instruction": "Save the independently specified preparation.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "#prepare"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": " RETAINED "
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": "8"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "4"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-RECORDS-S1-A1",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "comparison": "numeric",
+              "expected": 1,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-RECORDS-S1-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "comparison": "numeric",
+              "expected": 3,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-RECORDS-S1-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-target-concentration"
+              },
+              "comparison": "numeric",
+              "expected": 2,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-RECORDS-S1-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-RECORDS-S2",
+          "instruction": "Navigate away and return to the retained register.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Prepare dilution"
+              }
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "link",
+                "value": "Saved preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-RECORDS-S2-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "RETAINED",
+                  "8.000",
+                  "2.000",
+                  "4.000",
+                  "1.000",
+                  "3.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-RECORDS-S2-OBS",
+              "kind": "observation"
+            },
+            {
+              "id": "OQ-RECORDS-S2-SCREEN",
+              "kind": "screenshot"
+            }
+          ]
+        },
+        {
+          "id": "OQ-RECORDS-S3",
+          "instruction": "Reload the same application URL and reopen the register.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "version.json"
+            },
+            {
+              "op": "navigate",
+              "url": "#records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-RECORDS-S3-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ],
+                [
+                  "RETAINED",
+                  "8.000",
+                  "2.000",
+                  "4.000",
+                  "1.000",
+                  "3.000"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-RECORDS-S3-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-RECORDS-S4",
+          "instruction": "Clear this workspace and verify the register is empty.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Clear preparations"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-RECORDS-S4-A1",
+              "locator": {
+                "by": "role",
+                "role": "table",
+                "value": "Dilution records"
+              },
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Stock (mg/mL)",
+                  "Target (mg/mL)",
+                  "Final volume (mL)",
+                  "Stock volume (mL)",
+                  "Diluent volume (mL)"
+                ]
+              ],
+              "read": "table"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-RECORDS-S4-OBS",
+              "kind": "observation"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [],
+  "fixtures": [],
+  "references": [
+    "references/calculation-examples.csv"
+  ],
+  "context_hashes": []
+}

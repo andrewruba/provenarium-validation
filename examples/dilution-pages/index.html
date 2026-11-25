@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; img-src data:; base-uri 'none'"
+    />
+    <title>Dilution Bench · Validation sandbox</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <span class="brand"
+          ><span class="brand-mark" aria-hidden="true">∴</span>Dilution Bench</span
+        >
+      </div>
+    </header>
+    <main>
+      <p class="eyebrow">Scientific software validation</p>
+      <h1>One dilution planner. Two test targets.</h1>
+      <p class="intro">
+        Exercise a validation workflow with a standard C₁V₁ = C₂V₂ calculator. Prepare dilutions,
+        review saved records, and compare exported worksheets with independently specified
+        expectations.
+      </p>
+      <div class="demo-grid">
+        <section class="card demo-card">
+          <h2>Corrected version</h2>
+          <p>
+            A reference implementation with concentration and volume conversion, input checks,
+            duplicate protection, and CSV export.
+          </p>
+          <a class="launch-link" href="correct/">Open corrected app</a>
+        </section>
+        <section class="card demo-card">
+          <h2>Faulty version</h2>
+          <p>
+            The same interface with four deliberate calculation, input, record-integrity, and export
+            defects for a validation protocol to detect.
+          </p>
+          <a class="launch-link" href="faulty/">Open faulty app</a>
+        </section>
+      </div>
+      <section class="card reference landing-note">
+        <h2>Disposable browser data</h2>
+        <p>
+          These are browser-only demonstrations. Synthetic preparation records are stored in your
+          browser, separately for each version and workspace. Use
+          <strong>Clear preparations</strong> before repeating a validation run.
+        </p>
+        <p>
+          No account or API key is needed to use either app. The examples assume a simple dilution
+          with additive volumes; they do not account for volume contraction, purity, or pipette
+          limitations.
+        </p>
+      </section>
+    </main>
+    <footer>
+      <span>Synthetic validation sandbox · No laboratory or clinical use.</span
+      ><span class="build-note">Build {{COMMIT}}</span>
+    </footer>
+  </body>
+</html>

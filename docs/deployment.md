@@ -1,94 +1,82 @@
-# Deploy both dilution demos through CI/CD
+# GitHub Pages deployment
 
-The repository's [Render Blueprint](../render.yaml) defines two free Node web
-services: `provenarium-dilution-faulty` and `provenarium-dilution-correct`. They use
-the same application source with different `DILUTION_MODE` values. The validation
-CLI runs on your computer or a GitHub Actions runner; the hosted services run
-only the demonstration app.
+Both browser-only Dilution Bench demos are published from this repository:
 
-## One-time setup
+- [Corrected app](https://andrewruba.github.io/provenarium-validation/correct/)
+- [Deliberately faulty app](https://andrewruba.github.io/provenarium-validation/faulty/)
+- [Demo index](https://andrewruba.github.io/provenarium-validation/)
 
-The Blueprint is configuration, not evidence of a live deployment. A Render
-workspace must first be connected to this private GitHub repository.
+The public site serves HTML, CSS, and JavaScript. Calculations and preparation
+records stay in the browser; there is no application server, database, or hosting
+account to configure. The original Node demonstration remains available locally
+for testing backend HTTP behavior.
 
-1. Commit and push the setup to `main`, then confirm that both operating-system
-   jobs in **CLI verification** pass for that commit.
-2. In Render, connect your GitHub account and grant access to
-   `andrewruba/provenarium-validation`. The repository can remain private; the
-   demonstration URLs will be public.
-3. Choose **New → Blueprint**, select this repository and branch `main`, and
-   select `render.yaml`. Confirm that the proposed resources are exactly the two
-   **Free** web services. No database, persistent disk, or paid compute is needed.
-4. Create the Blueprint. Treat this first provisioning as a separate bootstrap:
-   start it only after step 1 is green. Wait for both services to become live.
-5. Copy each service's actual HTTPS URL from Render. Do not assume a hostname
-   from its service name: Render may assign a suffix. Open `/health` on each URL
-   and check `application: "Dilution Bench"` and its `mode`.
-6. Follow [Testing the CLI against hosted demos](testing-hosted-dilution.md) to
-   run the prepared protocol or test AI authoring. Keep the two service URLs
-   labeled by mode.
+## Deployment flow
 
-Neither Render API credentials nor deploy-hook URLs belong in the repository.
-This setup uses Render's GitHub integration, so it requires no deployment secret
-in GitHub Actions. Creating the Blueprint is the only service-provisioning step.
+The [CI workflow](../.github/workflows/ci.yml) runs on pull requests and pushes to
+`main`. It checks formatting, types, unit tests, browser workflows, and clean npm
+package installation on macOS and Ubuntu. The browser checks exercise the static
+apps under a repository-style URL prefix as well as the existing Node examples.
 
-## What happens after each push
+After both operating-system jobs pass on `main`, the workflow builds `_site/`,
+uploads only that generated directory, and deploys it using GitHub Pages. Pull
+requests run verification without publishing. The `github-pages` environment
+records the deployment and its actual URL. No custom deployment token is needed;
+the deploy job uses GitHub's scoped Pages and OIDC permissions.
 
 ```text
 Push to main
-  → GitHub Actions verifies the CLI on Ubuntu and macOS
-  → all checks pass
-  → Render builds and deploys both app modes
-  → /health identifies the running mode and commit
+  → macOS and Ubuntu verification
+  → build static demo assets
+  → publish GitHub Pages
 ```
 
-The [CI workflow](../.github/workflows/ci.yml) checks the deployment configuration,
-formatting, types, unit and browser tests, and clean-package installation. A new
-run cancels unfinished verification for the same branch or pull request. Pull
-requests run checks but do not deploy their branch. **Run workflow** can rerun
-verification manually.
+For a new fork, enable **Settings → Pages → Source: GitHub Actions**, then run
+**Actions → CLI verification → Run workflow** on `main`. Public repositories can
+use free Pages hosting. The site uses relative links, so it also works under a
+different repository name. Update the example URLs in documentation and the
+manual validation workflow for your fork.
 
-Each service declares `autoDeployTrigger: checksPass`, Render's **After CI Checks
-Pass** setting. Render observes GitHub checks and performs the deployment; there
-is no GitHub job that calls a deploy hook. Failed or cancelled checks prevent an
-automatic release. Preserve this setting rather than selecting **On Commit**.
-Render treats neutral and skipped checks as passing, so the qualification jobs
-are deliberately unconditional for pushes to `main`.
+GitHub documents the required permissions and artifacts in its
+[custom Pages workflow guide](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
-See Render's [CI integration](https://render.com/docs/deploys#integrating-with-ci)
-and [Blueprint reference](https://render.com/docs/blueprint-spec#autodeploytrigger).
+## Local preview
 
-## Runtime settings and test data
+```sh
+npm run demo:pages
+```
 
-The Blueprint pins Node.js to the same version as `.nvmrc`, installs from
-`package-lock.json`, builds the application, and starts the compiled server.
-`HOST=0.0.0.0` exposes the HTTP listener to Render's proxy; Render supplies `PORT`.
-Local development still defaults to loopback. `/health` is the health check path.
+Open `http://127.0.0.1:4176/`. The preview serves only the generated static files;
+it does not emulate a backend. Stop with Ctrl+C. To use another port:
 
-Both services use one process and in-memory synthetic records. A service restart
-or redeploy clears those records. Use a fresh `/w/<workspace-id>/` workspace for
-each test project; the hosted-testing guide supplies a helper for this. Discovery
-may create records, so clear only that workspace before executing its approved
-protocol. Do not share a workspace between simultaneous test runs.
+```sh
+npm run demo:pages -- --port 4180
+```
 
-Free services sleep after 15 idle minutes and can take about a minute to wake.
-Their combined running time counts against the workspace's 750 monthly free
-instance hours; bandwidth and build allowances also apply. Open each service and
-wait for a successful health response before testing. Avoid keep-alive monitors
-that consume the allowance unnecessarily. These are disposable test targets,
-with no persistence requirement. [Render free-service limits](https://render.com/docs/free)
+`npm run build:pages` builds without starting a server. The generated directory is
+ignored by Git. Each variant includes a `version.json` identifying its mode and
+build commit. That metadata helps detect a stale deployment; it is not independent
+proof of source-to-deployment equivalence.
+
+## Verify the published deployment
+
+Follow [Testing the CLI against the Pages demos](testing-hosted-dilution.md).
+The **Published Pages validation** Actions workflow runs the same prepared
+comparison on the live URLs and retains HTML reports, observations, screenshots,
+and CSV traceability for 14 days. Run it after the Pages deployment is complete;
+it is separate from the pre-deployment gate so publication cannot wait on itself.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| Repository not listed in Render | Grant Render's GitHub integration access to this private repository. |
-| Successful CI, but no new deploy | Confirm the service follows `main`, the GitHub connection is active, and Auto-Deploy is **After CI Checks Pass**. Check Render's Events page. |
-| First request shows a loading page | Wait for the free instance to wake, then retry `/health`. |
-| Port detection fails | Confirm `HOST=0.0.0.0`, preserve Render's `PORT`, and use the Blueprint start command. |
-| Duplicate IDs or extra CSV rows | Use a new workspace or clear the existing workspace before the run. |
-| Records disappear mid-test | Check for a redeploy/restart or workspace expiry; start a fresh run and retain the interrupted evidence. |
-| Both services have the same behavior | Compare `/health` mode values and the services' `DILUTION_MODE` settings. |
+| Pages deploy job fails or reports the site missing | Enable Pages with GitHub Actions as its source and check repository/environment permissions. |
+| Site initially returns 404 | Wait for the deployment to complete and use its reported URL, including the repository path. |
+| Changes seem stale | Inspect the variant's `version.json`, reload the page, and compare its commit with the deployment. |
+| CLI comparison targets the wrong build | Wait for the selected workflow revision to deploy; `--commit` requires an exact match. |
+| Duplicate IDs or extra records during manual use | Click Clear preparations in the same version and workspace before repeating a test. |
+| Saving fails | Allow browser local storage; the app reports unavailable/full storage without claiming the record was saved. |
+| HTTP checks return 404 | Use the browser-only Pages protocol. The original Node protocol expects a backend and is a different fixture. |
 
-For local use and the expected four deliberate failures, see the
-[Dilution Bench guide](../examples/dilution-app/README.md).
+The earlier Render setup has been superseded by GitHub Pages. No Render account,
+service, deploy hook, or API key is needed for these published demos.

@@ -10,6 +10,7 @@ playwright-report/
 .DS_Store
 .demo-results/
 hosted-evidence/
+_site/
 examples/dilution-validation/drafts/
 examples/dilution-validation/packages/
 examples/dilution-validation/runs/

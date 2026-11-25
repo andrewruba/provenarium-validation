@@ -1,0 +1,89 @@
+schema_version: 1
+document:
+  id: URS-DILUTION-PAGES
+  revision: "1"
+  title: Browser dilution planner requirements
+  intended_use: Prepare synthetic single-step laboratory dilutions with C1V1 = C2V2, retain
+    calculations in local browser storage, and export a preparation worksheet. This is a generic
+    training and software-validation example.
+  description: A browser-only static application. Expected values come from independently specified
+    arithmetic, not observed application outputs. Each procedure starts with an empty browser
+    workspace. No backend API or organization-specific acceptance criteria are
+    assumed.
+  roles:
+    - laboratory user
+  interfaces:
+    - name: Preparation CSV
+      direction: out
+      format: UTF-8 CSV
+      transfer: manual browser download
+      data: Synthetic identifiers, normalized concentrations and preparation volumes.
+families:
+  - id: browser-workbench
+    title: Browser workbench and scientific behavior
+    requirements:
+      - id: URS-IQ-001
+        title: Reachable browser workbench
+        statement: The public static page shall identify itself as Dilution Bench and show the Prepare a
+          dilution form without requiring an account or application server.
+      - id: URS-CALC-001
+        title: Dilution calculation and precision
+        statement: For valid inputs, calculate stock volume V1 = (C2 × V2) / C1 and diluent volume = V2 − V1
+          after normalizing units. Show stock and diluent volumes in mL and target concentration in
+          mg/mL, rounded to three decimal places. Independently specified reference calculations
+          shall agree within an absolute tolerance of 0.0005 of the displayed unit. Equal stock and
+          target concentration is valid and requires zero diluent.
+        references:
+          - references/calculation-examples.csv
+      - id: URS-UNIT-001
+        title: Concentration units
+        statement: Stock and target concentration shall each accept mg/mL and ug/mL. Normalize 1000 ug/mL to
+          1 mg/mL before calculation. Stock 10 mg/mL, target 100 ug/mL and final 10 mL yield 0.100
+          mL stock and 9.900 mL diluent. Stock 10000 ug/mL, target 2 mg/mL and final 10 mL yield
+          2.000 mL stock and 8.000 mL diluent.
+        references:
+          - references/calculation-examples.csv
+      - id: URS-UNIT-002
+        title: Final volume units
+        statement: Final volume shall accept mL and uL. Normalize 1000 uL to 1 mL. With 10 mg/mL stock and 2
+          mg/mL target, 1000 uL final volume yields 0.200 mL stock and 0.800 mL diluent within
+          0.0005 mL.
+        references:
+          - references/calculation-examples.csv
+      - id: URS-INPUT-001
+        title: Numerical input validation
+        statement: Stock concentration, target concentration and final volume are required finite decimal or
+          scientific-notation numbers. Each normalized value shall be greater than zero and at most
+          1000000000 in its canonical unit (mg/mL or mL). Target concentration shall not exceed
+          stock concentration. Empty, negative, nonfinite, over-limit and hexadecimal numerical
+          inputs shall be rejected with a visible nonempty error without saving a record. Zero stock
+          or target concentration shall be rejected. Zero final volume shall be rejected with Final
+          volume must be greater than zero.
+      - id: URS-ID-001
+        title: Identifier syntax and case sensitivity
+        statement: Trim Sample ID, then accept 1 to 32 ASCII characters beginning with a letter or digit and
+          followed by letters, digits, underscore, dot or hyphen. Empty, whitespace-only,
+          33-character, leading-underscore and embedded-space identifiers shall be rejected with a
+          visible error without saving a record. Identifiers are case-sensitive, so Q and q shall
+          coexist.
+      - id: URS-ID-002
+        title: Duplicate protection
+        statement: An identifier already present after trimming shall be rejected with Sample ID already
+          exists. The original record is unchanged. The original numerical values shall remain
+          unchanged and exactly one row for that identifier shall remain.
+      - id: URS-RECORD-001
+        title: Browser record retention and clearing
+        statement: Within one browser profile, saved preparations shall survive navigation and page reload
+          in the same app mode and workspace. Saved preparations shall display one row per
+          preparation with the six CSV columns, trimmed identifier and normalized numbers to three
+          decimal places. Clear preparations shall remove every record in the selected app mode and
+          workspace. Browser storage is local to that profile; server persistence, cross-device
+          synchronization and account access controls are outside this demonstration scope.
+      - id: URS-CSV-001
+        title: Preparation CSV
+        statement: Download CSV shall produce a UTF-8 CSV with one row per retained preparation sorted by
+          Sample ID in ASCII lexical order. Column order shall be Sample ID, Stock (mg/mL), Target
+          (mg/mL), Final volume (mL), Stock volume (mL), Diluent volume (mL). Numeric values shall
+          use the units in those headings and three decimal places, matching displayed records; no
+          records shall be omitted or duplicated.
+open_questions: []

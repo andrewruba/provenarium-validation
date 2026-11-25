@@ -5,8 +5,10 @@ Prepare a dilution with `C₁V₁ = C₂V₂`, view retained preparation records
 download CSV. Concentrations support mg/mL and µg/mL; final volumes support mL
 and µL. It uses synthetic data, requires no accounts, and defaults to loopback.
 
-For hosted versions, see [CI/CD deployment](../../docs/deployment.md) and
-[testing the main CLI against both services](../../docs/testing-hosted-dilution.md).
+This is the original Node/HTTP example. The published GitHub Pages demos use a
+separate browser-only implementation and protocol: see
+[CI/CD deployment](../../docs/deployment.md) and
+[testing the main CLI against Pages](../../docs/testing-hosted-dilution.md).
 
 ## Start the app
 
