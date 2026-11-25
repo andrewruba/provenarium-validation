@@ -3,9 +3,9 @@
 A command-line tool project for software validation in pharma and other GxP
 workflows, centered on user requirements, readable protocols, and test evidence.
 
-## Design
+## Workflow
 
-The intended workflow turns a User Requirements Specification (URS) into a
+The workflow turns a User Requirements Specification (URS) into a
 human-readable Installation and Operational Qualification (IOQ) protocol and
 reviewable, deterministic Playwright tests.
 
@@ -20,7 +20,7 @@ provenarium run
 provenarium report
 ```
 
-The CLI design includes:
+The CLI supports:
 
 - Blank, AI-assisted, or human-authored YAML requirements, informed by linked
   source code, design documents, and other context.
@@ -68,7 +68,9 @@ npm run verify:package
 
 Live-provider authoring quality evaluations remain pending; fixture-based tests
 verify adapters and spending controls without paid calls. No package has been
-published. See [release notes](CHANGELOG.md) for the implementation boundary.
+published. See [verification status](docs/verification-status.md) for completed
+checks and pending evaluations, and [release notes](CHANGELOG.md) for the
+implementation boundary.
 
 ## Scientific validation sandbox
 

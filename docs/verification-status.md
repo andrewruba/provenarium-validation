@@ -1,9 +1,20 @@
 # Implementation verification
 
-Verified on 25 November 2026 UTC. This is the `0.1.0` implementation candidate;
-no npm package or website deployment has been published.
+Verification recorded on 25 November 2026 UTC. This is the `0.1.0` implementation
+candidate; no npm package has been published. The browser-only demonstration apps
+are live on GitHub Pages; see the [deployment guide](deployment.md).
 
-## Completed checks
+## Current CI and published demos
+
+- [CI verification](https://github.com/andrewruba/provenarium-validation/actions/runs/45548265984)
+  passed formatting, types, builds, 81 unit/contract tests, 16 Chromium end-to-end
+  tests, and clean npm archive installation on macOS and Ubuntu.
+- [Published Pages validation](https://github.com/andrewruba/provenarium-validation/actions/runs/45548836347)
+  verified the deployed revision with the main CLI: 11 passes for the corrected
+  app and seven passes plus exactly four expected failures for the faulty app.
+  See the [Pages testing guide](testing-hosted-dilution.md) to repeat the comparison.
+
+## Initial implementation checks
 
 - Formatting, strict TypeScript checks, and builds pass.
 - 64 unit/contract tests pass, including both provider transports, spending
@@ -47,9 +58,11 @@ user's request. No paid provider calls were made. Scripted fixtures establish
 transport, validation, budgeting, and failure behavior; they do not establish
 that real models consistently author useful qualification protocols.
 
-This outstanding development evaluation must be completed before claiming all
-acceptance criteria in the implementation plan have been met. Package publication
-and website work are separately excluded from this delivery.
+Complete one capped Standard evaluation per provider using privately supplied
+keys, recording authoring quality, actual requirements coverage, remaining
+questions, and cost. Real-provider authoring quality remains unverified until
+those evaluations are completed. npm package publication is separate from source
+and demo deployment.
 
 The npm registry returned no existing public package for `provenarium-validation`
 at verification time. This check does not reserve the name or guarantee that a
