@@ -1,0 +1,104 @@
+name: Installable release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: npm-shrinkwrap.json
+      - run: npm ci
+      - name: Build one versioned archive and checksum manifest
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          node scripts/prepare-release.mjs --tag "$RELEASE_TAG"
+          --commit "$GITHUB_SHA" --output release-assets
+      - uses: actions/upload-artifact@v6
+        id: upload
+        with:
+          name: release-assets-${{ github.run_id }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 14
+
+  qualification:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: npm-shrinkwrap.json
+      - run: npm ci
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: release-assets
+      - name: Verify the exact release assets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          node scripts/prepare-release.mjs --verify --tag "$RELEASE_TAG"
+          --commit "$GITHUB_SHA" --output release-assets
+      - run: npx playwright install --with-deps chromium
+      - run: npm run check
+      - run: npm run test:e2e
+      - name: Install, qualify, and uninstall the actual release archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/verify-package.mjs "release-assets/provenarium-validation-${RELEASE_TAG#v}.tgz"
+
+  publish:
+    needs: [build, qualification]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: release-assets
+      - name: Verify qualified assets and unchanged remote tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/prepare-release.mjs --verify --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --output release-assets
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" = "$GITHUB_SHA"
+      - name: Create draft, attach verified assets, then publish prerelease
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$RELEASE_TAG" release-assets/* --verify-tag --draft --prerelease --title "Provenarium Validation $RELEASE_TAG" --notes-file release-assets/RELEASE_NOTES.md
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease

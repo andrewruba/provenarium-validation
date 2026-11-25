@@ -28,6 +28,7 @@ import {
 import { renderReport, renderUrs } from './reports.js';
 import { executePackage, verifyApprovedPackage } from './runtime/index.js';
 import { getProviderKey, forgetProviderKey, prepareBindings } from './credentials.js';
+import { uninstall } from './uninstall.js';
 import {
   draftUrs,
   reviewUrs,
@@ -40,10 +41,11 @@ import {
 
 const abort = new AbortController();
 process.once('SIGINT', () => abort.abort());
+const packageInfo = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const program = new Command()
   .name('provenarium')
   .description('Local requirements, qualification protocols, and browser test evidence')
-  .version('0.1.0')
+  .version(packageInfo.version)
   .option('--project <directory>', 'Validation project directory', '.');
 function root(command: Command) {
   return path.resolve(command.optsWithGlobals().project as string);
@@ -534,6 +536,14 @@ auth
     const provider = await authProvider(command);
     await forgetProviderKey(provider);
     console.log(`Removed stored ${provider} credential, if present.`);
+  });
+program
+  .command('uninstall')
+  .description('Remove this npm global installation, retaining projects, credentials, and browsers')
+  .option('--yes', 'Confirm removal without an interactive prompt')
+  .option('--dry-run', 'Inspect the installation without removing it')
+  .action(async (opts) => {
+    await uninstall({ yes: opts.yes, dryRun: opts.dryRun, signal: abort.signal });
   });
 program
   .command('browser')

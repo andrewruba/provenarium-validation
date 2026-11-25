@@ -11,6 +11,7 @@ playwright-report/
 .demo-results/
 hosted-evidence/
 _site/
+release-assets/
 examples/dilution-validation/drafts/
 examples/dilution-validation/packages/
 examples/dilution-validation/runs/

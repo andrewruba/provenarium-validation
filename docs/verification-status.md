@@ -1,10 +1,15 @@
 # Implementation verification
 
-Verification recorded on 25 November 2026 UTC. This is the `0.1.0` implementation
-candidate; no npm package has been published. The browser-only demonstration apps
+Verification recorded on 25 November 2026 UTC. Version `0.1.0` is distributed as a
+GitHub prerelease; the package is not published to the npm registry. The browser-only demonstration apps
 are live on GitHub Pages; see the [deployment guide](deployment.md).
 
 ## Current CI and published demos
+
+Installable archives are built once and verified on macOS and Ubuntu before the
+[release workflow](../.github/workflows/release.yml) publishes them. This includes
+the installed executable, global installation into an isolated prefix, uninstall
+guards, removal, and preservation of unrelated files and validation evidence.
 
 - [CI verification](https://github.com/andrewruba/provenarium-validation/actions/runs/45548265984)
   passed formatting, types, builds, 81 unit/contract tests, 16 Chromium end-to-end

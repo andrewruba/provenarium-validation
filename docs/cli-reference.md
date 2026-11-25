@@ -104,6 +104,17 @@ HTML/PDF and CSV traceability, verify evidence hashes, and expose incomplete or
 damaged records. `--no-pdf` is available on rendering/generation/approval commands
 for HTML-only workflows. Chromium setup is explicit: `provenarium browser install`.
 
+## Uninstall
+
+`provenarium uninstall --dry-run` displays the verified npm global installation
+and removal command. `provenarium uninstall` asks for confirmation;
+`provenarium uninstall --yes` explicitly authorizes unattended removal. The
+command delegates to npm with the verified prefix and refuses local installs,
+source checkouts, linked packages, and mismatched npm installations. It preserves
+validation projects, retained evidence, credentials, and shared browser files.
+See the [installation guide](installation.md#uninstall) for manual removal and
+optional credential cleanup before uninstalling.
+
 ## Supported execution vocabulary
 
 Plans support navigation, declared sessions, filling/selecting/clicking, named

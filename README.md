@@ -38,8 +38,22 @@ Validation decisions remain with the organization responsible for intended use.
 
 ## Installation and use
 
-The CLI implementation is available in this repository. Use Node.js 26 on macOS
-or Linux:
+Use Node.js 26 on macOS or Linux. Install the
+[v0.1.0 prerelease](https://github.com/andrewruba/provenarium-validation/releases/tag/v0.1.0)
+directly from its GitHub release archive:
+
+```sh
+npm install --global https://github.com/andrewruba/provenarium-validation/releases/download/v0.1.0/provenarium-validation-0.1.0.tgz
+provenarium browser install
+provenarium --help
+```
+
+The archive works on both supported operating systems; npm downloads the runtime
+dependencies for your platform. Chromium is installed separately. See the
+[installation guide](docs/installation.md) for checksums, updates, and removal.
+Uninstall the CLI with `provenarium uninstall` (or `--yes` for unattended use).
+
+To run from a source checkout instead:
 
 ```sh
 npm ci
@@ -67,8 +81,9 @@ npm run verify:package
 ```
 
 Live-provider authoring quality evaluations remain pending; fixture-based tests
-verify adapters and spending controls without paid calls. No package has been
-published. See [verification status](docs/verification-status.md) for completed
+verify adapters and spending controls without paid calls. Releases are distributed
+on GitHub; the package is not published to the npm registry.
+See [verification status](docs/verification-status.md) for completed
 checks and pending evaluations, and [release notes](CHANGELOG.md) for the
 implementation boundary.
 

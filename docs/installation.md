@@ -19,7 +19,24 @@ npx playwright install --with-deps chromium
 
 System dependency installation may require administrator access. The `run` command does not install packages or browsers.
 
-## From a prepared release archive
+## From a GitHub release
+
+Download `provenarium-validation-0.1.0.tgz` and `SHA256SUMS` from the
+[v0.1.0 release](https://github.com/andrewruba/provenarium-validation/releases/tag/v0.1.0).
+One archive supports macOS and Linux with Node.js 26 and npm. It includes compiled
+JavaScript; npm downloads the runtime dependencies, including the native
+credential-store package for your platform. The included `npm-shrinkwrap.json`
+locks dependency versions. This is a prerelease while live
+provider authoring evaluations remain pending. Windows is not currently verified.
+
+Verify the downloaded archive against its checksum (use `sha256sum --check
+SHA256SUMS` on Linux):
+
+```sh
+shasum --algorithm 256 --check SHA256SUMS
+```
+
+Then install it:
 
 ```sh
 npm install --global ./provenarium-validation-0.1.0.tgz
@@ -27,9 +44,55 @@ provenarium browser install
 provenarium --help
 ```
 
+You can also install directly from the versioned asset URL:
+
+```sh
+npm install --global https://github.com/andrewruba/provenarium-validation/releases/download/v0.1.0/provenarium-validation-0.1.0.tgz
+```
+
+Use a Node version manager or an npm prefix writable by your account if your
+global installation directory needs elevated permissions. No automatic elevation
+is attempted. The package is distributed through GitHub Releases, not the npm
+registry. The automatically generated GitHub source archives are source code;
+choose the `.tgz` release asset for installation.
+
+To update, install the archive or exact asset URL for the desired release using
+the same command. Run `provenarium browser install` again after updating, then
+check `provenarium --version`.
+
 Install the Chromium version belonging to the installed CLI before execution or PDF rendering. Follow the setup command printed by the CLI if Chromium is missing. A validation project does not need its own `node_modules` directory.
 
 The selected provider key is entered privately when authoring begins. Application credentials are collected separately from the approved access inventory. Session-only storage is the default. Optional persistent credentials use macOS Keychain or Linux Secret Service; a headless Linux machine without an available secret service can continue with session-only input.
+
+## Uninstall
+
+```sh
+provenarium uninstall --dry-run   # Inspect the verified installation and command
+provenarium uninstall             # Confirm removal interactively
+provenarium uninstall --yes       # Explicitly remove without a prompt
+```
+
+The command verifies that the running CLI belongs to the active npm global
+installation, then asks npm to remove that package from its exact prefix. It
+refuses source checkouts, local installs, `npx` caches, linked packages, or a
+different npm installation. Use the same Node/npm environment that installed
+the tool. The package-manager equivalent is:
+
+```sh
+npm uninstall --global provenarium-validation
+```
+
+Validation projects, reports, saved credentials, and the shared Playwright
+browser cache are retained. To remove provider keys, do so before uninstalling:
+
+```sh
+provenarium auth forget --provider openai
+provenarium auth forget --provider anthropic
+```
+
+For a local npm dependency, run `npm uninstall provenarium-validation` in that
+project. A source checkout is not an installed global package; remove the checkout
+manually only after retaining any work you need.
 
 ## Synthetic demonstration
 
@@ -88,3 +151,7 @@ npm pack
 ```
 
 CI runs these checks on macOS and Ubuntu Linux, including a clean tarball installation outside the checkout. CI makes no paid provider requests. Real-provider evaluations are a separate, explicitly invoked development activity with a visible per-command spending ceiling.
+
+The release workflow builds one archive, verifies that exact archive on both
+operating systems (including global installation and removal), and publishes it
+with checksums only after all checks pass. See [release maintenance](releasing.md).

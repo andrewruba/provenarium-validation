@@ -47,7 +47,7 @@ const TEXT = new Set([
   '.sh',
 ]);
 const EXCLUDED =
-  /^(?:\..*|node_modules|vendor|dist|build|coverage|target|__pycache__|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
+  /^(?:\..*|node_modules|vendor|dist|build|coverage|target|__pycache__|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
 const SECRET_FILE =
   /(?:^|[._-])(?:credentials?|secrets?|passwords?|tokens?|private[_-]?key|service[_-]?account|auth[_-]?state|storage[_-]?state)(?:[._-]|$)|\.(?:pem|key|p12|pfx|keystore)$/i;
 const MAX_FILE = 5 * 1024 * 1024;

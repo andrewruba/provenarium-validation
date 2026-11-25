@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -22,8 +22,12 @@ if (!archive) {
   archive = records[0].filename;
 }
 archive = resolve(archive);
+const archiveSha256 = createHash('sha256')
+  .update(await readFile(archive))
+  .digest('hex');
 const workspace = await mkdtemp(join(tmpdir(), 'provenarium package verification '));
 const prefix = join(workspace, 'installation prefix');
+const globalPrefix = join(workspace, 'global installation prefix');
 const project = join(workspace, 'independent validation project');
 let app;
 try {
@@ -39,6 +43,15 @@ try {
   );
   const packageInfo = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
   assert.equal(packageInfo.name, 'provenarium-validation');
+  const dependencyLock = JSON.parse(await readFile(join(installed, 'npm-shrinkwrap.json'), 'utf8'));
+  assert.equal(dependencyLock.name, packageInfo.name);
+  assert.equal(dependencyLock.version, packageInfo.version);
+  assert.deepEqual(dependencyLock.packages[''].dependencies, packageInfo.dependencies);
+  const localCli = join(installed, 'bin', 'provenarium.mjs');
+  assert.equal(
+    execFileSync(process.execPath, [localCli, '--version'], { encoding: 'utf8' }).trim(),
+    packageInfo.version,
+  );
 
   const { startSampleApp } = await import(
     pathToFileURL(requireInstalled.resolve('provenarium-validation/example')).href
@@ -101,6 +114,58 @@ try {
     'Validation project installed runtime dependencies',
   );
 
+  // Exercise the actual executable and removal command in an isolated npm global
+  // prefix. Never install into or uninstall from the developer's real prefix.
+  execFileSync('npm', ['install', '--global', '--prefix', globalPrefix, archive], {
+    stdio: 'inherit',
+  });
+  const globalCli = join(globalPrefix, 'bin', 'provenarium');
+  const globalPackage = join(globalPrefix, 'lib', 'node_modules', packageInfo.name);
+  const sentinel = join(globalPrefix, 'unrelated-data.txt');
+  await writeFile(sentinel, 'preserve unrelated files\n');
+  const unrelatedPackage = join(globalPrefix, 'lib', 'node_modules', 'unrelated-fixture');
+  await mkdir(unrelatedPackage, { recursive: true });
+  await writeFile(
+    join(unrelatedPackage, 'package.json'),
+    JSON.stringify({ name: 'unrelated-fixture', version: '1.0.0' }),
+  );
+  const cliEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => name.toLowerCase() !== 'npm_config_prefix'),
+  );
+  cliEnv.npm_config_prefix = globalPrefix;
+  const cliOptions = { env: cliEnv, cwd: workspace, encoding: 'utf8' };
+  assert.equal(execFileSync(globalCli, ['--version'], cliOptions).trim(), packageInfo.version);
+  assert.match(execFileSync(globalCli, ['--help'], cliOptions), /uninstall/);
+  const dryRun = execFileSync(globalCli, ['uninstall', '--dry-run'], cliOptions);
+  assert.ok(dryRun.includes(globalPrefix), 'Dry run did not identify the isolated prefix');
+  await access(globalPackage);
+  // Local installation and unattended removal without consent must fail before
+  // changing any package, even when a matching global installation exists.
+  assert.throws(() =>
+    execFileSync(process.execPath, [localCli, 'uninstall', '--yes'], {
+      ...cliOptions,
+      stdio: 'pipe',
+    }),
+  );
+  await access(localCli);
+  assert.throws(() => execFileSync(globalCli, ['uninstall'], { ...cliOptions, stdio: 'pipe' }));
+  await access(globalPackage);
+  execFileSync(globalCli, ['uninstall', '--yes'], { ...cliOptions, stdio: 'inherit' });
+  await assert.rejects(access(globalPackage), { code: 'ENOENT' });
+  await assert.rejects(access(globalCli), { code: 'ENOENT' });
+  assert.equal(await readFile(sentinel, 'utf8'), 'preserve unrelated files\n');
+  await access(join(unrelatedPackage, 'package.json'));
+  assert.equal(hash(await readFile(approvalPath)), originalApprovalHash);
+  await access(goodReport.html);
+  await access(defectiveReport.html);
+  assert.equal(
+    createHash('sha256')
+      .update(await readFile(archive))
+      .digest('hex'),
+    archiveSha256,
+    'Release archive changed during verification',
+  );
+
   const counts = (run) =>
     Object.fromEntries(
       ['passed', 'failed', 'blocked', 'not_run', 'manual_pending'].map((status) => [
@@ -110,6 +175,7 @@ try {
     );
   const result = {
     package: `${packageInfo.name}@${packageInfo.version}`,
+    archive_sha256: archiveSha256,
     platform: process.platform,
     architecture: process.arch,
     node: process.version,
@@ -117,6 +183,7 @@ try {
     good: counts(good),
     defective: counts(defective),
     project_has_node_modules: false,
+    global_install_uninstall: 'passed',
     good_report: goodReport.html,
     defective_report: defectiveReport.html,
   };
