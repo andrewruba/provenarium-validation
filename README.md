@@ -35,3 +35,37 @@ The CLI design includes:
 Users supply context appropriate to the deployed application. Hashes identify
 inputs and artifacts; the tool does not verify source-to-deployment alignment.
 Validation decisions remain with the organization responsible for intended use.
+
+## Installation and use
+
+The CLI implementation is available in this repository. Use Node.js 26 on macOS
+or Linux:
+
+```sh
+npm ci
+npm run build
+node bin/provenarium.mjs browser install
+node bin/provenarium.mjs --help
+```
+
+Start with `urs template`, or use `urs generate` with your selected provider.
+OpenAI and Anthropic authoring offer Quick ($5), Standard ($15), and Thorough
+($40) default spending ceilings per command. Approval, execution, and reporting
+make no provider calls.
+
+Read the [CLI reference](docs/cli-reference.md), [installation and demonstration
+guide](docs/installation.md), [URS writing guide](docs/urs-writing-guide.md), and
+[troubleshooting guide](docs/troubleshooting.md).
+
+The synthetic example includes one working application and a deliberate defect
+tested under the same approved package. Run the deterministic checks with:
+
+```sh
+npm run check
+npm run test:e2e
+npm run verify:package
+```
+
+Live-provider authoring quality evaluations remain pending; fixture-based tests
+verify adapters and spending controls without paid calls. No package has been
+published. See [release notes](CHANGELOG.md) for the implementation boundary.

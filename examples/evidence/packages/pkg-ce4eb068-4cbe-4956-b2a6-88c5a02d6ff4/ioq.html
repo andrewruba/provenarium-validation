@@ -1,0 +1,201 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic sample register IOQ</title><style>
+  :root{color-scheme:light}*{box-sizing:border-box}body{font:14px/1.5 system-ui,-apple-system,sans-serif;color:#192c36;background:#edf2f3;margin:0}main{max-width:1120px;margin:32px auto;padding:40px;background:white;border-top:7px solid #145e68}h1{font-size:30px;line-height:1.2;margin:12px 0 28px}h2{font-size:21px;margin:32px 0 12px;border-bottom:1px solid #bfd1d4;padding-bottom:8px}h3{margin:24px 0 8px}p,li{overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;table-layout:fixed;margin:14px 0;font-size:12px}th,td{text-align:left;vertical-align:top;border:1px solid #cbd9dc;padding:9px;overflow-wrap:anywhere;white-space:pre-wrap}th{background:#e6f0f0;color:#164d54}thead{display:table-header-group}.eyebrow{letter-spacing:.14em;text-transform:uppercase;font-size:11px;color:#477078}.muted{color:#526771}.warning{border-left:4px solid #bd6421;background:#fff3e8;padding:12px}.passed{color:#17673a}.failed,.blocked{color:#a12220}.manual_pending,.not_run{color:#80531b}.evidence{max-width:100%;max-height:480px;object-fit:contain;border:1px solid #ccd8da}code{overflow-wrap:anywhere}a{color:#006d86}section{margin-top:20px}@page{size:A4;margin:17mm 12mm 20mm}@media print{body{background:white}main{max-width:none;margin:0;padding:0;border-top:4px solid #145e68}h2,h3{break-after:avoid}tr,img{break-inside:avoid}table{font-size:10px}th,td{padding:6px}.evidence{max-height:145mm}a{color:inherit}}
+  </style></head><body><main><div class="eyebrow">Provenarium · software validation</div><h1>Synthetic sample register IOQ</h1><p>IOQ protocol · Package/candidate <strong>pkg-ce4eb068-4cbe-4956-b2a6-88c5a02d6ff4</strong> · URS URS-SAMPLE-REGISTER revision 1</p><h2>Purpose and scope</h2><p>Demonstration laboratory staff record receipt information, calculate a simple mass-to-volume concentration, and export a receipt register. The application does not determine sample suitability or make clinical decisions.</p><h2>Environment</h2><table><thead><tr><th>Target</th><th>Locale</th><th>Timezone</th><th>Viewport</th><th>Assertion timeout</th></tr></thead><tbody><tr><td>http://127.0.0.1:64362</td><td>en-US</td><td>UTC</td><td>1280 × 800</td><td>5000 ms</td></tr></tbody></table><p>Allowed origins: http://127.0.0.1:64362. Fixed Chromium procedures; whole-test retries disabled.</p><h2>Required access</h2><p>Before tests start, the CLI collects every listed account binding. Passwords and tokens are entered privately and are not included in this protocol. Roles and starting states are user declarations until tested.</p><table><thead><tr><th>Actor</th><th>Role / state</th><th>Access mode</th><th>Purpose</th><th>Cases</th></tr></thead><tbody><tr><td>operator</td><td>operator / active</td><td>credentials</td><td>Positive login, receipt, export, attachment and denied approval cases.</td><td>OQ-001, OQ-006, OQ-007, OQ-008, OQ-009, OQ-010, OQ-011</td></tr><tr><td>supervisor</td><td>supervisor / active</td><td>credentials</td><td>Positive supervisor approval.</td><td>OQ-011</td></tr><tr><td>disabled</td><td>operator / disabled</td><td>credentials</td><td>Disabled-account rejection.</td><td>OQ-003</td></tr><tr><td>wrong</td><td>operator / incorrect_password</td><td>credentials</td><td>Known active username with deliberately incorrect password.</td><td>OQ-002</td></tr><tr><td>nonexistent</td><td>operator / nonexistent</td><td>credentials</td><td>Nonexistent-user rejection.</td><td>OQ-004</td></tr><tr><td>visitor</td><td>visitor / signed_out</td><td>anonymous</td><td>Signed-out access and public health observations.</td><td>IQ-001, OQ-005</td></tr></tbody></table><h2>Fixtures and references</h2><table><thead><tr><th>Kind</th><th>Package-relative path</th></tr></thead><tbody><tr><td>Fixture</td><td>fixtures/sample-notes.txt</td></tr><tr><td>Fixture</td><td>fixtures/not-text.csv</td></tr><tr><td>Fixture</td><td>fixtures/too-large.txt</td></tr><tr><td>Reference</td><td>references/calculation-examples.csv</td></tr></tbody></table><h2>Requirements coverage</h2><table><thead><tr><th>Requirement</th><th>Clause</th><th>Source location</th><th>Obligation</th><th>Assertions / manual cases</th></tr></thead><tbody><tr><td>URS-AUTH-001</td><td>CL-AUTH-LOGIN</td><td>URS-AUTH-001/statement</td><td>Active account login displays identity and role; logout removes browser access.</td><td>OQ-001-AUTH, OQ-001-A1</td></tr><tr><td>URS-AUTH-002</td><td>CL-AUTH-002</td><td>URS-AUTH-002/statement</td><td>Deny incorrect-password login without establishing a session.</td><td>OQ-002-A1, OQ-002-A2</td></tr><tr><td>URS-AUTH-002</td><td>CL-AUTH-003</td><td>URS-AUTH-002/statement</td><td>Deny disabled login without establishing a session.</td><td>OQ-003-A1, OQ-003-A2</td></tr><tr><td>URS-AUTH-002</td><td>CL-AUTH-004</td><td>URS-AUTH-002/statement</td><td>Deny nonexistent login without establishing a session.</td><td>OQ-004-A1, OQ-004-A2</td></tr><tr><td>URS-AUTH-003</td><td>CL-SIGNED-OUT</td><td>URS-AUTH-003/statement</td><td>Signed-out browser redirects to sign-in and HTTP returns 401 without records.</td><td>OQ-005-A1, OQ-005-A2, OQ-005-A3</td></tr><tr><td>URS-PERM-001</td><td>CL-PERM-OP</td><td>URS-PERM-001/statement</td><td>Operator approval control is absent and server denies approval.</td><td>OQ-011-HIDDEN, OQ-011-DENIED</td></tr><tr><td>URS-PERM-001</td><td>CL-PERM-SUP</td><td>URS-PERM-001/statement</td><td>Supervisor approval persists after reopening.</td><td>OQ-011-SUP-AUTH, OQ-011-APPROVED</td></tr><tr><td>URS-REC-001</td><td>CL-FIELDS</td><td>URS-REC-001/table</td><td>Receipt fields and defaults match the specified table.</td><td>OQ-006-A1, OQ-006-BLANK0, OQ-006-BLANK1, OQ-006-BLANK2, OQ-006-BLANK3</td></tr><tr><td>URS-REC-001</td><td>CL-BOUNDARIES</td><td>URS-REC-001/statement</td><td>Missing/invalid inputs are rejected and numeric/string boundaries enforced.</td><td>OQ-008-REQUIRED-ID, OQ-008-REQUIRED-DATE, OQ-008-REQUIRED-MASS, OQ-008-NEGATIVE-MASS, OQ-008-ZERO-VOLUME, OQ-008-ZERO-SAVED, OQ-008-ZERO-CALC, OQ-008-ZERO-NUM, OQ-008-LONG-STATUS, OQ-008-LONG-ERROR, OQ-008-CHOICE-STATUS, OQ-008-CHOICE-ERROR, OQ-008-DATE-STATUS, OQ-008-DATE-ERROR, OQ-008-MISSING-VOLUME-STATUS, OQ-008-MISSING-VOLUME-ERROR, OQ-008-MIN-SAVED</td></tr><tr><td>URS-REC-002</td><td>CL-DUPLICATE</td><td>URS-REC-002/statement</td><td>Reject trimmed duplicate and preserve the one original; case-sensitive identifiers remain distinct.</td><td>OQ-007-DENIED, OQ-007-COUNT, OQ-007-ORIGINAL, OQ-007-CASE</td></tr><tr><td>URS-REC-003</td><td>CL-RETENTION</td><td>URS-REC-003/statement</td><td>All saved values and table headers remain after reopening with one matching row.</td><td>OQ-006-HEADERS, OQ-006-COUNT, OQ-006-VAL1, OQ-006-VAL2, OQ-006-VAL3, OQ-006-VAL4, OQ-006-VAL5, OQ-006-VAL6, OQ-006-VAL7</td></tr><tr><td>URS-CALC-001</td><td>CL-CALC</td><td>URS-CALC-001/statement</td><td>Independent 12/3 and 0/1 calculations have three decimals and declared tolerance.</td><td>OQ-006-VAL6, OQ-006-NUM, OQ-008-ZERO-CALC, OQ-008-ZERO-NUM, OQ-008-NEGATIVE-MASS, OQ-008-ZERO-VOLUME</td></tr><tr><td>URS-EXP-001</td><td>CL-EXPORT</td><td>URS-EXP-001/statement</td><td>Export contains specified column order, values and rows in receipt-date order.</td><td>OQ-009-HEADERS, OQ-009-ROWS</td></tr><tr><td>URS-FILE-001</td><td>CL-ATTACHMENT</td><td>URS-FILE-001/statement</td><td>Retain filename/content for valid text; reject wrong extension and size.</td><td>OQ-010-NAME, OQ-010-TEXT, OQ-010-EXT-ERROR, OQ-010-SIZE-ERROR</td></tr><tr><td>URS-IQ-001</td><td>CL-HEALTH</td><td>URS-IQ-001/statement</td><td>Reachable health endpoint identifies the application.</td><td>IQ-001-A1, IQ-001-A2</td></tr><tr><td>URS-IQ-002</td><td>CL-RECOVERY</td><td>URS-IQ-002/statement</td><td>Deployment owner supplies a recovery procedure identifying directory, responsibility, and verification.</td><td>IQ-002</td></tr></tbody></table><h2>Open questions</h2><p>None recorded.</p><section><h2>IQ-001 — Observe application identity</h2><p>IQ · Requirements: URS-IQ-001 · Actor: visitor</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. IQ-001-1</td><td>Request the public health interface.
+GET /health; retain response as health</td><td>IQ-001-A1: health.status equals 200
+IQ-001-A2: health.body.application equals &quot;Synthetic sample register&quot;</td><td>IQ-001-1-OBS: observation (required)</td></tr></tbody></table></section><section><h2>OQ-009 — Receipt export contents and ordering</h2><p>OQ · Requirements: URS-EXP-001 · Actor: operator</p><p>Prerequisites: Run before other record-creating cases against the declared empty starting data directory.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-009-LOGIN</td><td>Sign in using the declared operator credential binding.
+Navigate to /login
+Enter the private operator.username binding in Username
+Enter the private operator.password binding in Password
+Click Sign in</td><td>OQ-009-AUTH: text of identity equals &quot;Signed in as operator (operator)&quot;</td><td>OQ-009-LOGIN-OBS: observation (required)</td></tr><tr><td>2. OQ-009-1</td><td>Create three export examples in reverse date and identifier order.
+Navigate to /samples
+Enter &quot;EXPORT-B&quot; in Sample ID
+Select &quot;Chilled&quot; in Storage location
+Enter &quot;2026-01-17&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample
+Navigate to /samples
+Enter &quot;EXPORT-C&quot; in Sample ID
+Select &quot;Chilled&quot; in Storage location
+Enter &quot;2026-01-16&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample
+Navigate to /samples
+Enter &quot;EXPORT-A&quot; in Sample ID
+Select &quot;Ambient&quot; in Storage location
+Enter &quot;2026-01-16&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample</td><td>OQ-009-CREATED: text of [role=&quot;status&quot;] equals &quot;Sample saved.&quot;</td><td>OQ-009-1-OBS: observation (required)</td></tr><tr><td>3. OQ-009-2</td><td>Download the CSV and compare headers, row values, and date order.
+Download from Download receipt CSV as export</td><td>OQ-009-HEADERS: export.text contains &quot;Sample ID,Storage location,Receipt date,Mass (mg),Volume (mL),Concentration (mg/mL),Status\r\n&quot;
+OQ-009-ROWS: export.text equals &quot;Sample ID,Storage location,Receipt date,Mass (mg),Volume (mL),Concentration (mg/mL),Status\r\nEXPORT-A,Ambient,2026-01-16,12,3,4.000,Received\r\nEXPORT-C,Chilled,2026-01-16,12,3,4.000,Received\r\nEXPORT-B,Chilled,2026-01-17,12,3,4.000,Received\r\n&quot;</td><td>OQ-009-2-OBS: observation (required)
+OQ-009-DOWNLOAD: download (required)</td></tr></tbody></table></section><section><h2>OQ-001 — Active login and logout</h2><p>OQ · Requirements: URS-AUTH-001 · Actor: operator</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-001-LOGIN</td><td>Sign in using the declared operator credential binding.
+Navigate to /login
+Enter the private operator.username binding in Username
+Enter the private operator.password binding in Password
+Click Sign in</td><td>OQ-001-AUTH: text of identity equals &quot;Signed in as operator (operator)&quot;</td><td>OQ-001-LOGIN-OBS: observation (required)</td></tr><tr><td>2. OQ-001-2</td><td>Sign out, then attempt to reopen retained records.
+Click Sign out
+Navigate to /records</td><td>OQ-001-A1: visible of Sign in equals true</td><td>OQ-001-2-OBS: observation (required)
+OQ-001-2-SCREEN: screenshot (required)</td></tr></tbody></table></section><section><h2>OQ-002 — Incorrect password for active account</h2><p>OQ · Requirements: URS-AUTH-002 · Actor: wrong</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-002-1</td><td>Attempt login using the wrong binding; do not replace the account if denied.
+Navigate to /login
+Enter the private wrong.username binding in Username
+Enter the private wrong.password binding in Password
+Click Sign in
+GET /api/samples; retain response as denied</td><td>OQ-002-A1: text of [role=&quot;alert&quot;] equals &quot;Login denied.&quot;
+OQ-002-A2: denied.status equals 401</td><td>OQ-002-1-OBS: observation (required)</td></tr></tbody></table></section><section><h2>OQ-003 — Disabled account login</h2><p>OQ · Requirements: URS-AUTH-002 · Actor: disabled</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-003-1</td><td>Attempt login using the disabled binding; do not replace the account if denied.
+Navigate to /login
+Enter the private disabled.username binding in Username
+Enter the private disabled.password binding in Password
+Click Sign in
+GET /api/samples; retain response as denied</td><td>OQ-003-A1: text of [role=&quot;alert&quot;] equals &quot;Login denied.&quot;
+OQ-003-A2: denied.status equals 401</td><td>OQ-003-1-OBS: observation (required)</td></tr></tbody></table></section><section><h2>OQ-004 — Nonexistent account login</h2><p>OQ · Requirements: URS-AUTH-002 · Actor: nonexistent</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-004-1</td><td>Attempt login using the nonexistent binding; do not replace the account if denied.
+Navigate to /login
+Enter the private nonexistent.username binding in Username
+Enter the private nonexistent.password binding in Password
+Click Sign in
+GET /api/samples; retain response as denied</td><td>OQ-004-A1: text of [role=&quot;alert&quot;] equals &quot;Login denied.&quot;
+OQ-004-A2: denied.status equals 401</td><td>OQ-004-1-OBS: observation (required)</td></tr></tbody></table></section><section><h2>OQ-005 — Signed-out browser and HTTP access</h2><p>OQ · Requirements: URS-AUTH-003 · Actor: visitor</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-005-1</td><td>Open retained records and request records without authenticating.
+Navigate to /records
+GET /api/samples; retain response as visitor</td><td>OQ-005-A1: visible of Sign in equals true
+OQ-005-A2: visitor.status equals 401
+OQ-005-A3: visitor.body equals {&quot;error&quot;:&quot;Authentication required&quot;}</td><td>OQ-005-1-OBS: observation (required)
+OQ-005-1-SCREEN: screenshot (required)</td></tr></tbody></table></section><section><h2>OQ-006 — Receipt fields, retained values and concentration</h2><p>OQ · Requirements: URS-REC-001, URS-REC-003, URS-CALC-001 · Actor: operator</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-006-LOGIN</td><td>Sign in using the declared operator credential binding.
+Navigate to /login
+Enter the private operator.username binding in Username
+Enter the private operator.password binding in Password
+Click Sign in</td><td>OQ-006-AUTH: text of identity equals &quot;Signed in as operator (operator)&quot;</td><td>OQ-006-LOGIN-OBS: observation (required)</td></tr><tr><td>2. OQ-006-1</td><td>Observe default storage and blank required inputs.
+Navigate to /samples</td><td>OQ-006-A1: value of Storage location equals &quot;Ambient&quot;
+OQ-006-BLANK0: value of Sample ID equals &quot;&quot;
+OQ-006-BLANK1: value of Receipt date equals &quot;&quot;
+OQ-006-BLANK2: value of Mass (mg) equals &quot;&quot;
+OQ-006-BLANK3: value of Volume (mL) equals &quot;&quot;</td><td>OQ-006-1-OBS: observation (required)
+OQ-006-1-SCREEN: screenshot (required)</td></tr><tr><td>3. OQ-006-2</td><td>Record DEMO-104 with 12 mg mass and 3 mL volume.
+Navigate to /samples
+Enter &quot;DEMO-104&quot; in Sample ID
+Select &quot;Chilled&quot; in Storage location
+Enter &quot;2026-01-15&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample</td><td>OQ-006-A2: text of [role=&quot;status&quot;] equals &quot;Sample saved.&quot;</td><td>OQ-006-2-OBS: observation (required)
+OQ-006-2-SCREEN: screenshot (required)</td></tr><tr><td>4. OQ-006-3</td><td>Navigate away and reopen the retained record. Compare all values and the calculation with the independent reference.
+Navigate to /samples
+Navigate to /records
+Read table from table thead as headers
+Read text from table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(6) as concentration</td><td>OQ-006-HEADERS: headers equals [[&quot;Sample ID&quot;,&quot;Storage location&quot;,&quot;Receipt date&quot;,&quot;Mass (mg)&quot;,&quot;Volume (mL)&quot;,&quot;Concentration (mg/mL)&quot;,&quot;Status&quot;]]
+OQ-006-VAL1: text of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(1) equals &quot;DEMO-104&quot;
+OQ-006-VAL2: text of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(2) equals &quot;Chilled&quot;
+OQ-006-VAL3: text of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(3) equals &quot;2026-01-15&quot;
+OQ-006-VAL4: text of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(4) equals &quot;12&quot;
+OQ-006-VAL5: text of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(5) equals &quot;3&quot;
+OQ-006-VAL6: text of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(6) equals &quot;4.000&quot;
+OQ-006-VAL7: text of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) td:nth-child(7) equals &quot;Received&quot;
+OQ-006-NUM: concentration numeric 4 (tolerance 0.0005)
+OQ-006-COUNT: count of table tbody tr:has(td:text-is(&quot;DEMO-104&quot;)) equals 1</td><td>OQ-006-3-OBS: observation (required)
+OQ-006-3-SCREEN: screenshot (required)</td></tr></tbody></table></section><section><h2>OQ-007 — Duplicate rejection and identifier equivalence</h2><p>OQ · Requirements: URS-REC-002 · Actor: operator</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-007-LOGIN</td><td>Sign in using the declared operator credential binding.
+Navigate to /login
+Enter the private operator.username binding in Username
+Enter the private operator.password binding in Password
+Click Sign in</td><td>OQ-007-AUTH: text of identity equals &quot;Signed in as operator (operator)&quot;</td><td>OQ-007-LOGIN-OBS: observation (required)</td></tr><tr><td>2. OQ-007-1</td><td>Create a receipt for DUP-104.
+Navigate to /samples
+Enter &quot;DUP-104&quot; in Sample ID
+Select &quot;Chilled&quot; in Storage location
+Enter &quot;2026-01-15&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample</td><td>OQ-007-CREATED: text of [role=&quot;status&quot;] equals &quot;Sample saved.&quot;</td><td>OQ-007-1-OBS: observation (required)</td></tr><tr><td>3. OQ-007-2</td><td>Attempt a duplicate with surrounding spaces and changed storage.
+Navigate to /samples
+Enter &quot;  DUP-104  &quot; in Sample ID
+Select &quot;Ambient&quot; in Storage location
+Enter &quot;2026-01-15&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample</td><td>OQ-007-DENIED: text of [role=&quot;alert&quot;] contains &quot;Sample ID already exists.&quot;</td><td>OQ-007-2-OBS: observation (required)
+OQ-007-2-SCREEN: screenshot (required)</td></tr><tr><td>4. OQ-007-3</td><td>Reopen records and verify the original is the only matching row.
+Navigate to /records</td><td>OQ-007-COUNT: count of table tbody tr:has(td:text-is(&quot;DUP-104&quot;)) equals 1
+OQ-007-ORIGINAL: text of table tbody tr:has(td:text-is(&quot;DUP-104&quot;)) td:nth-child(2) equals &quot;Chilled&quot;</td><td>OQ-007-3-OBS: observation (required)
+OQ-007-3-SCREEN: screenshot (required)</td></tr><tr><td>5. OQ-007-4</td><td>Use a distinct lower-case identifier to verify case sensitivity.
+Navigate to /samples
+Enter &quot;dup-104&quot; in Sample ID
+Select &quot;Chilled&quot; in Storage location
+Enter &quot;2026-01-15&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample</td><td>OQ-007-CASE: text of [role=&quot;status&quot;] equals &quot;Sample saved.&quot;</td><td>OQ-007-4-OBS: observation (required)</td></tr></tbody></table></section><section><h2>OQ-008 — Required inputs and numeric boundaries</h2><p>OQ · Requirements: URS-REC-001, URS-CALC-001 · Actor: operator</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-008-LOGIN</td><td>Sign in using the declared operator credential binding.
+Navigate to /login
+Enter the private operator.username binding in Username
+Enter the private operator.password binding in Password
+Click Sign in</td><td>OQ-008-AUTH: text of identity equals &quot;Signed in as operator (operator)&quot;</td><td>OQ-008-LOGIN-OBS: observation (required)</td></tr><tr><td>2. OQ-008-1</td><td>Submit a blank receipt.
+Navigate to /samples
+Click Save sample</td><td>OQ-008-REQUIRED-ID: text of [role=&quot;alert&quot;] equals &quot;Sample ID is required.&quot;</td><td>OQ-008-1-OBS: observation (required)</td></tr><tr><td>3. OQ-008-2</td><td>Supply an identifier but omit the date.
+Enter &quot;ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ&quot; in Sample ID
+Click Save sample</td><td>OQ-008-REQUIRED-DATE: text of [role=&quot;alert&quot;] equals &quot;Receipt date must be a valid calendar date.&quot;</td><td>OQ-008-2-OBS: observation (required)</td></tr><tr><td>4. OQ-008-3</td><td>Supply the date but omit mass.
+Enter &quot;2026-01-15&quot; in Receipt date
+Click Save sample</td><td>OQ-008-REQUIRED-MASS: text of [role=&quot;alert&quot;] equals &quot;Mass must be a number greater than or equal to zero.&quot;</td><td>OQ-008-3-OBS: observation (required)</td></tr><tr><td>5. OQ-008-4</td><td>Try a negative mass.
+Enter &quot;-1&quot; in Mass (mg)
+Enter &quot;1&quot; in Volume (mL)
+Click Save sample</td><td>OQ-008-NEGATIVE-MASS: text of [role=&quot;alert&quot;] equals &quot;Mass must be a number greater than or equal to zero.&quot;</td><td>OQ-008-4-OBS: observation (required)</td></tr><tr><td>6. OQ-008-5</td><td>Try zero volume.
+Enter &quot;0&quot; in Mass (mg)
+Enter &quot;0&quot; in Volume (mL)
+Click Save sample</td><td>OQ-008-ZERO-VOLUME: text of [role=&quot;alert&quot;] equals &quot;Volume must be a number greater than zero.&quot;</td><td>OQ-008-5-OBS: observation (required)</td></tr><tr><td>7. OQ-008-6</td><td>Accept zero mass, positive volume and the maximum 32-character identifier.
+Enter &quot;1&quot; in Volume (mL)
+Click Save sample</td><td>OQ-008-ZERO-SAVED: text of [role=&quot;status&quot;] equals &quot;Sample saved.&quot;
+OQ-008-ZERO-CALC: text of table tbody tr:has(td:text-is(&quot;ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ&quot;)) td:nth-child(6) equals &quot;0.000&quot;
+OQ-008-ZERO-NUM: text of table tbody tr:has(td:text-is(&quot;ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ&quot;)) td:nth-child(6) numeric 0 (tolerance 0.0005)</td><td>OQ-008-6-OBS: observation (required)
+OQ-008-6-SCREEN: screenshot (required)</td></tr><tr><td>8. OQ-008-LONG</td><td>Supplement browser checks with server rejection of long.
+POST /api/samples; retain response as rejected</td><td>OQ-008-LONG-STATUS: rejected.status equals 422
+OQ-008-LONG-ERROR: rejected.body.error equals &quot;Sample ID must be 1 to 32 characters.&quot;</td><td>OQ-008-LONG-OBS: observation (required)</td></tr><tr><td>9. OQ-008-CHOICE</td><td>Supplement browser checks with server rejection of choice.
+POST /api/samples; retain response as rejected</td><td>OQ-008-CHOICE-STATUS: rejected.status equals 422
+OQ-008-CHOICE-ERROR: rejected.body.error equals &quot;Storage location must be Ambient or Chilled.&quot;</td><td>OQ-008-CHOICE-OBS: observation (required)</td></tr><tr><td>10. OQ-008-DATE</td><td>Supplement browser checks with server rejection of date.
+POST /api/samples; retain response as rejected</td><td>OQ-008-DATE-STATUS: rejected.status equals 422
+OQ-008-DATE-ERROR: rejected.body.error equals &quot;Receipt date must be a valid calendar date.&quot;</td><td>OQ-008-DATE-OBS: observation (required)</td></tr><tr><td>11. OQ-008-MISSING-VOLUME</td><td>Supplement browser checks with server rejection of missing-volume.
+POST /api/samples; retain response as rejected</td><td>OQ-008-MISSING-VOLUME-STATUS: rejected.status equals 422
+OQ-008-MISSING-VOLUME-ERROR: rejected.body.error equals &quot;Volume must be a number greater than zero.&quot;</td><td>OQ-008-MISSING-VOLUME-OBS: observation (required)</td></tr><tr><td>12. OQ-008-MIN</td><td>Accept a one-character sample identifier.
+Navigate to /samples
+Enter &quot;m&quot; in Sample ID
+Select &quot;Ambient&quot; in Storage location
+Enter &quot;2026-01-15&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample</td><td>OQ-008-MIN-SAVED: text of [role=&quot;status&quot;] equals &quot;Sample saved.&quot;</td><td>OQ-008-MIN-OBS: observation (required)</td></tr></tbody></table></section><section><h2>OQ-010 — Attachment contents and rejection</h2><p>OQ · Requirements: URS-FILE-001 · Actor: operator</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-010-LOGIN</td><td>Sign in using the declared operator credential binding.
+Navigate to /login
+Enter the private operator.username binding in Username
+Enter the private operator.password binding in Password
+Click Sign in</td><td>OQ-010-AUTH: text of identity equals &quot;Signed in as operator (operator)&quot;</td><td>OQ-010-LOGIN-OBS: observation (required)</td></tr><tr><td>2. OQ-010-1</td><td>Upload and inspect the retained synthetic plain-text attachment.
+Navigate to /attachments
+Upload fixtures/sample-notes.txt using Text attachment
+Click Upload attachment</td><td>OQ-010-NAME: text of [role=&quot;status&quot;] equals &quot;Attachment received: sample-notes.txt&quot;
+OQ-010-TEXT: text of attachment-content equals &quot;Synthetic receipt attachment.\nNo personal or patient data.\n&quot;</td><td>OQ-010-1-OBS: observation (required)
+OQ-010-1-SCREEN: screenshot (required)</td></tr><tr><td>3. OQ-010-EXT</td><td>Reject an unsupported or oversized attachment.
+Navigate to /attachments
+Upload fixtures/not-text.csv using Text attachment
+Click Upload attachment</td><td>OQ-010-EXT-ERROR: text of [role=&quot;alert&quot;] equals &quot;A plain-text .txt attachment of at most 100 KiB is required.&quot;</td><td>OQ-010-EXT-OBS: observation (required)</td></tr><tr><td>4. OQ-010-SIZE</td><td>Reject an unsupported or oversized attachment.
+Navigate to /attachments
+Upload fixtures/too-large.txt using Text attachment
+Click Upload attachment</td><td>OQ-010-SIZE-ERROR: text of [role=&quot;alert&quot;] equals &quot;A plain-text .txt attachment of at most 100 KiB is required.&quot;</td><td>OQ-010-SIZE-OBS: observation (required)</td></tr></tbody></table></section><section><h2>OQ-011 — Operator denial and supervisor approval</h2><p>OQ · Requirements: URS-PERM-001 · Actor: operator</p><p>Prerequisites: Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers.</p><table><colgroup><col style="width:12%"><col style="width:30%"><col style="width:28%"><col style="width:30%"></colgroup><thead><tr><th>Step</th><th>Procedure</th><th>Expected results</th><th>Evidence</th></tr></thead><tbody><tr><td>1. OQ-011-LOGIN</td><td>Sign in using the declared operator credential binding.
+Navigate to /login
+Enter the private operator.username binding in Username
+Enter the private operator.password binding in Password
+Click Sign in</td><td>OQ-011-AUTH: text of identity equals &quot;Signed in as operator (operator)&quot;</td><td>OQ-011-LOGIN-OBS: observation (required)</td></tr><tr><td>2. OQ-011-1</td><td>Create a sample as an operator and attempt approval through HTTP.
+Navigate to /samples
+Enter &quot;PERMISSION-104&quot; in Sample ID
+Select &quot;Chilled&quot; in Storage location
+Enter &quot;2026-01-15&quot; in Receipt date
+Enter &quot;12&quot; in Mass (mg)
+Enter &quot;3&quot; in Volume (mL)
+Click Save sample
+POST /api/approve; retain response as approvalDenied</td><td>OQ-011-HIDDEN: visible of Approve sample equals false
+OQ-011-DENIED: approvalDenied.status equals 403</td><td>OQ-011-1-OBS: observation (required)
+OQ-011-1-SCREEN: screenshot (required)</td></tr><tr><td>3. OQ-011-2</td><td>Sign out before changing to the declared supervisor actor.
+Click Sign out
+Open session for supervisor</td><td>No assertion at this step.</td><td>None declared</td></tr><tr><td>4. OQ-011-SUP-LOGIN</td><td>Sign in using the declared supervisor credential binding.
+Navigate to /login
+Enter the private supervisor.username binding in Username
+Enter the private supervisor.password binding in Password
+Click Sign in</td><td>OQ-011-SUP-AUTH: text of identity equals &quot;Signed in as supervisor (supervisor)&quot;</td><td>OQ-011-SUP-LOGIN-OBS: observation (required)</td></tr><tr><td>5. OQ-011-3</td><td>Approve the sample using the supervisor browser controls, then reopen records.
+Navigate to /records
+Enter &quot;PERMISSION-104&quot; in Sample ID to approve
+Click Approve sample
+Navigate to /samples
+Navigate to /records</td><td>OQ-011-APPROVED: text of table tbody tr:has(td:text-is(&quot;PERMISSION-104&quot;)) td:nth-child(7) equals &quot;Approved&quot;</td><td>OQ-011-3-OBS: observation (required)
+OQ-011-3-SCREEN: screenshot (required)</td></tr></tbody></table></section><section><h2>IQ-002 — Review deployment recovery procedure</h2><p>IQ · Requirements: URS-IQ-002 · Actor: signed-out browser</p><p>Prerequisites: Deployment owner supplies the recovery procedure.</p><p class="warning">Manual check planned; execution will remain manual_pending.</p><h3>Procedure</h3><p>Inspect the deployment recovery procedure and identify its data-directory scope, responsible owner, and restore-verification steps. Retain the reviewed procedure in the organization controlled document system.</p><h3>Expected result</h3><p>The procedure identifies the deployed sample data directory, backup responsibility, and an explicit verification that restored records are readable.</p></section><h2>Context references</h2><table><thead><tr><th>Source</th><th>Location</th><th>SHA-256</th></tr></thead><tbody></tbody></table><p class="muted">Context hashes identify material read during authoring; they do not verify alignment with the deployed build.</p><p class="muted">Local records support the organization's review. Customer acceptance and validation conclusions remain separate decisions.</p></main></body></html>

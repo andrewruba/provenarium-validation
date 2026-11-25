@@ -1,0 +1,4 @@
+# Approved packages and evidence hashes identify exact bytes on every checkout.
+examples/evidence/** -text
+examples/evidence/**/*.download binary
+examples/evidence/**/traceability.csv -text whitespace=cr-at-eol

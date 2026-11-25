@@ -1,0 +1,129 @@
+schema_version: 1
+document:
+  id: URS-SAMPLE-REGISTER
+  revision: "1"
+  title: Synthetic sample register requirements
+  intended_use: >-
+    Demonstration laboratory staff record receipt information, calculate a simple
+    mass-to-volume concentration, and export a receipt register. The application
+    does not determine sample suitability or make clinical decisions.
+  description: >-
+    Operators enter synthetic sample records. Supervisors may approve records.
+    This specification defines intended behavior independently of the example
+    application's implementation. Public demonstration accounts contain no real data.
+  roles: [operator, supervisor]
+  interfaces:
+    - name: Receipt register export
+      direction: out
+      format: CSV
+      transfer: manual
+      data: Sample identifiers, storage, receipt dates, calculation inputs/results, and status.
+    - name: Text attachment
+      direction: in
+      format: UTF-8 plain text
+      transfer: manual
+      data: A synthetic attachment selected by the user.
+families:
+  - id: access
+    title: Access and permissions
+    requirements:
+      - id: URS-AUTH-001
+        title: Active account login and logout
+        statement: >-
+          An active account shall sign in using its correct username and password.
+          The application shall display the account identity and role. Sign out
+          shall remove access to retained records until another successful login.
+      - id: URS-AUTH-002
+        title: Denied login cases
+        statement: >-
+          Login shall be denied for an incorrect password belonging to a known
+          active account, a nonexistent username, and a disabled account with its
+          otherwise correct password. Each case shall show Login denied and shall
+          not establish an authenticated session.
+      - id: URS-AUTH-003
+        title: Signed-out access
+        statement: >-
+          A signed-out visitor shall be redirected to Sign in when opening retained
+          records. The records HTTP interface shall return status 401 and no records.
+      - id: URS-PERM-001
+        title: Supervisor approval
+        statement: >-
+          An operator shall not see the Approve sample action and shall receive
+          status 403 when submitting an approval request through the HTTP interface.
+          A supervisor shall be able to approve an existing sample through the
+          browser. The approved state shall persist when the records page is reopened.
+  - id: receipt
+    title: Sample receipt and calculation
+    requirements:
+      - id: URS-REC-001
+        title: Receipt fields and invalid input
+        statement: >-
+          An operator shall enter a sample using the fields below. Missing required
+          values, a negative mass, or zero volume shall prevent saving and identify
+          the rejected field. A zero mass with a positive volume shall be accepted.
+        table:
+          columns: [Field, Type, Required, Default, Constraint]
+          rows:
+            - [Sample ID, text, "yes", blank, 1 to 32 characters after trimming]
+            - [Storage location, choice, "yes", Ambient, Ambient or Chilled]
+            - [Receipt date, date, "yes", blank, Valid ISO calendar date]
+            - [Mass (mg), number, "yes", blank, Greater than or equal to zero]
+            - [Volume (mL), number, "yes", blank, Greater than zero]
+      - id: URS-REC-002
+        title: Duplicate prevention
+        statement: >-
+          Saving a Sample ID already present in the register shall be rejected
+          with an explanation. Leading and trailing spaces shall be ignored and
+          identifiers shall be case-sensitive. The original record shall remain
+          unchanged and no additional record shall be created.
+      - id: URS-REC-003
+        title: Retained records
+        statement: >-
+          A saved record shall retain the entered Sample ID, Storage location,
+          Receipt date, Mass, and Volume. These values shall remain visible after
+          navigating away and reopening Retained records. The table shall contain
+          one row per saved record and the headers defined for the export.
+      - id: URS-CALC-001
+        title: Concentration
+        statement: >-
+          Concentration in mg/mL shall equal mass in mg divided by volume in mL.
+          The displayed result shall be rounded to three decimal places. Reference
+          cases 12 mg / 3 mL = 4.000 mg/mL and 0 mg / 1 mL = 0.000 mg/mL shall agree
+          within an absolute tolerance of 0.0005 mg/mL. Invalid inputs shall not
+          produce a saved result.
+        references: [references/calculation-examples.csv]
+        rationale: Independently specified arithmetic examples, not outputs copied from the application.
+  - id: interfaces
+    title: Exports and attachments
+    requirements:
+      - id: URS-EXP-001
+        title: Export contents
+        statement: >-
+          Download receipt CSV shall produce a UTF-8 CSV file containing one row
+          for each retained sample, ordered by Receipt date then Sample ID. Column
+          order shall be Sample ID, Storage location, Receipt date, Mass (mg),
+          Volume (mL), Concentration (mg/mL), Status. Values shall agree with the
+          retained records, with concentration shown to three decimal places.
+      - id: URS-FILE-001
+        title: Text attachment retention
+        statement: >-
+          An authenticated user shall be able to upload a plain-text .txt attachment
+          of at most 100 KiB. The application shall identify the retained filename
+          and display the retained text without changing its content. Unsupported
+          filenames or oversized attachments shall be rejected.
+  - id: installation
+    title: Installation observations and external evidence
+    requirements:
+      - id: URS-IQ-001
+        title: Reachable application
+        statement: >-
+          The target health interface shall return status 200 and identify the
+          application as Synthetic sample register.
+      - id: URS-IQ-002
+        title: Deployment recovery evidence
+        statement: >-
+          The deployment owner shall supply a documented procedure to retain and
+          restore the sample data directory. A reviewer shall verify that the
+          procedure identifies the directory, backup responsibility, and restore
+          verification. Browser observations alone do not establish recovery.
+open_questions: []

@@ -1,0 +1,3119 @@
+{
+  "schema_version": 1,
+  "runtime_version": 1,
+  "id": "PLAN-SAMPLE-REGISTER",
+  "title": "Synthetic sample register IOQ",
+  "urs_revision": "1",
+  "target": {
+    "url": "http://127.0.0.1:64362",
+    "allowed_origins": [
+      "http://127.0.0.1:64362"
+    ]
+  },
+  "environment": {
+    "locale": "en-US",
+    "timezone": "UTC",
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "timeout_ms": 5000
+  },
+  "access": [
+    {
+      "id": "operator",
+      "role": "operator",
+      "state": "active",
+      "mode": "credentials",
+      "purpose": "Positive login, receipt, export, attachment and denied approval cases.",
+      "cases": [
+        "OQ-001",
+        "OQ-006",
+        "OQ-007",
+        "OQ-008",
+        "OQ-009",
+        "OQ-010",
+        "OQ-011"
+      ],
+      "distinct_from": []
+    },
+    {
+      "id": "supervisor",
+      "role": "supervisor",
+      "state": "active",
+      "mode": "credentials",
+      "purpose": "Positive supervisor approval.",
+      "cases": [
+        "OQ-011"
+      ],
+      "distinct_from": [
+        "operator"
+      ]
+    },
+    {
+      "id": "disabled",
+      "role": "operator",
+      "state": "disabled",
+      "mode": "credentials",
+      "purpose": "Disabled-account rejection.",
+      "cases": [
+        "OQ-003"
+      ],
+      "distinct_from": []
+    },
+    {
+      "id": "wrong",
+      "role": "operator",
+      "state": "incorrect_password",
+      "mode": "credentials",
+      "purpose": "Known active username with deliberately incorrect password.",
+      "cases": [
+        "OQ-002"
+      ],
+      "distinct_from": []
+    },
+    {
+      "id": "nonexistent",
+      "role": "operator",
+      "state": "nonexistent",
+      "mode": "credentials",
+      "purpose": "Nonexistent-user rejection.",
+      "cases": [
+        "OQ-004"
+      ],
+      "distinct_from": []
+    },
+    {
+      "id": "visitor",
+      "role": "visitor",
+      "state": "signed_out",
+      "mode": "anonymous",
+      "purpose": "Signed-out access and public health observations.",
+      "cases": [
+        "IQ-001",
+        "OQ-005"
+      ],
+      "distinct_from": []
+    }
+  ],
+  "obligations": [
+    {
+      "id": "CL-AUTH-LOGIN",
+      "requirement_id": "URS-AUTH-001",
+      "source": "URS-AUTH-001/statement",
+      "statement": "Active account login displays identity and role; logout removes browser access.",
+      "assertion_ids": [
+        "OQ-001-AUTH",
+        "OQ-001-A1"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-AUTH-002",
+      "requirement_id": "URS-AUTH-002",
+      "source": "URS-AUTH-002/statement",
+      "statement": "Deny incorrect-password login without establishing a session.",
+      "assertion_ids": [
+        "OQ-002-A1",
+        "OQ-002-A2"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-AUTH-003",
+      "requirement_id": "URS-AUTH-002",
+      "source": "URS-AUTH-002/statement",
+      "statement": "Deny disabled login without establishing a session.",
+      "assertion_ids": [
+        "OQ-003-A1",
+        "OQ-003-A2"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-AUTH-004",
+      "requirement_id": "URS-AUTH-002",
+      "source": "URS-AUTH-002/statement",
+      "statement": "Deny nonexistent login without establishing a session.",
+      "assertion_ids": [
+        "OQ-004-A1",
+        "OQ-004-A2"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-SIGNED-OUT",
+      "requirement_id": "URS-AUTH-003",
+      "source": "URS-AUTH-003/statement",
+      "statement": "Signed-out browser redirects to sign-in and HTTP returns 401 without records.",
+      "assertion_ids": [
+        "OQ-005-A1",
+        "OQ-005-A2",
+        "OQ-005-A3"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-PERM-OP",
+      "requirement_id": "URS-PERM-001",
+      "source": "URS-PERM-001/statement",
+      "statement": "Operator approval control is absent and server denies approval.",
+      "assertion_ids": [
+        "OQ-011-HIDDEN",
+        "OQ-011-DENIED"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-PERM-SUP",
+      "requirement_id": "URS-PERM-001",
+      "source": "URS-PERM-001/statement",
+      "statement": "Supervisor approval persists after reopening.",
+      "assertion_ids": [
+        "OQ-011-SUP-AUTH",
+        "OQ-011-APPROVED"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-FIELDS",
+      "requirement_id": "URS-REC-001",
+      "source": "URS-REC-001/table",
+      "statement": "Receipt fields and defaults match the specified table.",
+      "assertion_ids": [
+        "OQ-006-A1",
+        "OQ-006-BLANK0",
+        "OQ-006-BLANK1",
+        "OQ-006-BLANK2",
+        "OQ-006-BLANK3"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-BOUNDARIES",
+      "requirement_id": "URS-REC-001",
+      "source": "URS-REC-001/statement",
+      "statement": "Missing/invalid inputs are rejected and numeric/string boundaries enforced.",
+      "assertion_ids": [
+        "OQ-008-REQUIRED-ID",
+        "OQ-008-REQUIRED-DATE",
+        "OQ-008-REQUIRED-MASS",
+        "OQ-008-NEGATIVE-MASS",
+        "OQ-008-ZERO-VOLUME",
+        "OQ-008-ZERO-SAVED",
+        "OQ-008-ZERO-CALC",
+        "OQ-008-ZERO-NUM",
+        "OQ-008-LONG-STATUS",
+        "OQ-008-LONG-ERROR",
+        "OQ-008-CHOICE-STATUS",
+        "OQ-008-CHOICE-ERROR",
+        "OQ-008-DATE-STATUS",
+        "OQ-008-DATE-ERROR",
+        "OQ-008-MISSING-VOLUME-STATUS",
+        "OQ-008-MISSING-VOLUME-ERROR",
+        "OQ-008-MIN-SAVED"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-DUPLICATE",
+      "requirement_id": "URS-REC-002",
+      "source": "URS-REC-002/statement",
+      "statement": "Reject trimmed duplicate and preserve the one original; case-sensitive identifiers remain distinct.",
+      "assertion_ids": [
+        "OQ-007-DENIED",
+        "OQ-007-COUNT",
+        "OQ-007-ORIGINAL",
+        "OQ-007-CASE"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-RETENTION",
+      "requirement_id": "URS-REC-003",
+      "source": "URS-REC-003/statement",
+      "statement": "All saved values and table headers remain after reopening with one matching row.",
+      "assertion_ids": [
+        "OQ-006-HEADERS",
+        "OQ-006-COUNT",
+        "OQ-006-VAL1",
+        "OQ-006-VAL2",
+        "OQ-006-VAL3",
+        "OQ-006-VAL4",
+        "OQ-006-VAL5",
+        "OQ-006-VAL6",
+        "OQ-006-VAL7"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-CALC",
+      "requirement_id": "URS-CALC-001",
+      "source": "URS-CALC-001/statement",
+      "statement": "Independent 12/3 and 0/1 calculations have three decimals and declared tolerance.",
+      "assertion_ids": [
+        "OQ-006-VAL6",
+        "OQ-006-NUM",
+        "OQ-008-ZERO-CALC",
+        "OQ-008-ZERO-NUM",
+        "OQ-008-NEGATIVE-MASS",
+        "OQ-008-ZERO-VOLUME"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-EXPORT",
+      "requirement_id": "URS-EXP-001",
+      "source": "URS-EXP-001/statement",
+      "statement": "Export contains specified column order, values and rows in receipt-date order.",
+      "assertion_ids": [
+        "OQ-009-HEADERS",
+        "OQ-009-ROWS"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-ATTACHMENT",
+      "requirement_id": "URS-FILE-001",
+      "source": "URS-FILE-001/statement",
+      "statement": "Retain filename/content for valid text; reject wrong extension and size.",
+      "assertion_ids": [
+        "OQ-010-NAME",
+        "OQ-010-TEXT",
+        "OQ-010-EXT-ERROR",
+        "OQ-010-SIZE-ERROR"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-HEALTH",
+      "requirement_id": "URS-IQ-001",
+      "source": "URS-IQ-001/statement",
+      "statement": "Reachable health endpoint identifies the application.",
+      "assertion_ids": [
+        "IQ-001-A1",
+        "IQ-001-A2"
+      ],
+      "manual_case_ids": []
+    },
+    {
+      "id": "CL-RECOVERY",
+      "requirement_id": "URS-IQ-002",
+      "source": "URS-IQ-002/statement",
+      "statement": "Deployment owner supplies a recovery procedure identifying directory, responsibility, and verification.",
+      "assertion_ids": [],
+      "manual_case_ids": [
+        "IQ-002"
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "IQ-001",
+      "title": "Observe application identity",
+      "classification": "IQ",
+      "requirements": [
+        "URS-IQ-001"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "IQ-001-1",
+          "instruction": "Request the public health interface.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/health",
+              "method": "GET",
+              "as": "health"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "IQ-001-A1",
+              "variable": "health.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 200
+            },
+            {
+              "id": "IQ-001-A2",
+              "variable": "health.body.application",
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Synthetic sample register"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "IQ-001-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-009",
+      "title": "Receipt export contents and ordering",
+      "classification": "OQ",
+      "requirements": [
+        "URS-EXP-001"
+      ],
+      "actor": "operator",
+      "prerequisites": [
+        "Run before other record-creating cases against the declared empty starting data directory."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-009-LOGIN",
+          "instruction": "Sign in using the declared operator credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "operator.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "operator.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-009-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as operator (operator)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-009-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-009-1",
+          "instruction": "Create three export examples in reverse date and identifier order.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "EXPORT-B"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Chilled"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-17"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "EXPORT-C"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Chilled"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-16"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "EXPORT-A"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Ambient"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-16"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-009-CREATED",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"status\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample saved."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-009-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-009-2",
+          "instruction": "Download the CSV and compare headers, row values, and date order.",
+          "actions": [
+            {
+              "op": "download",
+              "locator": {
+                "by": "role",
+                "value": "Download receipt CSV",
+                "role": "link",
+                "exact": true
+              },
+              "save_as": "export"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-009-HEADERS",
+              "variable": "export.text",
+              "read": "text",
+              "comparison": "contains",
+              "expected": "Sample ID,Storage location,Receipt date,Mass (mg),Volume (mL),Concentration (mg/mL),Status\r\n"
+            },
+            {
+              "id": "OQ-009-ROWS",
+              "variable": "export.text",
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample ID,Storage location,Receipt date,Mass (mg),Volume (mL),Concentration (mg/mL),Status\r\nEXPORT-A,Ambient,2026-01-16,12,3,4.000,Received\r\nEXPORT-C,Chilled,2026-01-16,12,3,4.000,Received\r\nEXPORT-B,Chilled,2026-01-17,12,3,4.000,Received\r\n"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-009-2-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-009-DOWNLOAD",
+              "kind": "download",
+              "variable": "export",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-001",
+      "title": "Active login and logout",
+      "classification": "OQ",
+      "requirements": [
+        "URS-AUTH-001"
+      ],
+      "actor": "operator",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-001-LOGIN",
+          "instruction": "Sign in using the declared operator credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "operator.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "operator.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-001-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as operator (operator)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-001-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-001-2",
+          "instruction": "Sign out, then attempt to reopen retained records.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign out",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-001-A1",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-001-2-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-001-2-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-002",
+      "title": "Incorrect password for active account",
+      "classification": "OQ",
+      "requirements": [
+        "URS-AUTH-002"
+      ],
+      "actor": "wrong",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-002-1",
+          "instruction": "Attempt login using the wrong binding; do not replace the account if denied.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "wrong.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "wrong.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "GET",
+              "as": "denied"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-002-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Login denied."
+            },
+            {
+              "id": "OQ-002-A2",
+              "variable": "denied.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 401
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-002-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-003",
+      "title": "Disabled account login",
+      "classification": "OQ",
+      "requirements": [
+        "URS-AUTH-002"
+      ],
+      "actor": "disabled",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-003-1",
+          "instruction": "Attempt login using the disabled binding; do not replace the account if denied.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "disabled.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "disabled.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "GET",
+              "as": "denied"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-003-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Login denied."
+            },
+            {
+              "id": "OQ-003-A2",
+              "variable": "denied.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 401
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-003-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-004",
+      "title": "Nonexistent account login",
+      "classification": "OQ",
+      "requirements": [
+        "URS-AUTH-002"
+      ],
+      "actor": "nonexistent",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-004-1",
+          "instruction": "Attempt login using the nonexistent binding; do not replace the account if denied.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "nonexistent.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "nonexistent.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "GET",
+              "as": "denied"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-004-A1",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Login denied."
+            },
+            {
+              "id": "OQ-004-A2",
+              "variable": "denied.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 401
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-004-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-005",
+      "title": "Signed-out browser and HTTP access",
+      "classification": "OQ",
+      "requirements": [
+        "URS-AUTH-003"
+      ],
+      "actor": "visitor",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-005-1",
+          "instruction": "Open retained records and request records without authenticating.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/records"
+            },
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "GET",
+              "as": "visitor"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-005-A1",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            },
+            {
+              "id": "OQ-005-A2",
+              "variable": "visitor.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 401
+            },
+            {
+              "id": "OQ-005-A3",
+              "variable": "visitor.body",
+              "read": "text",
+              "comparison": "equals",
+              "expected": {
+                "error": "Authentication required"
+              }
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-005-1-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-005-1-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-006",
+      "title": "Receipt fields, retained values and concentration",
+      "classification": "OQ",
+      "requirements": [
+        "URS-REC-001",
+        "URS-REC-003",
+        "URS-CALC-001"
+      ],
+      "actor": "operator",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-006-LOGIN",
+          "instruction": "Sign in using the declared operator credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "operator.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "operator.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-006-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as operator (operator)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-006-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-006-1",
+          "instruction": "Observe default storage and blank required inputs.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-006-A1",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "read": "value",
+              "comparison": "equals",
+              "expected": "Ambient"
+            },
+            {
+              "id": "OQ-006-BLANK0",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "read": "value",
+              "comparison": "equals",
+              "expected": ""
+            },
+            {
+              "id": "OQ-006-BLANK1",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "read": "value",
+              "comparison": "equals",
+              "expected": ""
+            },
+            {
+              "id": "OQ-006-BLANK2",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "read": "value",
+              "comparison": "equals",
+              "expected": ""
+            },
+            {
+              "id": "OQ-006-BLANK3",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "read": "value",
+              "comparison": "equals",
+              "expected": ""
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-006-1-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-006-1-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-006-2",
+          "instruction": "Record DEMO-104 with 12 mg mass and 3 mL volume.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "DEMO-104"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Chilled"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-15"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-006-A2",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"status\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample saved."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-006-2-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-006-2-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-006-3",
+          "instruction": "Navigate away and reopen the retained record. Compare all values and the calculation with the independent reference.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            },
+            {
+              "op": "read",
+              "locator": {
+                "by": "css",
+                "value": "table thead",
+                "exact": true
+              },
+              "as": "headers",
+              "read": "table"
+            },
+            {
+              "op": "read",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(6)",
+                "exact": true
+              },
+              "as": "concentration",
+              "read": "text"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-006-HEADERS",
+              "variable": "headers",
+              "read": "text",
+              "comparison": "equals",
+              "expected": [
+                [
+                  "Sample ID",
+                  "Storage location",
+                  "Receipt date",
+                  "Mass (mg)",
+                  "Volume (mL)",
+                  "Concentration (mg/mL)",
+                  "Status"
+                ]
+              ]
+            },
+            {
+              "id": "OQ-006-VAL1",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(1)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "DEMO-104"
+            },
+            {
+              "id": "OQ-006-VAL2",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(2)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Chilled"
+            },
+            {
+              "id": "OQ-006-VAL3",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(3)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "2026-01-15"
+            },
+            {
+              "id": "OQ-006-VAL4",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(4)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "12"
+            },
+            {
+              "id": "OQ-006-VAL5",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(5)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "3"
+            },
+            {
+              "id": "OQ-006-VAL6",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(6)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "4.000"
+            },
+            {
+              "id": "OQ-006-VAL7",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\")) td:nth-child(7)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Received"
+            },
+            {
+              "id": "OQ-006-NUM",
+              "variable": "concentration",
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 4,
+              "tolerance": 0.0005
+            },
+            {
+              "id": "OQ-006-COUNT",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DEMO-104\"))",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-006-3-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-006-3-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-007",
+      "title": "Duplicate rejection and identifier equivalence",
+      "classification": "OQ",
+      "requirements": [
+        "URS-REC-002"
+      ],
+      "actor": "operator",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-007-LOGIN",
+          "instruction": "Sign in using the declared operator credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "operator.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "operator.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-007-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as operator (operator)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-007-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-007-1",
+          "instruction": "Create a receipt for DUP-104.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "DUP-104"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Chilled"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-15"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-007-CREATED",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"status\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample saved."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-007-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-007-2",
+          "instruction": "Attempt a duplicate with surrounding spaces and changed storage.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "  DUP-104  "
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Ambient"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-15"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-007-DENIED",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "contains",
+              "expected": "Sample ID already exists."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-007-2-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-007-2-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-007-3",
+          "instruction": "Reopen records and verify the original is the only matching row.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-007-COUNT",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DUP-104\"))",
+                "exact": true
+              },
+              "read": "count",
+              "comparison": "equals",
+              "expected": 1
+            },
+            {
+              "id": "OQ-007-ORIGINAL",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"DUP-104\")) td:nth-child(2)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Chilled"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-007-3-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-007-3-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-007-4",
+          "instruction": "Use a distinct lower-case identifier to verify case sensitivity.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "dup-104"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Chilled"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-15"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-007-CASE",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"status\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample saved."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-007-4-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-008",
+      "title": "Required inputs and numeric boundaries",
+      "classification": "OQ",
+      "requirements": [
+        "URS-REC-001",
+        "URS-CALC-001"
+      ],
+      "actor": "operator",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-008-LOGIN",
+          "instruction": "Sign in using the declared operator credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "operator.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "operator.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as operator (operator)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-1",
+          "instruction": "Submit a blank receipt.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-REQUIRED-ID",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample ID is required."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-1-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-2",
+          "instruction": "Supply an identifier but omit the date.",
+          "actions": [
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-REQUIRED-DATE",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Receipt date must be a valid calendar date."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-2-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-3",
+          "instruction": "Supply the date but omit mass.",
+          "actions": [
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-15"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-REQUIRED-MASS",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Mass must be a number greater than or equal to zero."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-3-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-4",
+          "instruction": "Try a negative mass.",
+          "actions": [
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "-1"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "1"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-NEGATIVE-MASS",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Mass must be a number greater than or equal to zero."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-4-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-5",
+          "instruction": "Try zero volume.",
+          "actions": [
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "0"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "0"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-ZERO-VOLUME",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Volume must be a number greater than zero."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-5-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-6",
+          "instruction": "Accept zero mass, positive volume and the maximum 32-character identifier.",
+          "actions": [
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "1"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-ZERO-SAVED",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"status\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample saved."
+            },
+            {
+              "id": "OQ-008-ZERO-CALC",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\")) td:nth-child(6)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "0.000"
+            },
+            {
+              "id": "OQ-008-ZERO-NUM",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\")) td:nth-child(6)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "numeric",
+              "expected": 0,
+              "tolerance": 0.0005
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-6-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-008-6-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-LONG",
+          "instruction": "Supplement browser checks with server rejection of long.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "POST",
+              "body": {
+                "sampleId": "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                "location": "Ambient",
+                "receiptDate": "2026-01-15",
+                "mass": "12",
+                "volume": "3"
+              },
+              "as": "rejected"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-LONG-STATUS",
+              "variable": "rejected.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "OQ-008-LONG-ERROR",
+              "variable": "rejected.body.error",
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample ID must be 1 to 32 characters."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-LONG-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-CHOICE",
+          "instruction": "Supplement browser checks with server rejection of choice.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "POST",
+              "body": {
+                "sampleId": "REJECTED",
+                "location": "Frozen",
+                "receiptDate": "2026-01-15",
+                "mass": "12",
+                "volume": "3"
+              },
+              "as": "rejected"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-CHOICE-STATUS",
+              "variable": "rejected.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "OQ-008-CHOICE-ERROR",
+              "variable": "rejected.body.error",
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Storage location must be Ambient or Chilled."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-CHOICE-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-DATE",
+          "instruction": "Supplement browser checks with server rejection of date.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "POST",
+              "body": {
+                "sampleId": "REJECTED",
+                "location": "Ambient",
+                "receiptDate": "2026-02-30",
+                "mass": "12",
+                "volume": "3"
+              },
+              "as": "rejected"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-DATE-STATUS",
+              "variable": "rejected.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "OQ-008-DATE-ERROR",
+              "variable": "rejected.body.error",
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Receipt date must be a valid calendar date."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-DATE-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-MISSING-VOLUME",
+          "instruction": "Supplement browser checks with server rejection of missing-volume.",
+          "actions": [
+            {
+              "op": "request",
+              "url": "/api/samples",
+              "method": "POST",
+              "body": {
+                "sampleId": "REJECTED",
+                "location": "Ambient",
+                "receiptDate": "2026-01-15",
+                "mass": "12",
+                "volume": ""
+              },
+              "as": "rejected"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-MISSING-VOLUME-STATUS",
+              "variable": "rejected.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 422
+            },
+            {
+              "id": "OQ-008-MISSING-VOLUME-ERROR",
+              "variable": "rejected.body.error",
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Volume must be a number greater than zero."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-MISSING-VOLUME-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-008-MIN",
+          "instruction": "Accept a one-character sample identifier.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "m"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Ambient"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-15"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-008-MIN-SAVED",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"status\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Sample saved."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-008-MIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-010",
+      "title": "Attachment contents and rejection",
+      "classification": "OQ",
+      "requirements": [
+        "URS-FILE-001"
+      ],
+      "actor": "operator",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-010-LOGIN",
+          "instruction": "Sign in using the declared operator credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "operator.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "operator.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-010-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as operator (operator)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-010-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-010-1",
+          "instruction": "Upload and inspect the retained synthetic plain-text attachment.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/attachments"
+            },
+            {
+              "op": "upload",
+              "locator": {
+                "by": "label",
+                "value": "Text attachment",
+                "exact": true
+              },
+              "path": "fixtures/sample-notes.txt"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Upload attachment",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-010-NAME",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"status\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Attachment received: sample-notes.txt"
+            },
+            {
+              "id": "OQ-010-TEXT",
+              "locator": {
+                "by": "testId",
+                "value": "attachment-content",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Synthetic receipt attachment.\nNo personal or patient data.\n"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-010-1-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-010-1-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-010-EXT",
+          "instruction": "Reject an unsupported or oversized attachment.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/attachments"
+            },
+            {
+              "op": "upload",
+              "locator": {
+                "by": "label",
+                "value": "Text attachment",
+                "exact": true
+              },
+              "path": "fixtures/not-text.csv"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Upload attachment",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-010-EXT-ERROR",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "A plain-text .txt attachment of at most 100 KiB is required."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-010-EXT-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-010-SIZE",
+          "instruction": "Reject an unsupported or oversized attachment.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/attachments"
+            },
+            {
+              "op": "upload",
+              "locator": {
+                "by": "label",
+                "value": "Text attachment",
+                "exact": true
+              },
+              "path": "fixtures/too-large.txt"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Upload attachment",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-010-SIZE-ERROR",
+              "locator": {
+                "by": "css",
+                "value": "[role=\"alert\"]",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "A plain-text .txt attachment of at most 100 KiB is required."
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-010-SIZE-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "OQ-011",
+      "title": "Operator denial and supervisor approval",
+      "classification": "OQ",
+      "requirements": [
+        "URS-PERM-001"
+      ],
+      "actor": "operator",
+      "prerequisites": [
+        "Qualification starts with an empty synthetic sample data directory. This case uses distinct identifiers."
+      ],
+      "manual": false,
+      "steps": [
+        {
+          "id": "OQ-011-LOGIN",
+          "instruction": "Sign in using the declared operator credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "operator.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "operator.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-011-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as operator (operator)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-011-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-011-1",
+          "instruction": "Create a sample as an operator and attempt approval through HTTP.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID",
+                "exact": true
+              },
+              "value": "PERMISSION-104"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Storage location",
+                "exact": true
+              },
+              "value": "Chilled"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Receipt date",
+                "exact": true
+              },
+              "value": "2026-01-15"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Mass (mg)",
+                "exact": true
+              },
+              "value": "12"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Volume (mL)",
+                "exact": true
+              },
+              "value": "3"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Save sample",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "request",
+              "url": "/api/approve",
+              "method": "POST",
+              "body": {
+                "sampleId": "PERMISSION-104"
+              },
+              "as": "approvalDenied"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-011-HIDDEN",
+              "locator": {
+                "by": "role",
+                "value": "Approve sample",
+                "role": "button",
+                "exact": true
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": false
+            },
+            {
+              "id": "OQ-011-DENIED",
+              "variable": "approvalDenied.status",
+              "read": "text",
+              "comparison": "equals",
+              "expected": 403
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-011-1-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-011-1-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-011-2",
+          "instruction": "Sign out before changing to the declared supervisor actor.",
+          "actions": [
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign out",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "session",
+              "actor": "supervisor"
+            }
+          ],
+          "assertions": [],
+          "evidence": []
+        },
+        {
+          "id": "OQ-011-SUP-LOGIN",
+          "instruction": "Sign in using the declared supervisor credential binding.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/login"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Username",
+                "exact": true
+              },
+              "binding": "supervisor.username"
+            },
+            {
+              "op": "fillSecret",
+              "locator": {
+                "by": "label",
+                "value": "Password",
+                "exact": true
+              },
+              "binding": "supervisor.password"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Sign in",
+                "role": "button",
+                "exact": true
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-011-SUP-AUTH",
+              "locator": {
+                "by": "testId",
+                "value": "identity",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Signed in as supervisor (supervisor)"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-011-SUP-LOGIN-OBS",
+              "kind": "observation",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "OQ-011-3",
+          "instruction": "Approve the sample using the supervisor browser controls, then reopen records.",
+          "actions": [
+            {
+              "op": "navigate",
+              "url": "/records"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID to approve",
+                "exact": true
+              },
+              "value": "PERMISSION-104"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "value": "Approve sample",
+                "role": "button",
+                "exact": true
+              }
+            },
+            {
+              "op": "navigate",
+              "url": "/samples"
+            },
+            {
+              "op": "navigate",
+              "url": "/records"
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-011-APPROVED",
+              "locator": {
+                "by": "css",
+                "value": "table tbody tr:has(td:text-is(\"PERMISSION-104\")) td:nth-child(7)",
+                "exact": true
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Approved"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-011-3-OBS",
+              "kind": "observation",
+              "required": true
+            },
+            {
+              "id": "OQ-011-3-SCREEN",
+              "kind": "screenshot",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "citations": []
+    },
+    {
+      "id": "IQ-002",
+      "title": "Review deployment recovery procedure",
+      "classification": "IQ",
+      "requirements": [
+        "URS-IQ-002"
+      ],
+      "prerequisites": [
+        "Deployment owner supplies the recovery procedure."
+      ],
+      "manual": true,
+      "manual_procedure": "Inspect the deployment recovery procedure and identify its data-directory scope, responsible owner, and restore-verification steps. Retain the reviewed procedure in the organization controlled document system.",
+      "manual_expected": "The procedure identifies the deployed sample data directory, backup responsibility, and an explicit verification that restored records are readable.",
+      "steps": [],
+      "citations": []
+    }
+  ],
+  "questions": [],
+  "fixtures": [
+    "fixtures/sample-notes.txt",
+    "fixtures/not-text.csv",
+    "fixtures/too-large.txt"
+  ],
+  "references": [
+    "references/calculation-examples.csv"
+  ],
+  "context_hashes": []
+}

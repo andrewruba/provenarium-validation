@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "id": "run-20261125T013534911Z-065afdc4",
+  "package_id": "pkg-ce4eb068-4cbe-4956-b2a6-88c5a02d6ff4",
+  "started_at": "2026-11-25T01:35:34.912Z",
+  "complete": true,
+  "target_url": "http://127.0.0.1:64362",
+  "release_label": "synthetic-defective",
+  "versions": {
+    "cli": "0.1.0",
+    "playwright": "1.65.1",
+    "node": "v26.13.0",
+    "browser": "159.0.8154.6"
+  },
+  "accounts": {
+    "operator": {
+      "username": "operator",
+      "role": "operator",
+      "state": "active"
+    },
+    "supervisor": {
+      "username": "supervisor",
+      "role": "supervisor",
+      "state": "active"
+    },
+    "disabled": {
+      "username": "disabled",
+      "role": "operator",
+      "state": "disabled"
+    },
+    "wrong": {
+      "username": "operator",
+      "role": "operator",
+      "state": "incorrect_password"
+    },
+    "nonexistent": {
+      "username": "nobody-exists",
+      "role": "operator",
+      "state": "nonexistent"
+    }
+  },
+  "cases": [
+    {
+      "id": "IQ-001",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-009",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-001",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-002",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-003",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-004",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-005",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-006",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-007",
+      "status": "failed",
+      "message": "The approved procedure or required evidence failed; inspect retained observations."
+    },
+    {
+      "id": "OQ-008",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-010",
+      "status": "passed"
+    },
+    {
+      "id": "OQ-011",
+      "status": "passed"
+    },
+    {
+      "id": "IQ-002",
+      "status": "manual_pending"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "export",
+      "path": "artifacts/OQ-009-OQ-009-2-export.download",
+      "sha256": "c3ac7549d588f30e20af555ac832df174acc8095748c4126d48589b7d2d13d31",
+      "kind": "download",
+      "case_id": "OQ-009",
+      "step_id": "OQ-009-2"
+    },
+    {
+      "id": "OQ-001-2-SCREEN",
+      "path": "artifacts/OQ-001-OQ-001-2-OQ-001-2-SCREEN.png",
+      "sha256": "0c16bd086bf9d636531a2bc9ce5436d72de2594da2d7edd7047512223ce6b6e5",
+      "kind": "screenshot",
+      "case_id": "OQ-001",
+      "step_id": "OQ-001-2"
+    },
+    {
+      "id": "OQ-005-1-SCREEN",
+      "path": "artifacts/OQ-005-OQ-005-1-OQ-005-1-SCREEN.png",
+      "sha256": "010d13fe2627af32ee3c35f95a9f70e4932f0271f2551259c54668dd6c6565fb",
+      "kind": "screenshot",
+      "case_id": "OQ-005",
+      "step_id": "OQ-005-1"
+    },
+    {
+      "id": "OQ-006-1-SCREEN",
+      "path": "artifacts/OQ-006-OQ-006-1-OQ-006-1-SCREEN.png",
+      "sha256": "3aecec9142a50b2cd58349e5231b0504d359ab5abaf7ec643a8099b68a22bb0f",
+      "kind": "screenshot",
+      "case_id": "OQ-006",
+      "step_id": "OQ-006-1"
+    },
+    {
+      "id": "OQ-006-2-SCREEN",
+      "path": "artifacts/OQ-006-OQ-006-2-OQ-006-2-SCREEN.png",
+      "sha256": "d27b6bef85f9feb09f34adf6dac15e9b7e75cd7d6403a6a40103d43cc09844b1",
+      "kind": "screenshot",
+      "case_id": "OQ-006",
+      "step_id": "OQ-006-2"
+    },
+    {
+      "id": "OQ-006-3-SCREEN",
+      "path": "artifacts/OQ-006-OQ-006-3-OQ-006-3-SCREEN.png",
+      "sha256": "7a6ad0298b7fb0b2a6573c7bc7cccec24008bb7cf6071783032a885f38caf62b",
+      "kind": "screenshot",
+      "case_id": "OQ-006",
+      "step_id": "OQ-006-3"
+    },
+    {
+      "id": "OQ-007-2-SCREEN",
+      "path": "artifacts/OQ-007-OQ-007-2-OQ-007-2-SCREEN.png",
+      "sha256": "55f2dfe673cc188d18a8d442b303b635269ed9e5d47f4083750d0c36d4e8af3c",
+      "kind": "screenshot",
+      "case_id": "OQ-007",
+      "step_id": "OQ-007-2"
+    },
+    {
+      "id": "OQ-008-6-SCREEN",
+      "path": "artifacts/OQ-008-OQ-008-6-OQ-008-6-SCREEN.png",
+      "sha256": "11fdee77f6dd7afd13e4dea5480686d7578dd4d7130dea1b68ce6832e23e5024",
+      "kind": "screenshot",
+      "case_id": "OQ-008",
+      "step_id": "OQ-008-6"
+    },
+    {
+      "id": "OQ-010-1-SCREEN",
+      "path": "artifacts/OQ-010-OQ-010-1-OQ-010-1-SCREEN.png",
+      "sha256": "c2da66fd7e4904c512e94bdf2651e3f4ba3ad5bea7221cd33ee9671ed05caa79",
+      "kind": "screenshot",
+      "case_id": "OQ-010",
+      "step_id": "OQ-010-1"
+    },
+    {
+      "id": "OQ-011-1-SCREEN",
+      "path": "artifacts/OQ-011-OQ-011-1-OQ-011-1-SCREEN.png",
+      "sha256": "1050e83de4b8acda32a74494b7687ea42a135ea0e7c77ea494ed52e3352405de",
+      "kind": "screenshot",
+      "case_id": "OQ-011",
+      "step_id": "OQ-011-1"
+    },
+    {
+      "id": "OQ-011-3-SCREEN",
+      "path": "artifacts/OQ-011-OQ-011-3-OQ-011-3-SCREEN.png",
+      "sha256": "d6c1cfac73b88aa7b88b84c859509a03602089d3e59844c3dc8a7c78aea92573",
+      "kind": "screenshot",
+      "case_id": "OQ-011",
+      "step_id": "OQ-011-3"
+    }
+  ],
+  "ended_at": "2026-11-25T01:35:45.613Z"
+}

@@ -1,0 +1,4 @@
+Sample ID,Storage location,Receipt date,Mass (mg),Volume (mL),Concentration (mg/mL),Status
+EXPORT-A,Ambient,2026-01-16,12,3,4.000,Received
+EXPORT-C,Chilled,2026-01-16,12,3,4.000,Received
+EXPORT-B,Chilled,2026-01-17,12,3,4.000,Received

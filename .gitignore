@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+*.tgz
+.provenarium/
+.env
+.env.*
+test-results/
+playwright-report/
+.DS_Store
