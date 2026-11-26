@@ -219,8 +219,14 @@ async function retainResult<T>(directory: string, result: AuthoringResult<T>): P
     `Authoring record: ${file}\nUsage estimate: $${result.spend.actual.toFixed(4)}; uncertain reservations: $${result.spend.reserved.toFixed(4)}; calls: ${result.spend.calls}.`,
   );
   if (result.questions.length) console.log(result.questions.map((q) => `  ${q}`).join('\n'));
+  if (result.diagnostics?.length)
+    console.log(
+      `Provider response diagnostics: ${result.diagnostics.length} redacted rejected response(s) retained in the authoring record.`,
+    );
   if (result.incomplete) {
-    console.log('INCOMPLETE: retained completed work; resolve the listed issues before approval.');
+    console.log(
+      'INCOMPLETE: authoring did not finish. See the retained diagnostics; this output is not ready for approval.',
+    );
     process.exitCode = 1;
   }
   return file;

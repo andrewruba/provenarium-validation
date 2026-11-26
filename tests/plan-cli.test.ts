@@ -5,7 +5,13 @@ import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { planSchema, ursSchema } from '../src/schema.js';
 
-const mocks = vi.hoisted(() => ({ generatePlan: vi.fn(), getProviderKey: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  generatePlan: vi.fn(),
+  getProviderKey: vi.fn(),
+  fetchImpl: vi.fn(),
+  perform: vi.fn(),
+  close: vi.fn(),
+}));
 vi.mock('../src/credentials.js', () => ({
   getProviderKey: mocks.getProviderKey,
   forgetProviderKey: vi.fn(),
@@ -16,6 +22,22 @@ vi.mock('../src/credentials.js', () => ({
 vi.mock('../src/authoring/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/authoring/index.js')>()),
   generatePlan: mocks.generatePlan,
+}));
+vi.mock('../src/authoring/discovery.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/authoring/discovery.js')>()),
+  Discovery: class {
+    async open() {
+      return {
+        url: 'https://example.test/',
+        title: 'Synthetic register',
+        text: 'Sample ID',
+        controls: [{ label: 'Sample ID', type: 'text' }],
+        links: [],
+      };
+    }
+    perform = mocks.perform;
+    close = mocks.close;
+  },
 }));
 
 const urs = ursSchema.parse({
@@ -105,17 +127,47 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function runCli(value: ReturnType<typeof candidate>) {
+async function runCli(value: ReturnType<typeof candidate>, providerValues?: unknown[]) {
   const root = await mkdtemp(join(tmpdir(), 'provenarium plan CLI '));
   roots.push(root);
   await writeFile(join(root, 'urs.yaml'), stringify(urs));
-  mocks.generatePlan.mockResolvedValue({
-    value,
-    incomplete: false,
-    questions: [],
-    spend: { cap: 5, actual: 0, reserved: 0, calls: 0 },
-    reviewRounds: 0,
-  });
+  if (providerValues) {
+    const { generatePlan } = await vi.importActual<typeof import('../src/authoring/index.js')>(
+      '../src/authoring/index.js',
+    );
+    mocks.fetchImpl.mockImplementation(async () => {
+      const output = providerValues.shift();
+      if (output === undefined) throw new Error('Unexpected additional provider request.');
+      return new Response(
+        JSON.stringify({
+          status: 'completed',
+          usage: { input_tokens: 100, output_tokens: 50 },
+          output: [
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: JSON.stringify({ payload: JSON.stringify(output) }),
+                },
+              ],
+            },
+          ],
+        }),
+      );
+    });
+    mocks.generatePlan.mockImplementation((options) =>
+      generatePlan({ ...options, fetchImpl: mocks.fetchImpl }),
+    );
+  } else {
+    mocks.generatePlan.mockResolvedValue({
+      value,
+      incomplete: false,
+      questions: [],
+      spend: { cap: 5, actual: 0, reserved: 0, calls: 0 },
+      reviewRounds: 0,
+    });
+  }
   process.argv = [
     process.execPath,
     'provenarium',
@@ -197,4 +249,62 @@ it('publishes a structurally valid candidate while retaining genuine product que
   expect(questions.validation_errors.join('\n')).toContain('Q-VISIBILITY');
   expect((await authoringRecord(root)).incomplete).toBe(false);
   expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain('Approval blockers:');
+});
+
+it('persists redacted rejected responses and field diagnostics when schema corrections are exhausted', async () => {
+  const malformed = candidate();
+  malformed.plan.cases[0].classification = 'PQ' as never;
+  malformed.plan.title = 'Synthetic protocol with synthetic-provider-key in rejected output';
+  const root = await runCli(malformed, [{ action: 'finish' }, malformed, malformed, malformed]);
+
+  expect(process.exitCode).toBe(1);
+  expect(console.error).not.toHaveBeenCalled();
+  expect(mocks.fetchImpl).toHaveBeenCalledTimes(4);
+  expect(mocks.perform).not.toHaveBeenCalled();
+  expect(await readdir(root)).not.toContain('candidates');
+  const record = await authoringRecord(root);
+  expect(record.incomplete).toBe(true);
+  expect(record.value).toBeUndefined();
+  expect(record.diagnostics).toHaveLength(3);
+  expect(record.diagnostics[0]).toMatchObject({
+    operation: 'protocol draft',
+    kind: 'document_schema',
+    candidate: {
+      plan: { title: 'Synthetic protocol with [REDACTED] in rejected output' },
+    },
+    issues: expect.arrayContaining([
+      expect.objectContaining({ path: '/plan/cases/0/classification', code: 'invalid_value' }),
+    ]),
+  });
+  expect(JSON.stringify(record)).not.toContain('synthetic-provider-key');
+  const output = vi.mocked(console.log).mock.calls.flat().join('\n');
+  expect(output).toContain('Provider response diagnostics:');
+  expect(output).toContain('INCOMPLETE:');
+});
+
+it('publishes a repaired plan without turning technical diagnostics into approval questions', async () => {
+  const malformed = candidate();
+  malformed.plan.cases[0].classification = 'PQ' as never;
+  const root = await runCli(candidate(), [
+    { action: 'finish' },
+    malformed,
+    candidate(),
+    { findings: [], summary: 'No further findings.' },
+  ]);
+
+  expect(process.exitCode).toBeUndefined();
+  expect(console.error).not.toHaveBeenCalled();
+  expect(mocks.fetchImpl).toHaveBeenCalledTimes(4);
+  const record = await authoringRecord(root);
+  expect(record.incomplete).toBe(false);
+  expect(record.diagnostics).toHaveLength(1);
+  expect(record.questions).toEqual([]);
+  const candidates = await readdir(join(root, 'candidates'));
+  expect(candidates).toHaveLength(1);
+  const questions = JSON.parse(
+    await readFile(join(root, 'candidates', candidates[0], 'questions.json'), 'utf8'),
+  );
+  expect(questions.questions).toEqual([]);
+  expect(questions.validation_errors).toEqual([]);
+  expect(vi.mocked(console.log).mock.calls.flat().join('\n')).not.toContain('Approval blockers:');
 });

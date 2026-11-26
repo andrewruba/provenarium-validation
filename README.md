@@ -34,6 +34,9 @@ deterministic Playwright tests.
 Protocol generation checks requirement links, actor declarations, and required
 files before creating a candidate. It corrects unambiguous source notation and
 can request up to two technical corrections under the same spending ceiling.
+That limit also covers malformed provider JSON and schema-invalid documents.
+Rejected responses remain diagnostic data, with redacted output and exact field
+errors retained in the authoring record; they are never executed as a plan.
 Uncorrected tool-format errors remain in an incomplete authoring record;
 genuine product decisions and missing required evidence still need review.
 

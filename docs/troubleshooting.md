@@ -113,6 +113,26 @@ describe behavior the implementation does not provide. Keep those failures as
 evidence. Change the application or deliberately revise the intended requirement;
 do not change the expected result merely to match an observed output.
 
+## Provider output failed local schema validation
+
+Older versions discarded the rejected response and its field-level errors before
+the protocol correction loop could inspect them. A retained record containing
+only that generic message cannot reveal which field failed; the original output
+cannot be recovered from that record.
+
+Updated generation records redacted, bounded rejected output and precise field
+paths and error codes under `diagnostics` in the authoring JSON. Malformed JSON
+or schema-invalid documents can be corrected using the same maximum of two
+technical corrections for the entire command, within the original spending cap.
+If correction fails or the cap cannot fund it, the attempt remains incomplete
+and no candidate is published. Rejected content is never executed or silently
+accepted by weakening the schema.
+
+Update the CLI and rerun the original generation command. If the problem recurs,
+retain the printed authoring record: it now includes the operation and actual
+validation details needed to investigate. Refusals, incomplete provider output,
+and uncertain network failures do not trigger automatic schema retries.
+
 ## The CLI reports missing Chromium
 
 Install the browser using the setup command printed by the installed CLI. Browser files are version-specific. Linux may also need system libraries. Execution and report generation never install dependencies automatically.

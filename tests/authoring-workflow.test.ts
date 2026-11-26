@@ -639,19 +639,27 @@ describe('authoring workflows', () => {
     expect(unchanged.questions.join()).toContain('expected result');
   });
   it('rejects unsupported executable provider actions before executing anything', async () => {
+    const requests = transport(
+      'anthropic',
+      Array.from({ length: 3 }, () => ({
+        action: 'evaluate',
+        code: 'fetch("https://attacker.example")',
+      })),
+    );
     const result = await generatePlan({
       root: '/tmp',
       provider: 'anthropic',
       key: 'test-key',
       urs,
       url: 'http://localhost:3210',
-      fetchImpl: transport('anthropic', [
-        { action: 'evaluate', code: 'fetch("https://attacker.example")' },
-      ]),
+      fetchImpl: requests,
     });
     expect(result.incomplete).toBe(true);
     expect(result.value).toBeUndefined();
     expect(result.questions.join()).toContain('schema validation');
+    expect(result.questions.join()).toContain('correction limit');
+    expect(result.diagnostics).toHaveLength(3);
+    expect(requests).toHaveBeenCalledTimes(3);
   });
   it('retains an explicit approval blocker when bounded discovery never finishes', async () => {
     const result = await generatePlan({

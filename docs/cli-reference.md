@@ -271,12 +271,22 @@ included as bounded context excerpts.
 
 Unambiguous equivalent source notation is normalized locally. Other technical
 defects can trigger at most two correction requests across the entire command,
-including its review rounds. These requests share the original spending cap.
+including discovery, drafting, and review rounds. Malformed provider JSON and
+documents that fail the local schema use this same two-correction allowance;
+they do not receive a separate retry budget. These requests share the original
+spending cap.
 Corrections must preserve cases, requirement coverage, and expected results;
 they cannot make a failing format check disappear by converting automated cases
 to manual work. If errors remain or the budget cannot cover a correction, the
 authoring record retains the incomplete attempt and diagnostics, and no
 candidate is published.
+
+The authoring record's `diagnostics` list retains the operation, validation
+paths and error codes, and bounded, redacted rejected output. This is untrusted
+diagnostic material, not a validated plan. Schema correction reuses the supplied
+requirements and runtime contract and does not execute the rejected content.
+Network failures, refusals, and provider-declared incomplete output are not
+automatically retried as schema corrections.
 
 Runtime syntax and tool-format questions belong to those technical diagnostics,
 not to the user's requirements decisions. Genuine uncertainties about intended

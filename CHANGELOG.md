@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fixed provider JSON/schema failures bypassing protocol correction and losing
+  their validation details. Authoring records now retain bounded, redacted
+  rejected output with exact error paths and codes. Protocol schema failures
+  share the existing two-correction limit and spending cap; rejected content is
+  never executed. Network failures, refusals, and incomplete provider output are
+  not automatically retried.
 - Fixed protocol authoring that emitted invalid obligation bindings or treated
   document descriptions as file references. Generation now supplies exact source
   bindings and runtime rules, normalizes equivalent notation, and validates each

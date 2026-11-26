@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { boundedResponse, redactValue } from './security.js';
+import { boundedResponse, redact, redactValue } from './security.js';
 
 export type Provider = 'openai' | 'anthropic';
 export type Thoroughness = 'quick' | 'standard' | 'thorough';
@@ -43,6 +43,178 @@ export class BudgetError extends Error {
 }
 export class ProviderError extends Error {
   override name = 'ProviderError';
+}
+export type ProviderOutputIssue = {
+  /** JSON pointer into the invalid envelope or document; empty means its root. */
+  path: string;
+  code: string;
+  message: string;
+  expected?: string;
+  allowed_values?: (string | number | boolean | null)[];
+};
+export type ProviderOutputDiagnostic = {
+  request: number;
+  operation?: string;
+  kind: 'envelope_json' | 'envelope_schema' | 'document_json' | 'document_schema';
+  issues: ProviderOutputIssue[];
+  /** Redacted, untrusted output. This is never a validated authoring result. */
+  candidate?: unknown;
+  raw?: string;
+  truncated: boolean;
+};
+export class ProviderOutputError extends ProviderError {
+  override name = 'ProviderOutputError';
+  constructor(readonly diagnostic: ProviderOutputDiagnostic) {
+    const details = diagnostic.issues
+      .slice(0, 4)
+      .map((issue) => `${issue.path || '/'}: ${issue.message}`)
+      .join('; ');
+    super(
+      `Provider output failed local schema validation (${diagnostic.kind}). ${details} No generated content was executed.`,
+    );
+  }
+}
+
+const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
+const MAX_DIAGNOSTIC_ISSUES = 40;
+const SENSITIVE_FIELD =
+  /^(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|token|secret|cookie|set-cookie)$/i;
+
+function diagnosticRedact(text: string, secrets: readonly string[]): string {
+  // Raw malformed JSON may contain escaped credentials that have not been decoded yet.
+  const encodedSecrets = secrets.flatMap((secret) => {
+    const variants = [secret];
+    for (let level = 0; level < 3; level++)
+      variants.push(JSON.stringify(variants.at(-1)).slice(1, -1));
+    return variants;
+  });
+  const clean = redact(text, encodedSecrets);
+  // A malformed string may have no closing quote, or contain an entire object as
+  // its credential. Retain only the prefix instead of guessing where that value ends.
+  const sensitive =
+    /\\*"(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|token|secret|cookie|set-cookie)\\*"\s*:\s*/i.exec(
+      clean,
+    );
+  return sensitive
+    ? clean.slice(0, sensitive.index + sensitive[0].length) + '"[REDACTED: remainder omitted]"'
+    : clean;
+}
+function clipDiagnostic(text: string, bytes: number): { text: string; truncated: boolean } {
+  const buffer = Buffer.from(text);
+  return { text: buffer.subarray(0, bytes).toString('utf8'), truncated: buffer.length > bytes };
+}
+function diagnosticSnapshot(
+  value: unknown,
+  secrets: readonly string[],
+  bytes: number,
+): Pick<ProviderOutputDiagnostic, 'candidate' | 'raw' | 'truncated'> {
+  let nodes = 0;
+  let truncated = false;
+  const walk = (item: unknown, depth: number): unknown => {
+    if (++nodes > 12000 || depth > 50) {
+      truncated = true;
+      return '[TRUNCATED]';
+    }
+    if (typeof item === 'string') return diagnosticRedact(item, secrets);
+    if (Array.isArray(item)) return item.map((child) => walk(child, depth + 1));
+    if (item && typeof item === 'object')
+      return Object.fromEntries(
+        Object.entries(item).map(([key, child]) => [
+          diagnosticRedact(key, secrets),
+          SENSITIVE_FIELD.test(key) ? '[REDACTED]' : walk(child, depth + 1),
+        ]),
+      );
+    return item;
+  };
+  const candidate = walk(value, 0);
+  const serialized = JSON.stringify(candidate);
+  if (Buffer.byteLength(serialized) > bytes)
+    return { raw: diagnosticRaw(serialized, bytes).text, truncated: true };
+  return { candidate, truncated };
+}
+/** Bound the serialized string, including JSON escaping, rather than only its content. */
+function diagnosticRaw(text: string, bytes: number): { text: string; truncated: boolean } {
+  if (Buffer.byteLength(JSON.stringify(text)) <= bytes) return { text, truncated: false };
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(JSON.stringify(text.slice(0, mid))) <= bytes) low = mid;
+    else high = mid - 1;
+  }
+  return { text: text.slice(0, low), truncated: true };
+}
+function diagnosticIssues(
+  issues: readonly z.core.$ZodIssue[],
+  secrets: readonly string[],
+): { issues: ProviderOutputIssue[]; truncated: boolean } {
+  const result: ProviderOutputIssue[] = [];
+  let truncated = false;
+  let issueBytes = 0;
+  const safe = (value: string, limit = 500) => {
+    const clipped = clipDiagnostic(diagnosticRedact(value, secrets), limit);
+    truncated ||= clipped.truncated;
+    return clipped.text;
+  };
+  const pointer = (parts: PropertyKey[]) =>
+    safe(
+      parts.map((part) => '/' + String(part).replaceAll('~', '~0').replaceAll('/', '~1')).join(''),
+      1000,
+    );
+  const add = (issue: ProviderOutputIssue) => {
+    const bytes = Buffer.byteLength(JSON.stringify(issue)) + 1;
+    if (result.length >= MAX_DIAGNOSTIC_ISSUES || issueBytes + bytes > 16 * 1024) {
+      truncated = true;
+      return;
+    }
+    issueBytes += bytes;
+    result.push(issue);
+  };
+  const visit = (issue: z.core.$ZodIssue, prefix: PropertyKey[] = []) => {
+    if (result.length >= MAX_DIAGNOSTIC_ISSUES) {
+      truncated = true;
+      return;
+    }
+    const path = [...prefix, ...issue.path];
+    if (issue.code === 'unrecognized_keys') {
+      for (const key of issue.keys)
+        add({
+          path: pointer([...path, key]),
+          code: issue.code,
+          message: 'Unexpected field; remove it.',
+        });
+      return;
+    }
+    const values =
+      issue.code === 'invalid_value'
+        ? issue.values
+        : issue.code === 'invalid_union' && 'options' in issue
+          ? issue.options
+          : undefined;
+    if (values && values.length > 30) truncated = true;
+    const allowed = values
+      ?.slice(0, 30)
+      .map((value) =>
+        typeof value === 'string'
+          ? safe(value, 200)
+          : typeof value === 'number' || typeof value === 'boolean' || value === null
+            ? value
+            : safe(String(value), 200),
+      );
+    add({
+      path: pointer(path),
+      code: issue.code,
+      message: safe(issue.message),
+      ...(issue.code === 'invalid_type' ? { expected: safe(issue.expected) } : {}),
+      ...(allowed?.length ? { allowed_values: allowed } : {}),
+    });
+    if (issue.code === 'invalid_union')
+      for (const branch of issue.errors) for (const child of branch) visit(child, path);
+    if (issue.code === 'invalid_key' || issue.code === 'invalid_element')
+      for (const child of issue.issues) visit(child, path);
+  };
+  for (const issue of issues) visit(issue);
+  return { issues: result, truncated };
 }
 
 export class Budget {
@@ -132,6 +304,7 @@ function schemaForPrompt(schema: z.ZodType): string {
 export class ProviderClient {
   private options: ProviderOptions;
   readonly model: Model;
+  readonly diagnostics: ProviderOutputDiagnostic[] = [];
   constructor(options: ProviderOptions) {
     const name = options.model ?? DEFAULT_MODELS[options.provider];
     if (!(name in MODEL_CATALOG) || MODEL_CATALOG[name as Model].provider !== options.provider)
@@ -149,6 +322,46 @@ export class ProviderClient {
       throw new ProviderError('A provider API key is required.');
     this.options = options;
     this.model = name as Model;
+  }
+  private outputError(
+    kind: ProviderOutputDiagnostic['kind'],
+    value: unknown,
+    issues?: readonly z.core.$ZodIssue[],
+    raw = false,
+  ): ProviderOutputError {
+    const secrets = [this.options.key, ...(this.options.secrets ?? [])];
+    const parsedIssues = issues
+      ? diagnosticIssues(issues, secrets)
+      : {
+          issues: [
+            {
+              path: '',
+              code: 'invalid_json',
+              message: 'Expected valid JSON without Markdown or surrounding commentary.',
+            },
+          ],
+          truncated: false,
+        };
+    const metadata = {
+      request: this.options.budget.snapshot().calls,
+      kind,
+      issues: parsedIssues.issues,
+    };
+    // Leave space for the snapshot property, truncated flag, and a later operation label.
+    const remaining = MAX_DIAGNOSTIC_BYTES - Buffer.byteLength(JSON.stringify(metadata)) - 1024;
+    const snapshot = raw
+      ? (() => {
+          const clipped = diagnosticRaw(diagnosticRedact(String(value), secrets), remaining);
+          return { raw: clipped.text, truncated: clipped.truncated };
+        })()
+      : diagnosticSnapshot(value, secrets, remaining);
+    const diagnostic: ProviderOutputDiagnostic = {
+      ...metadata,
+      ...snapshot,
+      truncated: snapshot.truncated || parsedIssues.truncated,
+    };
+    this.diagnostics.push(diagnostic);
+    return new ProviderOutputError(diagnostic);
   }
   async complete<T>(schema: z.ZodType<T>, instructions: string, input: unknown): Promise<T> {
     this.options.signal?.throwIfAborted();
@@ -272,7 +485,11 @@ export class ProviderClient {
         .safeParse(data.output);
       if (!blocks.success)
         throw new ProviderError('Provider returned an unsupported output structure.');
-      if (blocks.data.some((b) => b.content?.some((c) => c.type === 'refusal')))
+      if (
+        blocks.data.some(
+          (b) => b.type === 'refusal' || b.content?.some((c) => c.type === 'refusal'),
+        )
+      )
         throw new ProviderError('Provider refused this authoring request.');
       text = blocks.data
         .flatMap((b) => b.content ?? [])
@@ -289,18 +506,44 @@ export class ProviderClient {
         .safeParse(data.content);
       if (!blocks.success)
         throw new ProviderError('Provider returned an unsupported output structure.');
+      if (blocks.data.some((b) => b.type === 'refusal'))
+        throw new ProviderError('Provider refused this authoring request.');
       text = blocks.data
         .filter((b) => b.type === 'text')
         .map((b) => b.text ?? '')
         .join('');
     }
+    let envelopeValue: unknown;
     try {
-      const envelope = transportResult.parse(JSON.parse(text));
-      return schema.parse(JSON.parse(envelope.payload));
+      envelopeValue = JSON.parse(text);
     } catch {
-      throw new ProviderError(
-        'Provider output failed local schema validation. No generated content was executed.',
-      );
+      throw this.outputError('envelope_json', text, undefined, true);
     }
+    const envelope = transportResult.safeParse(envelopeValue);
+    if (!envelope.success)
+      throw this.outputError('envelope_schema', envelopeValue, envelope.error.issues);
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(envelope.data.payload);
+    } catch {
+      throw this.outputError('document_json', envelope.data.payload, undefined, true);
+    }
+    let document: z.ZodSafeParseResult<T>;
+    try {
+      document = schema.safeParse(candidate);
+    } catch {
+      // Custom refinements and pathological nesting can throw; their exception may
+      // echo untrusted values. Keep a bounded candidate without retaining that exception.
+      throw this.outputError('document_schema', candidate, [
+        {
+          code: 'custom',
+          path: [],
+          message: 'Output could not be validated against the requested schema.',
+        },
+      ]);
+    }
+    if (!document.success)
+      throw this.outputError('document_schema', candidate, document.error.issues);
+    return document.data;
   }
 }
