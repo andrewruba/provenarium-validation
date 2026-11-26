@@ -33,6 +33,9 @@ Authoring sends the document's typed schema to the provider's structured-output
 API. Protocol reviews return named edits, such as adding a test or clarifying a
 step, instead of rewriting the entire plan. The CLI applies those edits locally;
 existing checks, identifiers, and protected expectations are preserved.
+Semantic review can correct the first draft's provisional expectations and
+calculation fixtures against the URS and accepted decisions, with before/after
+records. Expectations and fixture contents from a prior candidate stay protected.
 
 Protocol generation checks requirement links, actor declarations, and required
 files before creating a candidate. It corrects unambiguous source notation and
@@ -54,10 +57,26 @@ defaults for approval, while preserving concrete answers already supplied.
 The review offers acceptance, selected edits, the complete before/after changes,
 or saving for later. One acceptance records the reviewed answers and requirement
 changes together. Questions and accepted answers remain for traceability.
+The URS also records whether you accepted the agent's recommendation or supplied
+your own answer, along with the rationale and sources. Protocol generation uses
+these accepted decisions as test policy: an approved default becomes concrete
+automated checks, rather than another question or a task left for you after execution.
 Once the review is complete, continue with the printed `generate --urs` command.
 All authoring requests in the command share one spending ceiling.
 Use `urs resolve --answers-only` to type answers without an AI request, or edit
 the `answer` fields directly and return to `urs resolve` for review.
+
+Generated protocols default to automated execution. Browser tabs, disposable
+persistent profiles and restarts, confirmation dialogs, denied storage, and CSV
+download details can be tested directly. `generate --allow-manual` permits a
+manual exception only when the requirements explicitly call for human work or
+name a genuine external dependency; the case must cite that requirement.
+The tool must preserve real application failures and cannot invent new product
+obligations to make a test possible or remove a blocker.
+
+Optional `generate --rehearse` runs the final proposed procedures after coverage
+review, so its diagnostics refer to the final plan. It authorizes synthetic
+interactions and does not replace your approval or the qualification run.
 
 Generated drafts are checked for structural defects before being written as a
 working URS. Source observations belong in citations; file references must name
@@ -96,8 +115,10 @@ The CLI supports:
 - An executed record, screenshots and other evidence, and a requirements
   traceability matrix.
 
-Users supply context appropriate to the deployed application. Hashes identify
-inputs and artifacts; the tool does not verify source-to-deployment alignment.
+Users supply context appropriate to the deployed application. During discovery,
+the tool compares linked JavaScript hashes with scripts served by the application
+and records exact matches automatically. A match establishes those script bytes,
+not equivalence of the entire deployment or correctness of the implementation.
 Validation decisions remain with the organization responsible for intended use.
 
 ## Installation and use

@@ -138,6 +138,419 @@ function repeatedStepNumbers(): GeneratedPlanDocument {
   return original;
 }
 
+function conversion() {
+  return {
+    op: 'automate_case' as const,
+    case_id: 'OQ-04',
+    preserved_manual_expected: baseline().plan.cases[1].manual_expected!,
+    steps: [
+      {
+        ...step('01', 'AR1'),
+        instruction: 'Restart and verify the original identifier.',
+        actions: [
+          {
+            op: 'browser' as const,
+            command: 'open_profile' as const,
+            name: 'persistent',
+            url: '/',
+          },
+          {
+            op: 'fill' as const,
+            locator: { by: 'label' as const, value: 'Identifier' },
+            value: 'R',
+          },
+          { op: 'click' as const, locator: { by: 'role' as const, role: 'button', value: 'Save' } },
+          { op: 'browser' as const, command: 'restart_profile' as const, name: 'persistent' },
+        ],
+        assertions: [{ ...assertion('AR1'), expected: 'R' }],
+      },
+    ],
+    coverage: [{ obligation_id: 'OB-2', assertion_ids: ['AR1'] }],
+  };
+}
+const automationOptions = { ...options, allowManualConversion: true };
+
+describe('manual-to-automated protocol conversion', () => {
+  it('transfers coverage atomically while retaining identity, manual expectations, and full audit', () => {
+    const original = baseline();
+    const before = structuredClone(original);
+    const result = applyPlanEdits(original, { edits: [conversion()] }, automationOptions);
+    expect(original).toEqual(before);
+    expect(result.value.plan.cases[1]).toEqual(
+      planSchema.shape.cases.element.parse({
+        ...before.plan.cases[1],
+        manual: false,
+        steps: conversion().steps,
+      }),
+    );
+    expect(result.value.plan.obligations[1]).toEqual({
+      ...before.plan.obligations[1],
+      manual_case_ids: [],
+      assertion_ids: ['AR1'],
+    });
+    expect(result.value.plan.cases[0]).toEqual(before.plan.cases[0]);
+    expect(result.value.fixtures).toEqual(before.fixtures);
+    expect(result.changes.find((change) => change.target === 'OQ-04')?.before).toEqual(
+      before.plan.cases[1],
+    );
+    expect(validatePlanStructure(result.value.plan, urs)).toEqual([]);
+  });
+  it('requires explicit conversion permission', () => {
+    expect(() => applyPlanEdits(baseline(), { edits: [conversion()] }, options)).toThrow(
+      PlanEditError,
+    );
+    expect(planEditCatalog(baseline(), options).automatable_cases).toEqual([]);
+  });
+  it.each([
+    {
+      label: 'changed expected behavior',
+      edit: () => ({ ...conversion(), preserved_manual_expected: 'Any record is visible.' }),
+      match: 'preserve its original',
+    },
+    {
+      label: 'missing obligation',
+      edit: () => ({ ...conversion(), coverage: [] }),
+      match: 'every manual obligation',
+    },
+    {
+      label: 'unrelated obligation',
+      edit: () => ({
+        ...conversion(),
+        coverage: [{ obligation_id: 'OB-1', assertion_ids: ['AR1'] }],
+      }),
+      match: 'every manual obligation',
+    },
+    {
+      label: 'duplicate mapping',
+      edit: () => ({
+        ...conversion(),
+        coverage: [...conversion().coverage, ...conversion().coverage],
+      }),
+      match: 'Duplicate conversion obligation',
+    },
+    {
+      label: 'old assertion borrowing',
+      edit: () => ({
+        ...conversion(),
+        coverage: [{ obligation_id: 'OB-2', assertion_ids: ['A16'] }],
+      }),
+      match: 'only new assertions',
+    },
+    {
+      label: 'colliding assertion ID',
+      edit: () => ({
+        ...conversion(),
+        steps: [step('01', 'A16')],
+        coverage: [{ obligation_id: 'OB-2', assertion_ids: ['A16'] }],
+      }),
+      match: 'Duplicate plan ID A16',
+    },
+  ])('rejects $label without mutating the source', ({ edit, match }) => {
+    const original = baseline();
+    const before = structuredClone(original);
+    expect(() => applyPlanEdits(original, { edits: [edit()] }, automationOptions)).toThrow(match);
+    expect(original).toEqual(before);
+  });
+  it('rejects presence-only substitutes for manual data checks', () => {
+    const edit = conversion();
+    const weak = {
+      ...edit,
+      steps: [
+        {
+          ...step('01', 'AR1'),
+          assertions: [
+            {
+              id: 'AR1',
+              locator: { by: 'label', value: 'Identifier' },
+              read: 'value',
+              comparison: 'present',
+            },
+          ],
+        },
+      ],
+    };
+    expect(() => applyPlanEdits(baseline(), { edits: [weak] }, automationOptions)).toThrow(
+      'data predicate',
+    );
+  });
+  it('retains unrelated manual coverage on the same obligation', () => {
+    const original = baseline();
+    original.plan.cases.push({ ...structuredClone(original.plan.cases[1]), id: 'OQ-05' });
+    original.plan.access[0].cases.push('OQ-05');
+    original.plan.obligations[1].manual_case_ids.push('OQ-05');
+    const result = applyPlanEdits(original, { edits: [conversion()] }, automationOptions);
+    expect(result.value.plan.obligations[1].manual_case_ids).toEqual(['OQ-05']);
+    expect(result.value.plan.obligations[1].assertion_ids).toEqual(['AR1']);
+  });
+  it('requires an audited explanation when automation eliminates the last preparation job', () => {
+    const original = baseline();
+    original.plan.cases[1].prerequisites = ['Prepare a persistent browser profile.'];
+    original.plan.questions = [
+      {
+        id: 'Q-PREP',
+        question: 'Prepare a persistent browser profile.',
+        kind: 'execution_preparation',
+        case_ids: ['OQ-04'],
+        requirement: 'URS-2',
+      },
+    ];
+    expect(() => applyPlanEdits(original, { edits: [conversion()] }, automationOptions)).toThrow(
+      'explicit preparation resolution',
+    );
+    const edit = {
+      ...conversion(),
+      preparation_resolutions: [
+        {
+          question_id: 'Q-PREP',
+          explanation: 'The browser action starts and restarts its own persistent profile.',
+        },
+      ],
+    };
+    const result = applyPlanEdits(original, { edits: [edit] }, automationOptions);
+    expect(result.value.plan.questions).toEqual([]);
+    expect(result.changes.find((change) => change.target === 'Q-PREP')?.before).toEqual(
+      original.plan.questions[0],
+    );
+    expect(result.value.plan.cases[1].prerequisites).toEqual(original.plan.cases[1].prerequisites);
+  });
+  it('removes only exact prerequisites completed by automation and retains their rationale for review', () => {
+    const original = baseline();
+    const completed = 'Prepare a disposable persistent browser profile.';
+    const retained = 'Use the approved qualification deployment.';
+    original.plan.cases[1].prerequisites = [completed, retained];
+    const automated_prerequisites = [
+      {
+        prerequisite: completed,
+        explanation:
+          'open_profile creates the isolated persistent profile and the test supplies its own synthetic record.',
+      },
+    ];
+    const result = applyPlanEdits(
+      original,
+      { edits: [{ ...conversion(), automated_prerequisites }] },
+      automationOptions,
+    );
+    expect(result.value.plan.cases[1].prerequisites).toEqual([retained]);
+    expect(original.plan.cases[1].prerequisites).toEqual([completed, retained]);
+    expect(result.changes.find((change) => change.target === 'OQ-04/prerequisites')).toMatchObject({
+      before: [completed, retained],
+      after: { prerequisites: [retained], automated_prerequisites },
+    });
+    expect(result.changes.find((change) => change.target === 'OQ-04')?.before).toEqual(
+      original.plan.cases[1],
+    );
+    expect(planEditCatalog(original, automationOptions).automatable_cases[0].prerequisites).toEqual(
+      [completed, retained],
+    );
+  });
+  it.each([
+    {
+      entries: [{ prerequisite: 'Unknown setup condition.', explanation: 'Already automated.' }],
+      message: 'match an existing original prerequisite exactly',
+    },
+    {
+      entries: [{ prerequisite: 'Prepare a profile', explanation: 'Already automated.' }],
+      message: 'match an existing original prerequisite exactly',
+    },
+    {
+      entries: [
+        { prerequisite: 'Prepare a profile.', explanation: 'Automated.' },
+        { prerequisite: 'Prepare a profile.', explanation: 'Also automated.' },
+      ],
+      message: 'Duplicate automated prerequisites',
+    },
+    { entries: [{ prerequisite: 'Prepare a profile.', explanation: '' }], message: 'explanation' },
+  ])('rejects incomplete or ambiguous prerequisite removal: $message', ({ entries, message }) => {
+    const original = baseline();
+    original.plan.cases[1].prerequisites = ['Prepare a profile.'];
+    const before = structuredClone(original);
+    expect(() =>
+      applyPlanEdits(
+        original,
+        { edits: [{ ...conversion(), automated_prerequisites: entries }] },
+        automationOptions,
+      ),
+    ).toThrow(message);
+    expect(original).toEqual(before);
+  });
+  it('does not clear a product decision through preparation resolution', () => {
+    const original = baseline();
+    original.plan.questions = [
+      { id: 'Q-DECISION', question: 'Should the identifier be retained?', requirement: 'URS-2' },
+    ];
+    const edit = {
+      ...conversion(),
+      preparation_resolutions: [
+        { question_id: 'Q-DECISION', explanation: 'The test makes the decision.' },
+      ],
+    };
+    expect(() => applyPlanEdits(original, { edits: [edit] }, automationOptions)).toThrow(
+      'not an original execution-preparation',
+    );
+  });
+  it('keeps shared preparation linked to the remaining manual case', () => {
+    const original = baseline();
+    original.plan.cases[1].prerequisites = ['Prepare a persistent browser profile.'];
+    original.plan.cases.push({ ...structuredClone(original.plan.cases[1]), id: 'OQ-05' });
+    original.plan.access[0].cases.push('OQ-05');
+    original.plan.questions = [
+      {
+        id: 'Q-PREP',
+        question: 'Prepare a persistent browser profile.',
+        kind: 'execution_preparation',
+        case_ids: ['OQ-04', 'OQ-05'],
+        requirement: 'URS-2',
+      },
+    ];
+    const result = applyPlanEdits(original, { edits: [conversion()] }, automationOptions);
+    expect(result.value.plan.questions).toEqual([
+      { ...original.plan.questions[0], case_ids: ['OQ-05'] },
+    ]);
+  });
+  it('allows grounded manual justification only with explicit exception permission', () => {
+    const manualUrs = structuredClone(urs);
+    manualUrs.families[0].requirements[1].details = [
+      'A human must perform the physical equipment inspection.',
+    ];
+    const reason = {
+      kind: 'explicit_manual_requirement',
+      requirement_id: 'URS-2',
+      source: 'URS-2/details/0',
+      supporting_quote: manualUrs.families[0].requirements[1].details[0],
+      dependency: 'physical equipment inspection',
+      explanation: 'The physical item is outside the application.',
+    };
+    const edit = { op: 'justify_manual_case', case_id: 'OQ-04', reason };
+    expect(() =>
+      applyPlanEdits(baseline(), { edits: [edit] }, { ...options, urs: manualUrs }),
+    ).toThrow(PlanEditError);
+    const result = applyPlanEdits(
+      baseline(),
+      { edits: [edit] },
+      { ...options, urs: manualUrs, allowManualExceptions: true },
+    );
+    expect(result.value.plan.cases[1].manual_reason).toEqual(reason);
+    expect(result.value.plan.cases[1].manual_expected).toBe(
+      baseline().plan.cases[1].manual_expected,
+    );
+  });
+});
+
+describe('provisional expectation review', () => {
+  it('audits fresh draft corrections while preserving fixtures and existing assertions', () => {
+    const original = baseline();
+    const result = applyPlanEdits(
+      original,
+      { edits: [{ op: 'revise_assertion', assertion_id: 'A16', expected: false }] },
+      { ...options, allowDraftExpectationRevision: true },
+    );
+    expect(result.value.plan.cases[0].steps[0].assertions[0].expected).toBe(false);
+    expect(original.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
+    expect(result.value.fixtures).toEqual(original.fixtures);
+    expect(result.changes[0].before).toEqual(original.plan.cases[0].steps[0].assertions[0]);
+    expect(
+      planEditCatalog(original, { ...options, allowDraftExpectationRevision: true })
+        .provisional_expectation_revision,
+    ).toBe(true);
+  });
+  it('never enables provisional revisions in technical repair', () => {
+    expect(() =>
+      applyPlanEdits(
+        baseline(),
+        { edits: [{ op: 'revise_assertion', assertion_id: 'A16', expected: false }] },
+        { ...technical, allowDraftExpectationRevision: true },
+      ),
+    ).toThrow(PlanEditError);
+  });
+  it('does not reduce draft data assertions to presence predicates', () => {
+    expect(() =>
+      applyPlanEdits(
+        baseline(),
+        { edits: [{ op: 'revise_assertion', assertion_id: 'A16', comparison: 'present' }] },
+        { ...options, allowDraftExpectationRevision: true },
+      ),
+    ).toThrow('presence/absence');
+  });
+});
+
+describe('post-review procedural repairs', () => {
+  const procedural: PlanEditOptions = {
+    ...options,
+    proceduralOnly: true,
+    allowDraftExpectationRevision: true,
+    allowManualConversion: true,
+    allowManualExceptions: true,
+    authorizedRequirementChanges: new Set(['URS-1', 'URS-2']),
+  };
+  it('allows instruction and locator corrections without changing expected results or coverage', () => {
+    const original = baseline();
+    const result = applyPlanEdits(
+      original,
+      {
+        edits: [
+          {
+            op: 'update_instruction',
+            case_id: 'OQ-01',
+            step_id: 'S1',
+            instruction: 'Open the observed identifier form.',
+          },
+          {
+            op: 'update_action_locator',
+            case_id: 'OQ-01',
+            step_id: 'S1',
+            action_index: 1,
+            locator: { by: 'role', role: 'button', value: 'Open identifier' },
+          },
+          {
+            op: 'update_assertion_locator',
+            assertion_id: 'A16',
+            locator: { by: 'label', value: 'Record identifier' },
+          },
+        ],
+      },
+      procedural,
+    );
+    expect(result.value.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
+    expect(result.value.plan.obligations).toEqual(original.plan.obligations);
+    expect(result.value.fixtures).toEqual(original.fixtures);
+    expect(planEditCatalog(original, procedural)).toMatchObject({
+      procedural_only: true,
+      permitted_operations: [
+        'update_instruction',
+        'update_action_locator',
+        'update_assertion_locator',
+      ],
+      automatable_cases: [],
+      manual_justification_cases: [],
+      requirement_revision_cases: [],
+      provisional_expectation_revision: false,
+    });
+  });
+  it.each([
+    { op: 'revise_assertion', assertion_id: 'A16', expected: false },
+    { op: 'revise_manual_expected', case_id: 'OQ-04', expected: 'Any result is acceptable.' },
+    { op: 'add_step', case_id: 'OQ-01', value: step() },
+    {
+      op: 'add_question',
+      value: { id: 'Q-NEW', question: 'Accept the observed behavior?', requirement: 'URS-1' },
+    },
+    {
+      op: 'add_fixture',
+      value: { path: 'fixtures/new.txt', content: 'Replacement expected result.' },
+    },
+    {
+      op: 'update_action_url',
+      case_id: 'OQ-01',
+      step_id: 'S1',
+      action_index: 0,
+      url: '/different-app',
+    },
+    conversion(),
+  ])('rejects $op even if other permissions would allow it', (edit) => {
+    expect(() => applyPlanEdits(baseline(), { edits: [edit] }, procedural)).toThrow(PlanEditError);
+  });
+});
+
 describe('scoped protocol review edits', () => {
   it('adds checks and coverage while preserving A16, manual expectations, and fixtures byte for byte', () => {
     const original = baseline();

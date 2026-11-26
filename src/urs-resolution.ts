@@ -1,7 +1,14 @@
 import { isDeepStrictEqual } from 'node:util';
 import { stringify } from 'yaml';
 import { z } from 'zod';
-import { questionSchema, requirementSchema, ursSchema, type Urs } from './schema.js';
+import {
+  questionSchema,
+  requirementSchema,
+  resolutionDecisionSchema,
+  ursSchema,
+  type ResolutionDecision,
+  type Urs,
+} from './schema.js';
 import { pendingAnsweredQuestions, questionAnswerHash, requirements } from './urs.js';
 
 const questionIds = z.array(questionSchema.shape.id).min(1);
@@ -196,6 +203,7 @@ export function applyResolutionProposal(
   urs: Urs,
   input: unknown,
   timestamp = new Date().toISOString(),
+  decisions: ReadonlyMap<string, ResolutionDecision> = new Map(),
 ): Urs {
   const proposal = validateResolutionProposal(urs, input);
   const next = structuredClone(urs);
@@ -220,6 +228,9 @@ export function applyResolutionProposal(
       answer_hash: questionAnswerHash(question),
       applied_at: timestamp,
       targets: [...appliedTargets].sort(),
+      ...(decisions.has(question.id)
+        ? { decision: resolutionDecisionSchema.parse(decisions.get(question.id)) }
+        : {}),
     };
   }
   if (targets.size) next.document.revision = nextRevision(urs.document.revision);

@@ -458,9 +458,44 @@ export function compileStructuredOutput<T>(schema: z.ZodType<T>, provider: Struc
     }
     return { $ref: `#/$defs/${name}` };
   };
-  // Claude permits native optional properties, but caps them at 24 and unions at 16.
-  // Only excess optional fields need OpenAI's explicit omission representation.
-  let nativeOptionalFields = 0;
+  // Claude caps both optional properties and unions. Spending its native optional
+  // slots on the first fields encountered wastes them on repeated scalar shapes:
+  // those can share one omission union. Keep the least frequent optional shapes
+  // native so new action variants do not exceed the union limit merely by order.
+  const optionalShapes = new Map<string, number>();
+  const visitedDefinitions = new Set<string>();
+  const collectOptional = (node: JsonSchema) => {
+    if (node.$ref) {
+      if (node.$ref === '#')
+        throw new Error('Recursive domain schemas are not supported for authoring.');
+      if (visitedDefinitions.has(node.$ref)) return;
+      visitedDefinitions.add(node.$ref);
+      const target = resolve(node, original);
+      if (!isRecursiveJson(target, node.$ref)) collectOptional(target);
+      return;
+    }
+    for (const [key, child] of Object.entries(node.properties ?? {}) as [string, JsonSchema][]) {
+      if (!node.required?.includes(key)) {
+        const shape = JSON.stringify(child);
+        optionalShapes.set(shape, (optionalShapes.get(shape) ?? 0) + 1);
+      }
+      collectOptional(child);
+    }
+    if (node.items) collectOptional(node.items);
+    if (node.additionalProperties && typeof node.additionalProperties === 'object')
+      collectOptional(node.additionalProperties);
+    for (const branch of node.anyOf ?? node.oneOf ?? []) collectOptional(branch);
+  };
+  const nativeOptionalShapes = new Set<string>();
+  let remainingOptionalSlots = 24;
+  if (provider === 'anthropic') {
+    collectOptional(original);
+    for (const [shape, count] of [...optionalShapes].sort((a, b) => a[1] - b[1]))
+      if (count <= remainingOptionalSlots) {
+        nativeOptionalShapes.add(shape);
+        remainingOptionalSlots -= count;
+      }
+  }
   const transform = (source: JsonSchema): JsonSchema => {
     if (!source || typeof source !== 'object' || Array.isArray(source))
       throw new Error('Unsupported structured-output schema node.');
@@ -555,7 +590,9 @@ export function compileStructuredOutput<T>(schema: z.ZodType<T>, provider: Struc
       ][]) {
         let transformed = transform(child);
         const usePlaceholder =
-          !required.has(key) && (provider === 'openai' || nativeOptionalFields++ >= 24);
+          !required.has(key) &&
+          (provider === 'openai' ||
+            (!nativeOptionalShapes.has(JSON.stringify(child)) && remainingOptionalSlots-- <= 0));
         if (usePlaceholder) {
           nativeRequired.add(key);
           if (allowsNull(child, original)) {

@@ -6,6 +6,7 @@ import {
   caseSchema,
   evidenceSchema,
   locatorSchema,
+  manualReasonSchema,
   planQuestionSchema,
   planSchema,
   stepSchema,
@@ -15,6 +16,7 @@ import {
 import { assertionContractIssues } from '../assertion-contract.js';
 import { obligationSourceCatalog, validatePlanStructure } from '../compiler.js';
 import { planInputPathError } from '../plan-inputs.js';
+import { auditAutomation } from './automation-policy.js';
 
 const id = z
   .string()
@@ -120,6 +122,12 @@ const requirementRevisions = [
     tolerance: assertionSchema.shape.tolerance,
   }),
   z.strictObject({ op: z.literal('revise_manual_expected'), case_id: id, expected: text }),
+  z.strictObject({
+    op: z.literal('revise_fixture'),
+    path: z.string().min(1),
+    content: fixtureSchema.shape.content,
+    reason: text,
+  }),
 ] as const;
 const questionResolutions = [
   z.strictObject({
@@ -136,8 +144,30 @@ const questionResolutions = [
     resolution: text,
   }),
 ] as const;
+const automationOperations = [
+  z.strictObject({
+    op: z.literal('automate_case'),
+    case_id: id,
+    preserved_manual_expected: z.string().min(1),
+    steps: z.array(stepSchema).min(1),
+    coverage: z.array(z.strictObject({ obligation_id: id, assertion_ids: z.array(id).min(1) })),
+    preparation_resolutions: z
+      .array(z.strictObject({ question_id: id, explanation: text }))
+      .optional(),
+    automated_prerequisites: z
+      .array(z.strictObject({ prerequisite: z.string().min(1), explanation: text }))
+      .optional(),
+  }),
+] as const;
+const manualJustificationOperations = [
+  z.strictObject({ op: z.literal('justify_manual_case'), case_id: id, reason: manualReasonSchema }),
+] as const;
+const proceduralOperations = [operations[11], operations[12], operations[14]] as const;
+const proceduralEditsSchema = z.strictObject({
+  edits: z.array(z.discriminatedUnion('op', proceduralOperations)).max(100),
+});
 
-/** No operation can delete a case/assertion; predicate revisions require explicit URS changes. */
+/** No operation can delete a case/assertion; expectation revisions require scoped permission. */
 export const planEditsSchema = z.strictObject({
   edits: z
     .array(
@@ -146,6 +176,8 @@ export const planEditsSchema = z.strictObject({
         ...repairs,
         ...requirementRevisions,
         ...questionResolutions,
+        ...automationOperations,
+        ...manualJustificationOperations,
       ]),
     )
     .max(100),
@@ -165,6 +197,14 @@ export type PlanEditOptions = {
   authorizedRequirementChanges?: ReadonlySet<string>;
   /** Explicit human feedback must name the question ID and supply its answer evidence. */
   questionResolutionFeedback?: string;
+  /** Conversion produces a new candidate; accepted source packages stay immutable. */
+  allowManualConversion?: boolean;
+  /** Only explicit user permission can enable grounded manual exceptions. */
+  allowManualExceptions?: boolean;
+  /** A newly generated, unreviewed draft can revise expectations during semantic review. */
+  allowDraftExpectationRevision?: boolean;
+  /** After final semantic review, only instructions and locator bindings may change. */
+  proceduralOnly?: boolean;
 };
 export type PlanEditChange = {
   op: PlanEdits['edits'][number]['op'];
@@ -190,14 +230,23 @@ export function makePlanEditsSchema(
   base: GeneratedPlanDocument,
   options: Pick<
     PlanEditOptions,
-    'mode' | 'authorizedRequirementChanges' | 'questionResolutionFeedback'
+    | 'mode'
+    | 'authorizedRequirementChanges'
+    | 'questionResolutionFeedback'
+    | 'allowManualConversion'
+    | 'allowManualExceptions'
+    | 'allowDraftExpectationRevision'
+    | 'proceduralOnly'
   >,
-) {
-  const mayRevise = base.plan.cases.some(
-    (c) =>
-      c.requirements.length &&
-      c.requirements.every((id) => options.authorizedRequirementChanges?.has(id)),
-  );
+): z.ZodType<PlanEdits> {
+  if (options.proceduralOnly) return proceduralEditsSchema;
+  const mayRevise =
+    (options.mode === 'review' && options.allowDraftExpectationRevision) ||
+    base.plan.cases.some(
+      (c) =>
+        c.requirements.length &&
+        c.requirements.every((id) => options.authorizedRequirementChanges?.has(id)),
+    );
   const resolvableQuestionIds = base.plan.questions
     .filter((question) => feedbackNamesQuestion(options.questionResolutionFeedback, question.id))
     .map((question) => question.id);
@@ -210,14 +259,26 @@ export function makePlanEditsSchema(
     )
     .map((question) => question.id);
   const mayResolve = resolvableQuestionIds.length > 0;
-  if (options.mode === 'review' && !mayRevise && !mayResolve) return planReviewEditsSchema;
+  if (
+    options.mode === 'review' &&
+    !mayRevise &&
+    !mayResolve &&
+    !options.allowManualConversion &&
+    !options.allowManualExceptions
+  )
+    return planReviewEditsSchema;
   return z.strictObject({
     edits: z
       .array(
         z.discriminatedUnion('op', [
           ...operations,
           ...(options.mode === 'technical' ? repairs : []),
-          ...(mayRevise ? requirementRevisions : []),
+          ...(mayRevise ? requirementRevisions.slice(0, 2) : []),
+          ...(options.mode === 'review' && options.allowDraftExpectationRevision
+            ? [requirementRevisions[2]]
+            : []),
+          ...(options.allowManualConversion ? automationOperations : []),
+          ...(options.allowManualExceptions ? manualJustificationOperations : []),
           ...(mayResolve
             ? [questionResolutions[0].extend({ question_id: z.enum(resolvableQuestionIds) })]
             : []),
@@ -297,6 +358,16 @@ function invalidInputDeclarations(base: GeneratedPlanDocument, urs: Urs): boolea
 
 /** Send the model explicit targets and repair permissions alongside its typed edit schema. */
 export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOptions) {
+  if (options.proceduralOnly)
+    options = {
+      ...options,
+      mode: 'review',
+      allowManualConversion: false,
+      allowManualExceptions: false,
+      allowDraftExpectationRevision: false,
+      authorizedRequirementChanges: undefined,
+      questionResolutionFeedback: undefined,
+    };
   const reqs = new Set(
     options.urs.families.flatMap((family) =>
       family.requirements.map((requirement) => requirement.id),
@@ -305,6 +376,16 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
   const errors = new Set(validatePlanStructure(base.plan, options.urs));
   return {
     mode: options.mode,
+    procedural_only: Boolean(options.proceduralOnly),
+    ...(options.proceduralOnly
+      ? {
+          permitted_operations: [
+            'update_instruction',
+            'update_action_locator',
+            'update_assertion_locator',
+          ],
+        }
+      : {}),
     cases: base.plan.cases.map((c) => ({
       id: c.id,
       manual: c.manual,
@@ -317,6 +398,47 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
     obligations: base.plan.obligations.map((obligation) => obligation.id),
     actors: base.plan.access.map((actor) => actor.id),
     requirements: [...reqs],
+    automatable_cases: options.allowManualConversion
+      ? base.plan.cases
+          .filter((c) => c.manual)
+          .map((c) => ({
+            id: c.id,
+            manual_procedure: c.manual_procedure,
+            prerequisites: c.prerequisites,
+            preserved_manual_expected: c.manual_expected,
+            obligations: base.plan.obligations
+              .filter((o) => o.manual_case_ids.includes(c.id))
+              .map((o) => ({ id: o.id, statement: o.statement })),
+            preparation_questions: base.plan.questions
+              .filter((q) => q.kind === 'execution_preparation' && q.case_ids?.includes(c.id))
+              .map((q) => ({ id: q.id, question: q.question, case_ids: q.case_ids })),
+          }))
+      : [],
+    manual_justification_cases: options.allowManualExceptions
+      ? base.plan.cases
+          .filter((c) => c.manual)
+          .map((c) => ({
+            id: c.id,
+            sources: obligationSourceCatalog(options.urs).filter((source) =>
+              c.requirements.includes(source.requirement_id),
+            ),
+          }))
+      : [],
+    provisional_expectation_revision:
+      options.mode === 'review' && Boolean(options.allowDraftExpectationRevision),
+    revisable_fixtures:
+      options.mode === 'review' && options.allowDraftExpectationRevision
+        ? base.fixtures
+            .filter(
+              (fixture) =>
+                !planInputPathError(fixture.path) &&
+                /^fixtures\/[A-Za-z0-9_./-]+\.(csv|tsv|json|txt|md)$/.test(fixture.path) &&
+                !knownInputs(base, options.urs).references.has(fixture.path) &&
+                (base.plan.fixtures.includes(fixture.path) ||
+                  base.plan.references.includes(fixture.path)),
+            )
+            .map((fixture) => fixture.path)
+        : [],
     resolvable_questions: base.plan.questions
       .filter((question) => feedbackNamesQuestion(options.questionResolutionFeedback, question.id))
       .map((question) => ({
@@ -341,7 +463,8 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
       .filter(
         (c) =>
           c.requirements.length &&
-          c.requirements.every((id) => options.authorizedRequirementChanges?.has(id)),
+          ((options.mode === 'review' && options.allowDraftExpectationRevision) ||
+            c.requirements.every((id) => options.authorizedRequirementChanges?.has(id))),
       )
       .map((c) => ({
         id: c.id,
@@ -391,7 +514,14 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
     input_declarations_repairable:
       options.mode === 'technical' && invalidInputDeclarations(base, options.urs),
     instructions:
-      'Use only scoped edits. Existing IDs, assertions, valid expected values, manual expectations, coverage links, and fixture contents are preserved by application code. Propose a new explicit question if an intended result needs human clarification; never rewrite it. Repair operations are available only for the listed technical faults. Resolve only listed resolvable_questions using an exact supporting quote from the explicit human feedback and a resolution grounded in that quote. Resolution removes the active question and retains the original question, resolution, and quote in the change record; it does not authorize changes to assertions or manual expectations. Reclassify only listed preparation_questions whose human feedback confirms a setup need for the listed existing manual cases, such as supplying a deployment or collecting applicability evidence. Never reclassify an unknown intended behavior or expected result. Reclassification retains the complete question and attaches it to those manual cases; it does not satisfy the prerequisite or mark any test passed. New execution_preparation questions must likewise identify affected manual cases with defined procedures and expected results.',
+      (options.proceduralOnly
+        ? 'This is a post-review procedural repair. Only update_instruction, update_action_locator, and update_assertion_locator are permitted. All test behavior, expectations, actions, coverage, questions, fixtures, and case membership are frozen. '
+        : '') +
+      'automate_case is available only for listed automatable_cases. Preserve the original manual expected result verbatim and implement its full behavior with executable data assertions. Map every currently manual obligation exactly once to new assertions in this case. Conversion retains the original procedure and expectation for audit and replaces manual coverage atomically. If conversion eliminates a listed execution_preparation job, supply preparation_resolutions with its ID and a concrete explanation of how the automated steps complete it; this cannot resolve requirement_decision questions. automated_prerequisites may remove only exact existing prerequisite strings now completed by executable steps or supplied verified metadata; explain the evidence for each. Preserve every unmet condition and do not claim external evidence was obtained. justify_manual_case requires an exact quoted requirement establishing a specific external dependency or explicit manual activity, never a missing ordinary browser capability. ' +
+      (options.mode === 'review' && options.allowDraftExpectationRevision
+        ? 'This is a provisional draft: revise_assertion and revise_manual_expected may correct unreviewed expectations to match the requirements, with audited before/after values. revise_fixture may correct only listed revisable_fixtures with a reason; keep independent derivations and their assertions consistent with the URS, never with observed app output. Do not remove coverage, evidence, or meaningful predicates. '
+        : '') +
+      'Use only scoped edits. Existing IDs, assertions, and coverage links are preserved by application code. Fixture contents stay protected unless the listed provisional fixture revision is explicitly authorized. Existing expected values and manual expectations may change only through explicitly authorized revision operations. Propose a new explicit question only if an intended result needs human clarification that existing evidence or delegated decisions cannot supply. Repair operations are available only for the listed technical faults. Resolve only listed resolvable_questions using an exact supporting quote from the explicit human feedback and a resolution grounded in that quote. Resolution removes the active question and retains the original question, resolution, and quote in the change record; it does not authorize changes to assertions or manual expectations. Reclassify only listed preparation_questions whose human feedback confirms a setup need for the listed existing manual cases, such as supplying a deployment or collecting applicability evidence. Never reclassify an unknown intended behavior or expected result. Reclassification retains the complete question and attaches it to those manual cases; it does not satisfy the prerequisite or mark any test passed. New execution_preparation questions must likewise identify affected manual cases with defined procedures and expected results.',
   };
 }
 
@@ -490,6 +620,152 @@ export function applyPlanEdits(
         registerCase(edit.value);
         value.plan.cases.push(edit.value);
         record(edit.op, edit.value.id, undefined, edit.value);
+        break;
+      }
+      case 'automate_case': {
+        const original =
+          base.plan.cases.find((c) => c.id === edit.case_id) ??
+          fail(`Unknown original case ${edit.case_id}.`);
+        const c = testCase(edit.case_id);
+        if (!original.manual || !c.manual || c.steps.length)
+          fail(`Case ${c.id} must be an original manual case with no executable steps.`);
+        if (
+          !original.manual_expected?.trim() ||
+          edit.preserved_manual_expected !== original.manual_expected ||
+          c.manual_expected !== original.manual_expected
+        )
+          fail(
+            `Case ${c.id} conversion must preserve its original manual expected result exactly.`,
+            {
+              code: 'protected_expectation',
+              before: original.manual_expected,
+              proposed: edit.preserved_manual_expected,
+            },
+          );
+        write(`case/${c.id}/automation`);
+        const before = structuredClone(c);
+        const newAssertions = new Map(
+          edit.steps.flatMap((s) => s.assertions.map((a) => [a.id, a] as const)),
+        );
+        if (!newAssertions.size)
+          fail(
+            `Case ${c.id} conversion needs executable assertions for its manual expected behavior.`,
+          );
+        const linked = value.plan.obligations.filter((o) => o.manual_case_ids.includes(c.id));
+        unique(
+          edit.coverage.map((entry) => entry.obligation_id),
+          'conversion obligation mappings',
+        );
+        if (
+          linked.length !== edit.coverage.length ||
+          linked.some((o) => !edit.coverage.some((entry) => entry.obligation_id === o.id))
+        )
+          fail(
+            `Case ${c.id} conversion must map every manual obligation exactly once, without adding unrelated obligations.`,
+          );
+        for (const entry of edit.coverage) {
+          unique(entry.assertion_ids, 'conversion assertion links');
+          if (entry.assertion_ids.some((id) => !newAssertions.has(id)))
+            fail(
+              `Obligation ${entry.obligation_id} conversion must reference only new assertions in case ${c.id}.`,
+            );
+          if (
+            entry.assertion_ids.every((id) =>
+              ['present', 'absent'].includes(newAssertions.get(id)!.comparison),
+            )
+          )
+            fail(
+              `Obligation ${entry.obligation_id} conversion requires a data predicate preserving the manual expected behavior, not presence/absence alone.`,
+            );
+        }
+        unique(
+          (edit.automated_prerequisites ?? []).map((entry) => entry.prerequisite),
+          'automated prerequisites',
+        );
+        for (const entry of edit.automated_prerequisites ?? [])
+          if (
+            !original.prerequisites.includes(entry.prerequisite) ||
+            !c.prerequisites.includes(entry.prerequisite)
+          )
+            fail(
+              `Case ${c.id} automated prerequisite must match an existing original prerequisite exactly: ${entry.prerequisite}`,
+            );
+        if (edit.automated_prerequisites?.length) {
+          const beforePrerequisites = [...c.prerequisites];
+          write(`case/${c.id}/prerequisites`);
+          c.prerequisites = c.prerequisites.filter(
+            (prerequisite) =>
+              !edit.automated_prerequisites!.some((entry) => entry.prerequisite === prerequisite),
+          );
+          record(edit.op, `${c.id}/prerequisites`, beforePrerequisites, {
+            prerequisites: c.prerequisites,
+            automated_prerequisites: edit.automated_prerequisites,
+          });
+        }
+        const preparation = value.plan.questions.filter(
+          (q) => q.kind === 'execution_preparation' && q.case_ids?.includes(c.id),
+        );
+        unique(
+          (edit.preparation_resolutions ?? []).map((entry) => entry.question_id),
+          'preparation resolutions',
+        );
+        for (const resolution of edit.preparation_resolutions ?? [])
+          if (
+            !preparation.some((q) => q.id === resolution.question_id) ||
+            !base.plan.questions.some(
+              (q) => q.id === resolution.question_id && q.kind === 'execution_preparation',
+            )
+          )
+            fail(
+              `Question ${resolution.question_id} is not an original execution-preparation question linked to ${c.id}.`,
+            );
+        for (const question of preparation) {
+          const remaining = question.case_ids!.filter((id) => id !== c.id);
+          const resolution = edit.preparation_resolutions?.find(
+            (entry) => entry.question_id === question.id,
+          );
+          if (!remaining.length && !resolution)
+            fail(
+              `Converting ${c.id} requires an explicit preparation resolution for ${question.id}; explain how automation completes that setup job.`,
+            );
+          write(`question/${question.id}/automation/${c.id}`);
+          const replacement = remaining.length ? { ...question, case_ids: remaining } : undefined;
+          record(edit.op, question.id, question, {
+            question: replacement,
+            automated_case: c.id,
+            explanation: resolution?.explanation,
+          });
+          value.plan.questions = value.plan.questions.flatMap((q) =>
+            q.id === question.id ? (replacement ? [replacement] : []) : [q],
+          );
+        }
+        edit.steps.forEach((s) => registerStep(c.id, s));
+        c.manual = false;
+        c.steps = edit.steps;
+        delete c.manual_reason;
+        for (const entry of edit.coverage) {
+          const obligation = linked.find((o) => o.id === entry.obligation_id)!;
+          const before = structuredClone(obligation);
+          write(`obligation/${obligation.id}/manual/${c.id}`);
+          obligation.manual_case_ids = obligation.manual_case_ids.filter((id) => id !== c.id);
+          for (const id of entry.assertion_ids)
+            add(obligation.assertion_ids, id, `obligation/${obligation.id}/assertions`);
+          record(edit.op, obligation.id, before, obligation);
+        }
+        record(edit.op, c.id, before, c);
+        break;
+      }
+      case 'justify_manual_case': {
+        const c = testCase(edit.case_id);
+        if (!c.manual) fail(`Case ${c.id} is automated and cannot receive a manual exception.`);
+        write(`case/${c.id}/manual_reason`);
+        const before = c.manual_reason;
+        c.manual_reason = edit.reason;
+        const issues = auditAutomation({ ...value.plan, cases: [c] }, options.urs, {
+          allowManual: true,
+        });
+        if (issues.length) fail(issues.join(' '));
+        record(edit.op, c.id, before, c.manual_reason);
         break;
       }
       case 'add_step': {
@@ -641,6 +917,28 @@ export function applyPlanEdits(
         record(edit.op, edit.value.path, undefined, edit.value);
         break;
       }
+      case 'revise_fixture': {
+        if (
+          options.mode !== 'review' ||
+          !options.allowDraftExpectationRevision ||
+          options.proceduralOnly ||
+          !catalog.revisable_fixtures.includes(edit.path)
+        )
+          fail(
+            `Fixture ${edit.path} is protected or is not an existing supported draft text fixture.`,
+            { code: 'protected_fixture' },
+          );
+        const originals = base.fixtures.filter((fixture) => fixture.path === edit.path);
+        if (originals.length !== 1)
+          fail(`Fixture ${edit.path} must name one exact existing draft fixture.`);
+        const fixture = value.fixtures.find((fixture) => fixture.path === edit.path)!;
+        if (fixture.content === edit.content) fail(`Fixture ${edit.path} revision made no change.`);
+        write(`fixture/${edit.path}`);
+        const before = structuredClone(fixture);
+        fixture.content = edit.content;
+        record(edit.op, edit.path, before, { ...fixture, reason: edit.reason });
+        break;
+      }
       case 'update_instruction': {
         const s = step(edit.case_id, edit.step_id);
         write(`instruction/${edit.case_id}/${s.id}`);
@@ -718,7 +1016,8 @@ export function applyPlanEdits(
           ) ?? fail(`Unknown original assertion ${edit.assertion_id}.`);
         if (
           !c.requirements.length ||
-          !c.requirements.every((id) => options.authorizedRequirementChanges?.has(id))
+          (!(options.mode === 'review' && options.allowDraftExpectationRevision) &&
+            !c.requirements.every((id) => options.authorizedRequirementChanges?.has(id)))
         )
           fail(
             `Assertion ${edit.assertion_id} expected result is protected by unchanged requirements.`,
@@ -738,6 +1037,17 @@ export function applyPlanEdits(
           }
         if (assertionContractIssues(a).length)
           fail(`Assertion ${a.id} revision has an invalid runtime predicate.`);
+        if (
+          options.mode === 'review' &&
+          options.allowDraftExpectationRevision &&
+          !c.requirements.every((id) => options.authorizedRequirementChanges?.has(id)) &&
+          !['present', 'absent'].includes(before.comparison) &&
+          ['present', 'absent'].includes(a.comparison)
+        )
+          fail(
+            `Assertion ${a.id} draft revision cannot replace a data predicate with presence/absence.`,
+            { code: 'protected_expectation' },
+          );
         record(edit.op, a.id, before, a);
         break;
       }
@@ -747,8 +1057,10 @@ export function applyPlanEdits(
           fail(`Unknown original case ${edit.case_id}.`);
         if (
           !baseline.manual ||
+          !testCase(edit.case_id).manual ||
           !baseline.requirements.length ||
-          !baseline.requirements.every((id) => options.authorizedRequirementChanges?.has(id))
+          (!(options.mode === 'review' && options.allowDraftExpectationRevision) &&
+            !baseline.requirements.every((id) => options.authorizedRequirementChanges?.has(id)))
         )
           fail(
             `Manual expected result for ${edit.case_id} is protected by unchanged requirements.`,

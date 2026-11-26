@@ -130,6 +130,14 @@ export function describeAction(action: Action): string {
       return `Read ${action.read} from ${action.locator.value} as ${action.as}`;
     case 'request':
       return `${action.method} ${action.url}; retain response as ${action.as}`;
+    case 'browser':
+      return `${action.command.replaceAll('_', ' ')} ${action.name}${action.url ? ` at ${action.url}` : ''}`;
+    case 'dialog':
+      return `Click ${action.locator.value}; expect dialog response ${action.response}; retain as ${action.as}`;
+    case 'observe_download':
+      return `Activate ${action.locator.value}; observe downloads for ${action.timeout_ms ?? 1000} ms as ${action.as}`;
+    case 'storage':
+      return `Set browser storage access to ${action.mode} for this test tab`;
   }
 }
 export function describeAssertion(a: Assertion): string {
@@ -244,13 +252,54 @@ export function validatePlanStructure(plan: Plan, urs: Urs): string[] {
         );
     } else if (!c.steps.length) errors.push(`${c.id}: automated case has no steps.`);
     const variables = new Map<string, string>();
+    const profiles = new Map<string, Set<string>>([['main', new Set(['main'])]]);
+    let activeProfile = 'main';
     const stepIds = new Set<string>();
     for (const step of c.steps) {
       // Execution, observations, reports, and edits identify steps by case + step.
       if (stepIds.has(step.id)) errors.push(`${c.id}: duplicate step ID ${step.id}.`);
       stepIds.add(step.id);
       for (const a of step.actions) {
-        if (a.op === 'read' || a.op === 'request' || a.op === 'download') {
+        if (a.op === 'session') {
+          profiles.clear();
+          profiles.set('main', new Set(['main']));
+          activeProfile = 'main';
+        }
+        if (a.op === 'browser') {
+          if (a.command === 'open_profile') {
+            if (profiles.has(a.name) || profiles.size >= 4)
+              errors.push(
+                `${c.id}/${step.id}: browser profiles must be unique; at most four may be open.`,
+              );
+            else {
+              profiles.set(a.name, new Set(['main']));
+              activeProfile = a.name;
+            }
+          } else if (a.command === 'select_profile' || a.command === 'restart_profile') {
+            if (!profiles.has(a.name) || (a.command === 'restart_profile' && a.name === 'main'))
+              errors.push(
+                `${c.id}/${step.id}: ${a.command} needs an existing${a.command === 'restart_profile' ? ' persistent' : ''} browser profile.`,
+              );
+            else activeProfile = a.name;
+          } else {
+            const tabs = profiles.get(activeProfile)!;
+            if (a.command === 'open_tab') {
+              if (tabs.has(a.name) || tabs.size >= 8)
+                errors.push(
+                  `${c.id}/${step.id}: browser tabs must be unique; at most eight may be open per profile.`,
+                );
+              else tabs.add(a.name);
+            } else if (!tabs.has(a.name))
+              errors.push(`${c.id}/${step.id}: unknown browser tab ${a.name}.`);
+          }
+        }
+        if (
+          a.op === 'read' ||
+          a.op === 'request' ||
+          a.op === 'download' ||
+          a.op === 'dialog' ||
+          a.op === 'observe_download'
+        ) {
           const name = a.op === 'download' ? a.save_as : a.as;
           if (name.includes('.')) errors.push(`${step.id}: variable names cannot contain dots.`);
           variables.set(name, a.op);
@@ -274,9 +323,11 @@ export function validatePlanStructure(plan: Plan, urs: Urs): string[] {
           errors.push(`${e.id}: undefined evidence variable.`);
       }
       for (const a of step.actions) {
-        if (a.op === 'navigate' || a.op === 'request') {
+        if (a.op === 'browser' && a.url && !['open_tab', 'open_profile'].includes(a.command))
+          errors.push(`${step.id}: only opening a browser tab or profile accepts a URL.`);
+        if (a.op === 'navigate' || a.op === 'request' || (a.op === 'browser' && a.url)) {
           try {
-            const u = new URL(a.url, plan.target.url);
+            const u = new URL(a.url!, plan.target.url);
             if (
               !origins.has(u.origin) ||
               u.username ||

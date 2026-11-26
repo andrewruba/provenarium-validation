@@ -15,6 +15,15 @@ export const planQuestionSchema = questionSchema.extend({
   kind: z.enum(['requirement_decision', 'execution_preparation']).optional(),
   case_ids: z.array(id).optional(),
 });
+/** Written by the review workflow only after acceptance, never by an authoring model. */
+export const resolutionDecisionSchema = z.strictObject({
+  authority: z.enum(['delegated', 'user']),
+  basis: z.enum(['documented', 'implementation', 'decision', 'human']),
+  rationale: nonempty,
+  citations: z.array(citationSchema),
+  original_answer: nonempty.optional(),
+});
+export type ResolutionDecision = z.infer<typeof resolutionDecisionSchema>;
 export const ursQuestionSchema = questionSchema.extend({
   answer: z.string().nullable().optional(),
   resolution: z
@@ -24,6 +33,7 @@ export const ursQuestionSchema = questionSchema.extend({
       targets: z
         .array(z.string().regex(/^(document|requirement:[A-Za-z0-9][A-Za-z0-9_.-]*)$/))
         .min(1),
+      decision: resolutionDecisionSchema.optional(),
     })
     .optional(),
 });
@@ -217,6 +227,32 @@ export const actionSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('upload'), locator: locatorSchema, path: nonempty }),
   z.strictObject({ op: z.literal('download'), locator: locatorSchema, save_as: id }),
   z.strictObject({
+    op: z.literal('browser'),
+    command: z.enum([
+      'open_tab',
+      'select_tab',
+      'open_profile',
+      'select_profile',
+      'restart_profile',
+    ]),
+    name: id,
+    url: nonempty.optional(),
+  }),
+  z.strictObject({
+    op: z.literal('dialog'),
+    locator: locatorSchema,
+    response: z.enum(['accept', 'dismiss', 'none']),
+    as: id,
+    timeout_ms: z.number().int().min(100).max(10000).optional(),
+  }),
+  z.strictObject({
+    op: z.literal('observe_download'),
+    locator: locatorSchema,
+    as: id,
+    timeout_ms: z.number().int().min(100).max(10000).optional(),
+  }),
+  z.strictObject({ op: z.literal('storage'), mode: z.enum(['denied', 'normal']) }),
+  z.strictObject({
     op: z.literal('read'),
     locator: locatorSchema,
     as: id,
@@ -280,6 +316,20 @@ export const stepSchema = z.strictObject({
   assertions: z.array(assertionSchema),
   evidence: z.array(evidenceSchema).default([]),
 });
+export const manualReasonSchema = z.strictObject({
+  kind: z.enum(['external_dependency', 'explicit_manual_requirement']),
+  requirement_id: id,
+  source: nonempty.describe('Exact requirement source from obligation_source_catalog.'),
+  supporting_quote: nonempty.describe(
+    'Exact text from that requirement establishing the dependency.',
+  ),
+  dependency: nonempty.describe(
+    'Specific external resource or explicitly required manual activity named in the supporting quote.',
+  ),
+  explanation: nonempty.describe(
+    'Why this case requires the cited dependency instead of supported browser automation.',
+  ),
+});
 export const caseSchema = z.strictObject({
   id,
   title: nonempty,
@@ -290,6 +340,7 @@ export const caseSchema = z.strictObject({
   manual: z.boolean().default(false),
   manual_procedure: z.string().optional(),
   manual_expected: z.string().optional(),
+  manual_reason: manualReasonSchema.optional(),
   steps: z.array(stepSchema),
   citations: z.array(citationSchema).default([]),
 });

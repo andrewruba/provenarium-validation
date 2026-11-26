@@ -247,6 +247,12 @@ describe('answer-based requirements authoring', () => {
       answer_hash: 'a'.repeat(64),
       applied_at: '2026-11-25T00:00:00.000Z',
       targets: ['requirement:URS-001'],
+      decision: {
+        authority: 'delegated',
+        basis: 'decision',
+        rationale: 'Invented authority',
+        citations: [],
+      },
     };
     const requests = transport('openai', [
       proposed,

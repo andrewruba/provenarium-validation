@@ -58,7 +58,8 @@ const urs = ursSchema.parse({
         {
           id: 'URS-001',
           title: 'Sample identifier',
-          statement: 'The form shall show a labeled Sample ID entry.',
+          statement:
+            'The form shall show a labeled Sample ID entry. A human must perform the accessibility review.',
         },
       ],
     },
@@ -92,6 +93,15 @@ function candidate() {
           manual: true,
           manual_procedure: 'Inspect the field and its visible label.',
           manual_expected: 'The Sample ID label is clearly associated with the field.',
+          manual_reason: {
+            kind: 'explicit_manual_requirement',
+            requirement_id: 'URS-001',
+            source: 'URS-001/statement',
+            supporting_quote: 'A human must perform the accessibility review.',
+            dependency: 'accessibility review',
+            explanation:
+              'The reviewed URS explicitly requires this human accessibility assessment.',
+          },
           steps: [],
         },
       ],
@@ -139,6 +149,7 @@ async function runCli(
     nextUrs?: Urs;
     projectFiles?: Record<string, string | Buffer>;
   },
+  allowManual = true,
 ) {
   const root = await mkdtemp(join(tmpdir(), 'provenarium plan CLI '));
   roots.push(root);
@@ -207,6 +218,7 @@ async function runCli(
     'quick',
     '--yes',
     '--no-pdf',
+    ...(allowManual ? ['--allow-manual'] : []),
     ...(prior ? ['--feedback', 'feedback.txt'] : []),
   ];
   await import('../src/cli.js');
@@ -275,7 +287,7 @@ it('publishes a structurally valid candidate while retaining genuine product que
   expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain('Approval blockers:');
 });
 
-it('shows defined manual-test preparation separately from approval blockers', async () => {
+it('shows explicitly permitted manual-test preparation separately from approval blockers', async () => {
   const value = candidate();
   value.plan.cases.push({
     id: 'OQ-MANUAL',
@@ -286,6 +298,7 @@ it('shows defined manual-test preparation separately from approval blockers', as
     manual: true,
     manual_procedure: 'Restart and inspect the field.',
     manual_expected: 'The Sample ID field remains visible.',
+    manual_reason: value.plan.cases[0].manual_reason,
     steps: [],
     citations: [],
   });
@@ -497,4 +510,22 @@ it('replaces retired normative DOCX references without decoding the old document
   expect(await readFile(join(revisedDirectory, 'references/new.docx'))).toEqual(nextDocx);
   expect(await readdir(join(revisedDirectory, 'references'))).toEqual(['new.docx']);
   expect((await authoringRecord(root)).incomplete).toBe(false);
+});
+
+it('stops before packaging if a provider returns manual work without explicit opt-in', async () => {
+  const root = await runCli(candidate(), undefined, undefined, false);
+  expect(process.exitCode).toBe(1);
+  expect(await readdir(root)).not.toContain('candidates');
+  expect((await authoringRecord(root)).questions.join('\n')).toContain(
+    'manual execution is not enabled',
+  );
+});
+
+it('requires a grounded reason even with the manual opt-in', async () => {
+  const value = candidate();
+  delete value.plan.cases[0].manual_reason;
+  const root = await runCli(value);
+  expect(process.exitCode).toBe(1);
+  expect(await readdir(root)).not.toContain('candidates');
+  expect((await authoringRecord(root)).questions.join('\n')).toContain('manual_reason');
 });

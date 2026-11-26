@@ -50,7 +50,8 @@ export function ursHtml(urs: Urs): string {
                 answered: 'Answer recorded; changes pending review',
                 resolved: 'Resolved; requirement changes reviewed',
               }[questionStatus(urs, q)];
-              return `<section><h3>${e(q.id)}${q.requirement ? ` · ${e(q.requirement)}` : ''}</h3><p><strong>Question:</strong> ${e(q.question)}</p><p style="white-space:pre-wrap"><strong>Answer:</strong> ${e(q.answer || 'Not answered')}</p><p class="muted"><strong>Status:</strong> ${e(status)}</p></section>`;
+              const decision = q.resolution?.decision;
+              return `<section><h3>${e(q.id)}${q.requirement ? ` · ${e(q.requirement)}` : ''}</h3><p><strong>Question:</strong> ${e(q.question)}</p><p style="white-space:pre-wrap"><strong>Answer:</strong> ${e(q.answer || 'Not answered')}</p><p class="muted"><strong>Status:</strong> ${e(status)}</p>${decision ? `<p><strong>Decision authority:</strong> ${e(decision.authority)} · Basis: ${e(decision.basis)}<br>${e(decision.rationale)}</p>${decision.citations.length ? `<p>Sources: ${e(decision.citations.map((citation) => `${citation.source}: ${citation.location}`).join('; '))}</p>` : ''}` : ''}</section>`;
             })
             .join('')
         : '<p>None recorded.</p>'
@@ -64,7 +65,7 @@ export function protocolHtml(plan: Plan, urs: Urs, identity: string): string {
       (c) =>
         `<section><h2>${e(c.id)} — ${e(c.title)}</h2><p>${e(c.classification)} · Requirements: ${e(c.requirements.join(', '))} · Actor: ${e(c.actor || 'signed-out browser')}</p>${c.prerequisites.length ? `<p>Prerequisites: ${e(c.prerequisites.join('; '))}</p>` : ''}${c.citations.length ? `<p class="muted">Supporting sources: ${e(c.citations.map((x) => `${x.source}: ${x.location}`).join('; '))}</p>` : ''}${
           c.manual
-            ? `<p class="warning">Manual check planned; execution will remain manual_pending.</p><h3>Procedure</h3><p>${e(c.manual_procedure)}</p><h3>Expected result</h3><p>${e(c.manual_expected)}</p>`
+            ? `<p class="warning">Manual check planned; execution will remain manual_pending.</p>${c.manual_reason ? `<p><strong>Manual exception:</strong> ${e(c.manual_reason.explanation)}<br>Requirement ${e(c.manual_reason.source)}: ${e(c.manual_reason.supporting_quote)}</p>` : ''}<h3>Procedure</h3><p>${e(c.manual_procedure)}</p><h3>Expected result</h3><p>${e(c.manual_expected)}</p>`
             : table(
                 ['Step', 'Procedure', 'Expected results', 'Evidence'],
                 c.steps.map((s, i) => [
@@ -79,7 +80,7 @@ export function protocolHtml(plan: Plan, urs: Urs, identity: string): string {
                     .join('\n') || 'None declared',
                 ]),
               )
-        }</section>`,
+        }${!c.manual && c.manual_expected ? `<p class="muted"><strong>Retained expected result from the original manual procedure:</strong> ${e(c.manual_expected)}</p>` : ''}</section>`,
     )
     .join('');
   return layout(

@@ -1,12 +1,17 @@
 import {
+  chromium,
   expect,
   type Browser,
   type BrowserContext,
   type Locator,
   type Page,
+  type Download,
+  type Dialog,
+  type CDPSession,
 } from '@playwright/test';
-import { readFile, mkdir, stat, unlink, realpath } from 'node:fs/promises';
+import { readFile, mkdir, stat, unlink, realpath, mkdtemp, rm } from 'node:fs/promises';
 import { join, basename, relative } from 'node:path';
+import { tmpdir } from 'node:os';
 import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
 import { observationSchema } from '../schema.js';
@@ -148,7 +153,35 @@ export function compare(actual: unknown, assertion: Assertion): boolean {
 }
 
 type Step = TestCase['steps'][number];
-type DownloadValue = { path: string; text?: string; filename: string; artifact: Artifact };
+type DownloadValue = {
+  path: string;
+  text?: string;
+  filename: string;
+  artifact: Artifact;
+  byte_length: number;
+  utf8_valid: boolean;
+  has_bom: boolean;
+  line_endings: 'crlf' | 'lf' | 'cr' | 'mixed' | 'none';
+  final_newline: boolean;
+};
+type RuntimeTab = {
+  page: Page;
+  masks: LocatorSpec[];
+  storage?: { session: CDPSession; identifier: string };
+};
+type RuntimeProfile = {
+  context: BrowserContext;
+  directory?: string;
+  tabs: Map<string, RuntimeTab>;
+  activeTab: string;
+};
+
+// Fixed instrumentation only. No author-provided expression or script is evaluated.
+const DENY_STORAGE = `for (const name of ['localStorage', 'sessionStorage']) {
+  Object.defineProperty(window, name, { configurable: true, get() {
+    throw new DOMException('Storage access is denied by the qualification browser.', 'SecurityError');
+  }});
+}`;
 
 export class ExecutionEngine {
   private browser?: Browser;
@@ -163,6 +196,9 @@ export class ExecutionEngine {
   private runId = '';
   private packageId = '';
   private currentActor?: string;
+  private profiles = new Map<string, RuntimeProfile>();
+  private activeProfile = 'main';
+  private closingProfiles?: Promise<void>;
 
   constructor(
     private readonly options: WorkerContext,
@@ -177,6 +213,9 @@ export class ExecutionEngine {
 
   async setBrowser(browser: Browser): Promise<void> {
     this.browser = browser;
+    browser.once('disconnected', () => {
+      void this.closeProfiles().catch(() => undefined);
+    });
     const run = await updateRun(this.options.runDirectory, (run) => {
       run.versions.browser = browser.version();
     });
@@ -186,7 +225,7 @@ export class ExecutionEngine {
 
   private async openContext(actor?: string): Promise<void> {
     if (!this.browser) throw new Error('The browser runner is unavailable.');
-    await this.context?.close();
+    await this.closeProfiles();
     const declaration = actor ? this.plan.access.find((entry) => entry.id === actor) : undefined;
     if (actor && !declaration) throw new Error(`Unknown access binding ${actor}.`);
     let storageState: string | undefined;
@@ -208,9 +247,28 @@ export class ExecutionEngine {
       serviceWorkers: 'block',
       acceptDownloads: true,
     });
-    this.context.setDefaultTimeout(this.plan.environment.timeout_ms);
-    this.context.setDefaultNavigationTimeout(this.plan.environment.timeout_ms);
-    await this.context.route('**/*', async (route) => {
+    try {
+      await this.configureContext(this.context);
+      this.page = await this.context.newPage();
+    } catch (error) {
+      await this.context.close().catch(() => undefined);
+      this.context = undefined;
+      throw error;
+    }
+    this.masks = [];
+    this.profiles.set('main', {
+      context: this.context,
+      tabs: new Map([['main', { page: this.page, masks: this.masks }]]),
+      activeTab: 'main',
+    });
+    this.activeProfile = 'main';
+    this.currentActor = actor;
+  }
+
+  private async configureContext(context: BrowserContext): Promise<void> {
+    context.setDefaultTimeout(this.plan.environment.timeout_ms);
+    context.setDefaultNavigationTimeout(this.plan.environment.timeout_ms);
+    await context.route('**/*', async (route) => {
       try {
         checkedUrl(route.request().url(), this.plan);
         await route.continue();
@@ -218,7 +276,7 @@ export class ExecutionEngine {
         await route.abort('blockedbyclient');
       }
     });
-    await this.context.routeWebSocket('**/*', (socket) => {
+    await context.routeWebSocket('**/*', (socket) => {
       try {
         const destination = new URL(socket.url());
         if (!['ws:', 'wss:'].includes(destination.protocol))
@@ -230,9 +288,159 @@ export class ExecutionEngine {
         socket.close({ code: 1008, reason: 'WebSocket origin is outside the approved scope.' });
       }
     });
-    this.page = await this.context.newPage();
-    this.masks = [];
-    this.currentActor = actor;
+  }
+
+  private async closeProfiles(): Promise<void> {
+    if (this.closingProfiles) return this.closingProfiles;
+    this.closingProfiles = (async () => {
+      const profiles = [...this.profiles.values()];
+      this.profiles.clear();
+      await Promise.all(
+        profiles.map(async ({ context, directory }) => {
+          await context.close().catch(() => undefined);
+          if (directory) await rm(directory, { recursive: true, force: true });
+        }),
+      );
+      this.context = undefined;
+      this.page = undefined;
+      this.masks = [];
+    })();
+    try {
+      await this.closingProfiles;
+    } finally {
+      this.closingProfiles = undefined;
+    }
+  }
+
+  private selectProfile(name: string): RuntimeProfile {
+    const profile = this.profiles.get(name);
+    if (!profile) throw new Error(`Unknown browser profile ${name}.`);
+    const tab = profile.tabs.get(profile.activeTab)!;
+    if (tab.page.isClosed()) throw new Error(`Browser tab ${profile.activeTab} is closed.`);
+    this.activeProfile = name;
+    this.context = profile.context;
+    this.page = tab.page;
+    this.masks = tab.masks;
+    return profile;
+  }
+
+  private async persistentContext(directory: string): Promise<BrowserContext> {
+    const context = await chromium.launchPersistentContext(directory, {
+      headless: true,
+      locale: this.plan.environment.locale,
+      timezoneId: this.plan.environment.timezone,
+      viewport: this.plan.environment.viewport,
+      serviceWorkers: 'block',
+      acceptDownloads: true,
+    });
+    try {
+      await this.configureContext(context);
+    } catch (error) {
+      await context.close();
+      throw error;
+    }
+    return context;
+  }
+
+  private async browserAction(action: Extract<Action, { op: 'browser' }>): Promise<void> {
+    if (action.url && !['open_tab', 'open_profile'].includes(action.command))
+      throw new Error('Only opening a browser tab or profile accepts a URL.');
+    const url = action.url ? checkedUrl(action.url, this.plan) : undefined;
+    if (action.command === 'open_profile') {
+      if (this.profiles.has(action.name) || this.profiles.size >= 4)
+        throw new Error('Browser profiles must be unique; at most four may be open per case.');
+      const directory = await mkdtemp(join(tmpdir(), 'provenarium-profile-'));
+      let opened: BrowserContext | undefined;
+      try {
+        const context = (opened = await this.persistentContext(directory));
+        const page = context.pages()[0] ?? (await context.newPage());
+        this.profiles.set(action.name, {
+          context,
+          directory,
+          tabs: new Map([['main', { page, masks: [] }]]),
+          activeTab: 'main',
+        });
+        this.selectProfile(action.name);
+        if (url) await page.goto(url, { waitUntil: 'domcontentloaded' });
+      } catch (error) {
+        if (!this.profiles.has(action.name)) {
+          await opened?.close().catch(() => undefined);
+          await rm(directory, { recursive: true, force: true });
+        }
+        throw error;
+      }
+      return;
+    }
+    if (action.command === 'select_profile') {
+      this.selectProfile(action.name);
+      return;
+    }
+    if (action.command === 'restart_profile') {
+      const profile = this.profiles.get(action.name);
+      if (!profile?.directory)
+        throw new Error('Restart requires a named disposable persistent profile.');
+      const tabs = [...profile.tabs].map(([name, tab]) => ({
+        name,
+        url: tab.page.url(),
+        denied: Boolean(tab.storage),
+        masks: tab.masks,
+      }));
+      const activeTab = profile.activeTab;
+      await profile.context.close();
+      const context = await this.persistentContext(profile.directory);
+      profile.context = context;
+      profile.tabs = new Map();
+      for (const [index, tab] of tabs.entries()) {
+        const page =
+          index === 0 ? (context.pages()[0] ?? (await context.newPage())) : await context.newPage();
+        const restored: RuntimeTab = { page, masks: tab.masks };
+        profile.tabs.set(tab.name, restored);
+        if (tab.denied) await this.setStorageMode(restored, context, true, false);
+        if (tab.url !== 'about:blank')
+          await page.goto(checkedUrl(tab.url, this.plan), { waitUntil: 'domcontentloaded' });
+      }
+      profile.activeTab = activeTab;
+      this.selectProfile(action.name);
+      return;
+    }
+    const profile = this.profiles.get(this.activeProfile)!;
+    if (action.command === 'open_tab') {
+      if (profile.tabs.has(action.name) || profile.tabs.size >= 8)
+        throw new Error('Browser tabs must be unique; at most eight may be open per profile.');
+      const page = await profile.context.newPage();
+      profile.tabs.set(action.name, { page, masks: [] });
+      profile.activeTab = action.name;
+      this.selectProfile(this.activeProfile);
+      if (url) await page.goto(url, { waitUntil: 'domcontentloaded' });
+    } else {
+      if (!profile.tabs.has(action.name)) throw new Error(`Unknown browser tab ${action.name}.`);
+      profile.activeTab = action.name;
+      this.selectProfile(this.activeProfile);
+    }
+  }
+
+  private async setStorageMode(
+    tab: RuntimeTab,
+    context: BrowserContext,
+    denied: boolean,
+    reload = true,
+  ): Promise<void> {
+    if (denied === Boolean(tab.storage)) return;
+    if (denied) {
+      const session = await context.newCDPSession(tab.page);
+      await session.send('Page.enable');
+      const { identifier } = await session.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: DENY_STORAGE,
+      });
+      tab.storage = { session, identifier };
+    } else {
+      await tab.storage!.session.send('Page.removeScriptToEvaluateOnNewDocument', {
+        identifier: tab.storage!.identifier,
+      });
+      await tab.storage!.session.detach();
+      tab.storage = undefined;
+    }
+    if (reload) await tab.page.reload({ waitUntil: 'domcontentloaded' });
   }
 
   private binding(name: string): string {
@@ -281,6 +489,7 @@ export class ExecutionEngine {
       case 'checked':
         return selected.isChecked();
       case 'table':
+        await selected.waitFor({ state: 'visible' });
         return selected
           .locator('tr')
           .evaluateAll((rows) =>
@@ -361,6 +570,124 @@ export class ExecutionEngine {
     return artifact;
   }
 
+  private async retainDownload(download: Download, name: string): Promise<DownloadValue> {
+    const path = join(
+      this.options.runDirectory,
+      'artifacts',
+      `${this.caseId}-${this.stepId}-${name}.download`,
+    );
+    await download.saveAs(path);
+    const artifact = await this.registerArtifact(path, name, 'download');
+    const data = await readFile(path);
+    let utf8Valid = true;
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(data);
+    } catch {
+      utf8Valid = false;
+    }
+    const text = data.toString('utf8');
+    const crlf = text.includes('\r\n');
+    const withoutPairs = text.replaceAll('\r\n', '');
+    const lf = withoutPairs.includes('\n');
+    const cr = withoutPairs.includes('\r');
+    const value: DownloadValue = {
+      path: artifact.path,
+      filename: basename(download.suggestedFilename()),
+      artifact,
+      byte_length: data.length,
+      utf8_valid: utf8Valid,
+      has_bom: data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf,
+      line_endings:
+        Number(crlf) + Number(lf) + Number(cr) > 1
+          ? 'mixed'
+          : crlf
+            ? 'crlf'
+            : lf
+              ? 'lf'
+              : cr
+                ? 'cr'
+                : 'none',
+      final_newline: text.endsWith('\n') || text.endsWith('\r'),
+    };
+    if (data.length <= MAX_RESPONSE_BYTES && utf8Valid) value.text = text;
+    return value;
+  }
+
+  private async dialogAction(action: Extract<Action, { op: 'dialog' }>): Promise<void> {
+    const page = this.page!;
+    const dialogs: { type: string; message: string }[] = [];
+    const handled: Promise<void>[] = [];
+    let failure: unknown;
+    const listener = (dialog: Dialog) => {
+      if (dialogs.length >= 20)
+        failure ??= new Error('Dialog observation exceeded its event limit.');
+      else dialogs.push({ type: dialog.type(), message: dialog.message() });
+      // Unexpected dialogs are dismissed so a claimed absence can fail observably without hanging.
+      handled.push(
+        (action.response === 'accept' ? dialog.accept() : dialog.dismiss()).catch((error) => {
+          failure ??= error;
+        }),
+      );
+    };
+    page.on('dialog', listener);
+    try {
+      await locate(page, action.locator).click();
+      await new Promise((resolve) => setTimeout(resolve, action.timeout_ms ?? 1000));
+    } finally {
+      page.off('dialog', listener);
+      await Promise.all(handled);
+    }
+    if (failure) throw failure;
+    this.variables.set(action.as, {
+      count: dialogs.length,
+      type: dialogs[0]?.type ?? null,
+      message: dialogs[0]?.message ?? null,
+      dialogs,
+    });
+  }
+
+  private async observeDownload(
+    action: Extract<Action, { op: 'observe_download' }>,
+  ): Promise<void> {
+    const page = this.page!;
+    const observed: Download[] = [];
+    const cancelled: Promise<unknown>[] = [];
+    let failure: unknown;
+    let count = 0;
+    const listener = (download: Download) => {
+      count++;
+      if (count > 20) {
+        failure ??= new Error('Download observation exceeded its event limit.');
+        cancelled.push(download.cancel().catch(() => undefined));
+      } else observed.push(download);
+    };
+    let activated = false;
+    page.on('download', listener);
+    try {
+      const target = locate(page, action.locator);
+      await target.waitFor({ state: 'visible' });
+      if (await target.isEnabled()) {
+        await target.click();
+        activated = true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, action.timeout_ms ?? 1000));
+    } finally {
+      page.off('download', listener);
+      await Promise.all(cancelled);
+    }
+    const downloads: DownloadValue[] = [];
+    // Serial artifact registration preserves every entry in the run's atomic manifest.
+    for (const [index, download] of observed.entries())
+      downloads.push(await this.retainDownload(download, `${action.as}-${index + 1}`));
+    if (failure) throw failure;
+    this.variables.set(action.as, {
+      count,
+      activated,
+      filenames: downloads.map((value) => value.filename),
+      downloads,
+    });
+  }
+
   private async action(action: Action): Promise<void> {
     const page = this.page!;
     switch (action.op) {
@@ -369,6 +696,24 @@ export class ExecutionEngine {
         break;
       case 'session':
         await this.openContext(action.actor);
+        break;
+      case 'browser':
+        await this.browserAction(action);
+        break;
+      case 'storage': {
+        const profile = this.profiles.get(this.activeProfile)!;
+        await this.setStorageMode(
+          profile.tabs.get(profile.activeTab)!,
+          profile.context,
+          action.mode === 'denied',
+        );
+        break;
+      }
+      case 'dialog':
+        await this.dialogAction(action);
+        break;
+      case 'observe_download':
+        await this.observeDownload(action);
         break;
       case 'fill':
         await locate(page, action.locator).fill(action.value);
@@ -399,21 +744,7 @@ export class ExecutionEngine {
           page.waitForEvent('download'),
           locate(page, action.locator).click(),
         ]);
-        const path = join(
-          this.options.runDirectory,
-          'artifacts',
-          `${this.caseId}-${this.stepId}-${action.save_as}.download`,
-        );
-        await download.saveAs(path);
-        const artifact = await this.registerArtifact(path, action.save_as, 'download');
-        const data = await readFile(path);
-        const value: DownloadValue = {
-          path: artifact.path,
-          filename: basename(download.suggestedFilename()),
-          artifact,
-        };
-        if (data.length <= MAX_RESPONSE_BYTES) value.text = data.toString('utf8');
-        this.variables.set(action.save_as, value);
+        this.variables.set(action.save_as, await this.retainDownload(download, action.save_as));
         break;
       }
       case 'request': {
@@ -586,9 +917,7 @@ export class ExecutionEngine {
       });
       throw new Error(`${caseId}: ${message}`);
     } finally {
-      await this.context?.close().catch(() => {});
-      this.context = undefined;
-      this.page = undefined;
+      await this.closeProfiles();
     }
   }
 }

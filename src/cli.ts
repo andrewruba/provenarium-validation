@@ -30,6 +30,7 @@ import { resolveUrsFile, type ResolveUrsRuntime } from './urs-resolve-cli.js';
 import { repairUrsReferences } from './urs-reference-repair.js';
 import { extractContext } from './context.js';
 import { Discovery, type PageObservation } from './authoring/discovery.js';
+import { auditAutomation } from './authoring/automation-policy.js';
 import { validatePlanStructure } from './compiler.js';
 import {
   collectPlanInputCatalog,
@@ -641,6 +642,7 @@ discovery(
       .option('--plan <file>', 'Compile an existing reviewed typed plan offline')
       .option('--feedback <file>', 'Feedback against requirement/case/step IDs')
       .option('--rehearse', 'Rehearse scoped synthetic procedures as authoring diagnostics')
+      .option('--allow-manual', 'Allow explicit URS-grounded manual exceptions in generated tests')
       .option('--no-pdf', 'Render HTML only'),
   ),
 ).action(async (opts, command) => {
@@ -657,6 +659,7 @@ discovery(
       opts.interactiveDiscovery ||
       opts.access ||
       opts.rehearse ||
+      opts.allowManual ||
       opts.url ||
       opts.feedback ||
       opts.source ||
@@ -719,7 +722,13 @@ discovery(
     let feedback = opts.feedback
       ? await readFile(path.resolve(directory, opts.feedback), 'utf8')
       : undefined;
-    if (existing && !feedback) {
+    if (existing?.cases.some((item) => item.manual) && !opts.allowManual && !feedback) {
+      feedback =
+        'Automate the existing manual cases using accepted requirements and decisions. Preserve every obligation and expected result; resolve preparation through supported browser automation. Do not introduce new product behavior or external approval tasks.';
+      console.log(
+        'Revising the current candidate to automate its manual checks; accepted requirements and expected results remain protected.',
+      );
+    } else if (existing && !feedback) {
       terminal();
       feedback = answer(
         await text({
@@ -742,11 +751,13 @@ discovery(
       bindings,
       allowInteractions: !!opts.interactiveDiscovery || !!opts.rehearse,
       rehearse: !!opts.rehearse,
+      allowManual: !!opts.allowManual,
       discoveryActor: opts.discoveryActor,
     });
     if (result.value && !result.incomplete) {
       const generatedErrors = [
         ...validatePlanStructure(result.value.plan, document),
+        ...auditAutomation(result.value.plan, document, { allowManual: !!opts.allowManual }),
         ...(await validateGeneratedPlanInputs(directory, result.value, inputCatalog)),
       ];
       if (generatedErrors.length) {
@@ -786,6 +797,12 @@ discovery(
       }
   }
   const candidate = await createCandidate(directory, document, plan, { files, pdf: opts.pdf });
+  const manualCases = plan.cases.filter((item) => item.manual);
+  console.log(
+    `Execution: ${plan.cases.length - manualCases.length} automated; ${manualCases.length} manual${manualCases.length ? ' (review the listed exceptions before approval)' : ''}.`,
+  );
+  for (const item of manualCases)
+    console.log(`  ${item.id}: ${item.manual_reason?.explanation ?? item.manual_procedure}`);
   console.log(
     `Candidate ${candidate.id}\nReview: ${path.join(candidate.directory, 'ioq.html')}\nChanges: ${path.join(candidate.directory, 'changes.json')}\nAccess: ${plan.access.map((a) => `${a.id} (${a.role}/${a.state})`).join(', ') || 'none'}`,
   );

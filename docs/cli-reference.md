@@ -179,6 +179,20 @@ blocking readiness. Changing the answer, question, or linked requirement ID
 requires another resolution review. Do not delete answered questions or manually
 set resolution metadata to bypass that review.
 
+Accepted recommendations retain `resolution.decision` provenance in the YAML:
+`authority: delegated`, their documented/implementation/default basis, rationale,
+and citations. Your own answers or edits use `authority: user` and `basis: human`.
+When a delegation instruction is replaced by a concrete answer, its original text
+is retained too. This metadata is written only when you accept the review;
+saved proposals and resumed reviews preserve the proposed basis without silently
+accepting it. Older accepted answers remain valid without invented provenance.
+
+Generation reads the current accepted decisions and their affected requirements.
+A delegated choice is implemented in the protocol and automated expectations,
+not reopened as a request for independent policy approval after execution.
+This does not authorize changing an explicit requirement or treating the
+application's observed result as the expected result.
+
 To type answers without suggestions, a provider request, or requirement edits:
 
 ```sh
@@ -284,30 +298,60 @@ data. Protected applications can use `--access access.json`, a non-secret JSON
 array matching the documented access inventory, and `--discovery-actor <id>` to
 choose among multiple prepared sessions. Credentials never belong in this file.
 `--rehearse` authorizes candidate procedures as authoring diagnostics, separately
-from qualification runs. Rehearsal results identify the exact plan hash; a revised
-plan needs another rehearsal to establish new diagnostics.
+from qualification runs. It remains an explicit option. Rehearsal runs after
+the final coverage edits and checks, and records the exact plan hash. Observed
+application failures remain failures; they do not authorize weakening expectations
+or substituting manual checks. A later revision needs its own rehearsal.
+
+Discovery also compares SHA-256 hashes of linked JavaScript with scripts served
+by the target application. Exact matches are retained as source correspondence
+evidence, including the local source location and deployed URL. Unavailable or
+different assets are not matches. This bounded check identifies individual
+script bytes; it does not certify the complete build or derive correct expected
+results from the implementation.
 
 Generation preserves the URS. Subsequent generation asks for revision feedback,
-or accepts `--feedback feedback.md`. Expected outcomes remain frozen unless a
-reviewed URS revision changes the corresponding normative requirements.
+or accepts `--feedback feedback.md`. Expectations from an existing reviewed plan
+remain frozen unless a reviewed URS revision changes the corresponding normative
+requirements. The first draft's proposed expectations can be corrected during
+semantic review to match the URS and accepted decisions before candidate publication.
 
-Missing intended behavior or acceptance criteria remain approval blockers.
-Preparation for a fully defined manual test, such as obtaining a persistent
-browser profile, authorized deployment variants, or evidence needed to select a
-conditional probe, appears separately as **Manual test setup**. Such items use
-`kind: execution_preparation` and identify their manual `case_ids`. Each case
-must retain prerequisites, a complete procedure, and expected results. Approval
-does not supply missing evidence: these checks remain `manual_pending` during
-execution. Setup items cannot be attached to automated cases to bypass blockers.
+Generated protocols default to zero manual cases. The authoring review converts
+supported browser work into executable steps, transferring its obligations to
+assertions and retaining the expected behavior. Persistent browser profiles,
+tabs, restarts, dialogs, storage failures, and file inspection are supported
+automation, not reasons to leave work for the user.
+Conversion also records which original prerequisites are fulfilled by its steps
+or verified metadata. Only those exact prerequisites are removed from the active
+setup list; their text and explanations remain in the edit history, and unmet
+conditions stay visible.
+
+Use `generate --allow-manual` only when you want to permit grounded exceptions.
+Every manual case must carry a structured `manual_reason`: an exact requirement
+source and supporting quote naming either an explicit human activity or an
+external dependency, with an explanation of why automation cannot perform it.
+The model cannot add an obligation to the URS just to justify manual work.
+If the default automated policy cannot be met, generation remains incomplete
+with diagnostics instead of publishing a candidate with hidden manual tasks.
+
+Missing intended behavior or acceptance criteria still block approval. For an
+allowed manual exception with fully defined outcomes, unresolved preparation
+appears as **Manual test setup**, with `kind: execution_preparation` and its manual
+`case_ids`. Such cases retain prerequisites, procedure, and expected results;
+they remain `manual_pending` during execution. Approval does not supply missing
+external evidence, and setup items cannot disguise missing automated coverage.
 
 To answer a question raised only in the IOQ, include its exact ID and your answer
 in that revision feedback, for example `IOQ-Q-01: Use the installed Chromium
 browser.` Then run `provenarium generate --urs urs.yaml --feedback feedback.md`.
 The revision can remove that answered question from the active blockers; the
 original question, exact supporting feedback quote, and recorded resolution stay
-in the authoring record's edit diagnostics. Autonomous review cannot clear these
-questions. An answer that changes intended application behavior still requires
-a reviewed URS revision before changing protected expected results.
+in the authoring record's edit diagnostics. Product questions need the accepted
+decision or explicit feedback; authoring cannot silently invent their answers.
+When a manual case is converted to automation, setup questions tied only to that
+manual work can be retired with the recorded conversion explanation. An answer
+that changes intended application behavior still requires a reviewed URS revision
+before changing protected expected results.
 
 An older question can be reclassified as manual test setup through explicit
 revision feedback naming its ID, the affected manual cases, and the reason it is
@@ -326,11 +370,16 @@ unconstrained JSON string inside a `payload` field.
 
 Protocol review revisions and technical corrections return a list of typed,
 named edits. The CLI applies these atomically to the retained plan. Review edits
-can add coverage or update supported instructions and action bindings, but cannot
-delete or renumber existing checks, rewrite their expected outcomes, or replace
-manual expected text. A genuine expectation conflict is retained as a question
-for deliberate review. Technical edits are limited to the diagnosed repair scope.
-Unsupported operations or conflicting edits reject the entire proposal.
+can add coverage or update supported instructions and action bindings. An initial
+draft's provisional expectations and generated calculation fixtures can be revised
+against the URS and accepted decisions, with retained reasons and before/after
+records; they are not treated as prior human approvals. Existing reviewed
+expectations remain protected. No edit may delete or renumber a check, and
+converting a manual case must preserve its intended expected result while
+transferring every obligation to executable assertions. A genuine conflict with
+accepted policy remains a question for deliberate review. Technical edits are
+limited to the diagnosed repair scope. Unsupported or conflicting edits reject
+the entire proposal.
 
 `generate --urs` supplies the authoring model with the supported runtime contract
 and exact source bindings for the supplied requirements. Every initial and
@@ -465,8 +514,24 @@ For a public application without login, an access declaration with
 `state: signed_out` and `mode: anonymous` is valid. Reusable session access uses
 `mode: session` with `state: active`.
 
+Browser control uses typed actions:
+
+| Action | Available observations or behavior |
+| --- | --- |
+| `browser` | Open/select tabs, open/select disposable persistent profiles, and restart a named persistent profile while retaining its on-disk state. Profiles belong to the test, not the user's browser. |
+| `dialog` | Click a control, accept or dismiss its dialogs, and retain their count, type, and message. `response: none` permits an explicit no-dialog assertion. |
+| `storage` | Deny or restore storage access in the current test tab and reload it to exercise the application's response. |
+| `download` | Retain the file, suggested filename, text, byte length, UTF-8 validity, BOM flag, line ending classification, and final-newline flag. |
+| `observe_download` | Click an enabled control and record download count, filenames, metadata, and whether the control was activated; supports explicit no-download checks. |
+
+Dialog and download observations have bounded waits; assertions must state the
+expected count or content. Observing an event is not itself a passing check.
+Unexpected downloads are retained as evidence, and original file bytes remain
+unchanged even when text is decoded for comparison.
+
 Unrestricted JavaScript, shell commands, generalized expressions, and arbitrary
-imports are rejected. Unsupported behavior needs an explicit manual procedure.
+imports are rejected. Unsupported behavior stays an authoring issue unless an
+explicit `--allow-manual` exception satisfies the requirement-grounding rules.
 Text-bearing context extraction is bounded; warnings identify incomplete reads.
 Screenshots mask known secret controls and refuse detected unsafe captures.
 Arbitrary secrets painted into image/canvas content cannot be reliably identified;

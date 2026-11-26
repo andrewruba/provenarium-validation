@@ -124,7 +124,13 @@ function transport(provider: Provider, values: unknown[], usage = true) {
 
 async function run(
   values: unknown[],
-  options: { provider?: Provider; usage?: boolean; maxSpend?: number } = {},
+  options: {
+    provider?: Provider;
+    usage?: boolean;
+    maxSpend?: number;
+    allowManual?: boolean;
+    urs?: typeof urs;
+  } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'provenarium-schema-recovery-'));
   roots.push(root);
@@ -134,7 +140,8 @@ async function run(
     root,
     provider,
     key: 'synthetic-provider-key',
-    urs,
+    urs: options.urs ?? urs,
+    allowManual: options.allowManual,
     url: 'https://example.test/',
     thoroughness: 'quick',
     maxSpend: options.maxSpend,
@@ -152,7 +159,7 @@ function inputAt(fetchImpl: ReturnType<typeof transport>, index: number, provide
 }
 
 it.each(['openai', 'anthropic'] as const)(
-  '%s retains defined manual-test preparation without reopening requirements',
+  '%s automates manual work and its setup without reopening requirements',
   async (provider) => {
     const draft = candidate();
     draft.plan.cases.push({
@@ -176,11 +183,62 @@ it.each(['openai', 'anthropic'] as const)(
         case_ids: ['OQ-MANUAL'],
       },
     ];
-    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, reviewed], { provider });
+    draft.plan.obligations.push({
+      id: 'OB-02',
+      requirement_id: 'URS-001',
+      source: 'URS-001/statement',
+      statement: 'Sample ID remains visible after restarting the browser.',
+      assertion_ids: [],
+      manual_case_ids: ['OQ-MANUAL'],
+    });
+    const automatedStep = structuredClone(draft.plan.cases[0].steps[0]);
+    automatedStep.actions.push(
+      { op: 'browser', command: 'open_profile', name: 'persistent', url: '/' },
+      { op: 'browser', command: 'restart_profile', name: 'persistent' },
+    );
+    automatedStep.assertions[0].id = 'A-RESTART';
+    automatedStep.evidence[0].id = 'E-RESTART';
+    const edit = {
+      edits: [
+        {
+          op: 'automate_case',
+          case_id: 'OQ-MANUAL',
+          preserved_manual_expected: 'The Sample ID field remains visible.',
+          steps: [automatedStep],
+          coverage: [{ obligation_id: 'OB-02', assertion_ids: ['A-RESTART'] }],
+          preparation_resolutions: [
+            {
+              question_id: 'SETUP-PROFILE',
+              explanation:
+                'The runtime creates the named persistent profile and restarts it automatically.',
+            },
+          ],
+          automated_prerequisites: [
+            {
+              prerequisite: 'Prepare a disposable persistent profile.',
+              explanation:
+                'open_profile creates the disposable persistent profile before restarting it.',
+            },
+          ],
+        },
+      ],
+    };
+    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, edit, reviewed], {
+      provider,
+    });
     expect(result.incomplete).toBe(false);
-    expect(result.value).toEqual(draft);
+    expect(result.value?.plan.cases.every((c) => !c.manual)).toBe(true);
+    expect(result.value?.plan.cases[1].manual_expected).toBe(
+      'The Sample ID field remains visible.',
+    );
+    expect(result.value?.plan.obligations[1]).toMatchObject({
+      assertion_ids: ['A-RESTART'],
+      manual_case_ids: [],
+    });
+    expect(result.value?.plan.questions).toEqual([]);
+    expect(result.value?.plan.cases[1].prerequisites).toEqual([]);
     expect(result.questions).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
     const input = inputAt(fetchImpl, 1, provider);
     expect(input.runtime_contract.question_kinds).toContain('execution_preparation');
     expect(input.runtime_contract.question_kinds).toContain('does not complete');
@@ -499,6 +557,10 @@ it('allows a scoped review edit to add automated cases while retaining existing 
 });
 
 it('retains A16 and manual expected text verbatim while a review adds coverage', async () => {
+  const manualUrs = structuredClone(urs);
+  const explicitHumanRequirement =
+    'A human must inspect the physical workstation display to verify the saved record remains SYNTHETIC-1 with value 1.250 after application restart.';
+  manualUrs.families[0].requirements[0].details = [explicitHumanRequirement];
   const initial = candidate();
   initial.plan.cases[0].steps[0].assertions[0].id = 'A16';
   initial.plan.obligations[0].assertion_ids = ['A16'];
@@ -511,6 +573,15 @@ it('retains A16 and manual expected text verbatim while a review adds coverage',
     manual: true,
     manual_procedure: 'Restart the application and inspect the saved synthetic record.',
     manual_expected: 'The record remains SYNTHETIC-1 with value 1.250. Do not re-enter it.',
+    manual_reason: {
+      kind: 'explicit_manual_requirement' as const,
+      requirement_id: 'URS-001',
+      source: 'URS-001/details/0',
+      supporting_quote: explicitHumanRequirement,
+      dependency: 'physical workstation display',
+      explanation:
+        'This reviewed requirement explicitly requests a human inspection of the physical display.',
+    },
     steps: [],
     citations: [],
   };
@@ -521,21 +592,24 @@ it('retains A16 and manual expected text verbatim while a review adds coverage',
   additional.steps[0].id = 'S-05';
   additional.steps[0].assertions[0].id = 'A-05';
   additional.steps[0].evidence[0].id = 'E-05';
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    initial,
-    {
-      findings: [
-        {
-          requirement: 'URS-001',
-          severity: 'suggestion',
-          message: 'Add a boundary check without changing reviewed expectations.',
-        },
-      ],
-      summary: 'Expand coverage.',
-    },
-    { edits: [{ op: 'add_case', value: additional }] },
-  ]);
+  const { result, fetchImpl } = await run(
+    [
+      { action: 'finish' },
+      initial,
+      {
+        findings: [
+          {
+            requirement: 'URS-001',
+            severity: 'suggestion',
+            message: 'Add a boundary check without changing reviewed expectations.',
+          },
+        ],
+        summary: 'Expand coverage.',
+      },
+      { edits: [{ op: 'add_case', value: additional }] },
+    ],
+    { allowManual: true, urs: manualUrs },
+  );
 
   expect(result.incomplete).toBe(false);
   expect(fetchImpl).toHaveBeenCalledTimes(4);

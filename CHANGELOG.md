@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Persisted accepted delegated decisions with their authority, rationale, sources,
+  and scope, and supplied them to subsequent protocol authoring. Default generation
+  now requires automated coverage; manual exceptions require `--allow-manual` and
+  an exact supporting requirement. Existing manual cases can be converted with
+  typed, audited edits that transfer every obligation and retain expected results.
+- Added trusted browser tabs, disposable persistent profiles and actual browser
+  restarts, dialog decisions, storage denial, negative-download observation, and
+  byte-level download metadata. Table snapshots wait for the table to appear.
+  Source-script correspondence is checked automatically with exact byte hashes.
+- Moved optional rehearsal after the final coverage review. Bounded rehearsal
+  repairs can change instructions and locators only; application defects remain
+  failures. Fresh unapproved draft expectations can be corrected against the URS
+  with a retained before/after record; prior candidate expectations stay protected.
 - Separated missing requirement decisions from preparation for defined manual
   tests. Protocols retain setup needs and linked cases without blocking approval;
   those cases remain `manual_pending`. Existing questions stay blocking unless

@@ -197,6 +197,18 @@ it('accepts recommendations and their requirement changes in one review with no 
     'resolved',
   ]);
   expect(saved.open_questions.map((q) => q.answer)).toEqual([answer, clearAnswer]);
+  expect(saved.open_questions[0].resolution?.decision).toEqual({
+    authority: 'delegated',
+    basis: 'documented',
+    rationale: 'The design specifies a header-only file.',
+    citations: [{ source: 'design', location: 'design.md' }],
+  });
+  expect(saved.open_questions[1].resolution?.decision).toMatchObject({
+    authority: 'delegated',
+    basis: 'decision',
+    rationale: 'Proposed default to make accidental clearing reversible before confirmation.',
+    citations: [],
+  });
   expect(saved.document.revision).not.toBe('1');
   expect(saved.open_questions.map((q) => q.question)).toEqual(
     f.urs.open_questions.map((q) => q.question),
@@ -227,6 +239,9 @@ it.each(['later', Symbol('cancel')])(
       answer,
       clearAnswer,
     ]);
+    expect(JSON.stringify(artifact)).not.toContain('"authority"');
+    const diff = await readFile((await artifacts(f.root, '.diff.txt'))[0], 'utf8');
+    expect(diff).not.toContain('authority: delegated');
   },
 );
 it('applies a saved V2 recommendation review offline without another API request', async () => {
@@ -244,6 +259,10 @@ it('applies a saved V2 recommendation review offline without another API request
     'resolved',
   ]);
   expect(saved.open_questions[1].answer).toBe(clearAnswer);
+  expect(saved.open_questions.map((q) => q.resolution?.decision?.authority)).toEqual([
+    'delegated',
+    'delegated',
+  ]);
 });
 it('retains backwards-compatible offline application of V1 saved proposals', async () => {
   const f = await fixture(true);
@@ -264,6 +283,24 @@ it('retains backwards-compatible offline application of V1 saved proposals', asy
   expect(ui.propose).not.toHaveBeenCalled();
   const saved = await loadUrs(f.file);
   expect(questionStatus(saved, saved.open_questions[0])).toBe('resolved');
+});
+it('treats an offline-edited recommendation as a user decision without inherited agent evidence', async () => {
+  const f = await fixture();
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, suggestionRuntime());
+  const apply = await savedProposal(f.root);
+  const artifact = JSON.parse(await readFile(apply, 'utf8'));
+  artifact.answers[0].answer = 'Disable empty exports.';
+  artifact.proposal.requirements[0].value.statement = 'Disable empty exports.';
+  await writeFile(apply, JSON.stringify(artifact));
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, runtime(false));
+  const saved = await loadUrs(f.file);
+  expect(saved.open_questions[0].resolution?.decision).toEqual({
+    authority: 'user',
+    basis: 'human',
+    rationale: 'Answer edited in the saved review.',
+    citations: [],
+  });
+  expect(saved.open_questions[1].resolution?.decision?.authority).toBe('delegated');
 });
 it('edits selected recommendations as a batch and regenerates once before acceptance', async () => {
   const f = await fixture();
@@ -290,6 +327,10 @@ it('edits selected recommendations as a batch and regenerates once before accept
   expect((await loadUrs(f.file)).open_questions.map((q) => q.answer)).toEqual([
     'Disable empty export and explain why.',
     'Clear immediately.',
+  ]);
+  expect((await loadUrs(f.file)).open_questions.map((q) => q.resolution?.decision)).toEqual([
+    { authority: 'user', basis: 'human', rationale: 'Edited in this review.', citations: [] },
+    { authority: 'user', basis: 'human', rationale: 'Edited in this review.', citations: [] },
   ]);
 });
 it('does not make another proposal request for unchanged edits', async () => {
@@ -350,6 +391,12 @@ it('preserves concrete saved answers and recommends only for unanswered question
   expect(ui.suggest.mock.calls[0][1]).toEqual(['Q-CLEAR']);
   expect(ui.propose.mock.calls[0][0].open_questions[0].answer).toBe(answer);
   expect(ui.logs.join('\n')).toContain('Your saved answer');
+  expect((await loadUrs(f.file)).open_questions[0].resolution?.decision).toEqual({
+    authority: 'user',
+    basis: 'human',
+    rationale: 'Your recorded answer.',
+    citations: [],
+  });
 });
 it('recognizes delegated judgment and proposes a concrete default instead of keeping the instruction as an answer', async () => {
   const f = await fixture();
@@ -361,6 +408,10 @@ it('recognizes delegated judgment and proposes a concrete default instead of kee
   expect(ui.suggest.mock.calls[0][1]).toEqual(['Q-CSV', 'Q-CLEAR']);
   expect(ui.propose.mock.calls[0][0].open_questions[1].answer).toBe(clearAnswer);
   expect((await loadUrs(f.file)).open_questions[1].answer).toBe(clearAnswer);
+  expect((await loadUrs(f.file)).open_questions[1].resolution?.decision).toMatchObject({
+    authority: 'delegated',
+    original_answer: 'choose something reasonable',
+  });
 });
 it('permits an explicitly selected resolved answer to be revisited without replacing other accepted answers', async () => {
   const f = await fixture(true);
@@ -514,6 +565,7 @@ it('resumes pending human edits after partial acceptance against the new revisio
   ui.text.mockResolvedValueOnce('Require confirmation with an explicit Cancel button.');
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
   const firstAccepted = await loadUrs(f.file);
+  expect(firstAccepted.open_questions[0].resolution?.decision?.authority).toBe('delegated');
   const resume = (await artifacts(f.root, '.recommendations.json'))[0];
   const retained = JSON.parse(await readFile(resume, 'utf8'));
   expect(retained.source_sha256).toBe(sha256(await readFile(f.file, 'utf8')));
@@ -546,6 +598,12 @@ it('resumes pending human edits after partial acceptance against the new revisio
   expect(complete.open_questions[1].answer).toBe(
     'Require confirmation with an explicit Cancel button.',
   );
+  expect(complete.open_questions[1].resolution?.decision).toEqual({
+    authority: 'user',
+    basis: 'human',
+    rationale: 'Edited in this review.',
+    citations: [],
+  });
   expect(complete.open_questions.map((q) => questionStatus(complete, q))).toEqual([
     'resolved',
     'resolved',

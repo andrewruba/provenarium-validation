@@ -54,16 +54,19 @@ Do not derive expected results by copying the application's current outputs. A c
 
 Run `provenarium urs resolve urs.yaml` to work through unanswered questions in the
 terminal. It reads the linked material and inspects the saved deployed URL, then
-suggests concrete answers with their supporting sources. Accept a suggestion,
-edit it, choose an alternative, or skip. Stop with Ctrl+C at any point; submitted
-answers are retained. On a later run, already answered questions are skipped.
+prepares concrete answers and requirement changes for one accept/edit review.
+Accept the ready changes together, edit selected items, view the full diff, or
+save the review for later. Canceling leaves the working YAML unchanged; staged
+edits are retained separately when the command prints a resume path.
 Use `--question Q-CSV-01` to revisit a particular answer.
 
 Read the basis shown with each suggestion. A documented requirement can support
 a proposed answer; source code and page observations describe implementation
-behavior that still needs your confirmation. Genuine policy or scope choices
-remain decisions for you, with concrete alternatives where possible. The tool
-does not accept a model's suggestion on your behalf.
+behavior that still needs your confirmation. If you delegate a missing choice,
+the agent proposes a reasonable concrete default and rationale in the same
+review. Your acceptance makes it policy for subsequent tests; it should not
+become another manual decision after execution. An explicit requirement takes
+precedence over a suggested default.
 
 Alternatively, fill in the `answer` field directly in YAML:
 
@@ -92,13 +95,18 @@ provider/spending preview.
 Accepted changes update the working YAML and advance its document revision.
 Questions and answers stay in the file with resolution metadata, while review
 artifacts and before/after copies are saved under `.provenarium/resolutions/`.
+Accepted recommendations also retain delegated authority, rationale, and sources
+under `resolution.decision`; answers you supply or edit are marked as your own
+decisions. The original delegation instruction is retained when replaced by a
+concrete answer. Protocol authoring uses these records only while their answer,
+question, and affected requirement links still match the accepted resolution.
 Changing an answer or its question reopens that decision for review. Keep the
 metadata written by the CLI; do not delete answered questions to make checks
 pass.
 
 `urs resolve --answers-only` collects typed answers offline without suggestions.
-Suggestion batches are retained as `.suggestions.json` in the resolution
-history. You can also leave a
+Recommendations and staged answers are retained in the resolution review
+artifacts. You can also leave a
 proposal unapplied and return to its printed path with `urs resolve --apply
 <proposal-file>` without making another AI request. See the [CLI
 reference](cli-reference.md#answer-and-resolve-requirements-questions) for scripted
@@ -148,9 +156,16 @@ Tables can hold field names, data types, choices, requiredness, defaults, and li
 
 ## Review the generated coverage
 
-The generated test plan decomposes detailed requirements into readable clause groups. Each group references assertions or an explicit manual procedure. Review that decomposition alongside the original URS: structural checks can verify links but cannot prove semantic completeness.
+The generated test plan decomposes detailed requirements into readable clause
+groups linked to automated assertions. Review that decomposition alongside the
+original URS: structural checks verify links but cannot prove semantic
+completeness. Delegated choices should appear as concrete test expectations,
+without new product obligations or requests to repeat the same decision.
 
-Unknown expected behavior blocks approval. A fully specified manual procedure may remain planned and will appear as `manual_pending` in executed reports. Passing automated cases do not complete outstanding manual work.
+Unknown expected behavior blocks approval. Generation permits manual cases only
+with `--allow-manual` and an exact requirement citation establishing a human
+activity or external dependency. Such cases appear as `manual_pending` during
+execution; passing automated cases do not complete outstanding manual work.
 
 `--detail concise` reduces URS elaboration. `--thoroughness quick|standard|thorough` controls paid authoring effort and relevant scenario breadth. All levels preserve the same approval requirements.
 

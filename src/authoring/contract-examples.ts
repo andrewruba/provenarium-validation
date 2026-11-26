@@ -12,6 +12,11 @@ export const protocolContractExamples = {
     'Use comparison numeric with a numeric expected value and a nonnegative tolerance. Use string expected values for literal formatting checks such as trailing zeros.',
     'matches is a bounded literal wildcard comparison: only * is special, and the pattern has at most 200 characters. Never send regex groups, alternatives, flags, anchors, or character classes. Use contains_any with 1 to 20 case-sensitive literal strings (each 1 to 200 characters) only when the intended behavior permits those alternatives.',
     'Use csv_equals on a downloaded .text variable with the complete expected string[][], including headers and every row in order. CSV quoting, a leading BOM, and CRLF versus LF line endings are parsed by the runtime; do not write regex for CSV. Preserve exact cell strings, units, and decimal trailing zeros.',
+    'For byte-format requirements, download variables expose filename, byte_length, utf8_valid, has_bom, line_endings (crlf, lf, cr, mixed, or none), final_newline, and unchanged UTF-8 text for bounded valid text downloads. csv_equals alone does not establish encoding, filename, or line endings; assert those fields explicitly.',
+    'browser commands open_tab/select_tab share the current profile; open_profile creates an isolated disposable persistent profile, select_profile changes it, and restart_profile actually closes and relaunches its browser process with the same disk profile. The initial profile and tab are named main. Only open_tab/open_profile accept url; restart_profile requires a named profile previously opened with open_profile. No saved actor session is imported into new profiles. Use at most four profiles and eight tabs per profile.',
+    'dialog clicks its locator and explicitly accepts or dismisses dialogs, returning count, type, message, and dialogs. response none dismisses unexpected dialogs and still returns their count; assert count equals 0 to establish absence. For expected dialogs, assert count, type, and message, then separately assert the resulting application state.',
+    'observe_download observes its locator for timeout_ms (100 to 10000 ms; default 1000), clicks if enabled, and returns count, activated, filenames, and downloads. Assert count equals 0 for no-download requirements. Unexpected downloads are retained as evidence and must fail that expectation. A disabled visible control returns activated false. dialog uses the same bounded observation window.',
+    'storage mode denied installs controlled localStorage/sessionStorage denial on the active tab and reloads it before application scripts run. mode normal removes that control and reloads, preserving existing stored data. This tests controlled storage unavailability, not an actual OS quota or browser security setting. No arbitrary generated JavaScript is supported.',
     'A manual case has manual true, concrete manual_procedure and manual_expected text, and an empty steps array. Keep supported browser operations automated.',
   ],
   automated_step: stepSchema.parse({
@@ -70,6 +75,49 @@ export const protocolContractExamples = {
       { id: 'EX-DOWNLOAD', kind: 'download', variable: 'export' },
       { id: 'EX-SCREENSHOT', kind: 'screenshot' },
     ],
+  }),
+  browser_step: stepSchema.parse({
+    id: 'EX-BROWSER-STEP',
+    instruction:
+      'Illustrate isolated profiles, real restart, dialogs, and bounded download observation.',
+    actions: [
+      { op: 'browser', command: 'open_profile', name: 'example-profile', url: '/' },
+      { op: 'browser', command: 'open_tab', name: 'second-tab', url: '/' },
+      { op: 'browser', command: 'select_tab', name: 'main' },
+      { op: 'browser', command: 'restart_profile', name: 'example-profile' },
+      {
+        op: 'dialog',
+        locator: { by: 'role', role: 'button', value: 'Example clear' },
+        response: 'dismiss',
+        as: 'confirmation',
+        timeout_ms: 1000,
+      },
+      {
+        op: 'observe_download',
+        locator: { by: 'role', role: 'button', value: 'Example empty export' },
+        as: 'emptyExport',
+        timeout_ms: 1000,
+      },
+      { op: 'storage', mode: 'denied' },
+      { op: 'storage', mode: 'normal' },
+    ],
+    assertions: [
+      { id: 'EX-DIALOG-COUNT', variable: 'confirmation.count', comparison: 'equals', expected: 1 },
+      {
+        id: 'EX-DIALOG-TYPE',
+        variable: 'confirmation.type',
+        comparison: 'equals',
+        expected: 'confirm',
+      },
+      {
+        id: 'EX-DIALOG-MESSAGE',
+        variable: 'confirmation.message',
+        comparison: 'equals',
+        expected: 'Example: clear all records?',
+      },
+      { id: 'EX-NO-DOWNLOAD', variable: 'emptyExport.count', comparison: 'equals', expected: 0 },
+    ],
+    evidence: [{ id: 'EX-BROWSER-OBSERVATION', kind: 'observation', variable: 'confirmation' }],
   }),
   anonymous_access: accessSchema.parse({
     id: 'EX-ACTOR',

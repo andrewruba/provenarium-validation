@@ -7,7 +7,7 @@ import { parseDocument, stringify } from 'yaml';
 import { z } from 'zod';
 import type { AuthoringResult } from './authoring/index.js';
 import { atomicWrite, exists, parseYaml, safePath, sha256, writeNew } from './files.js';
-import { ursSchema, type Urs } from './schema.js';
+import { ursSchema, type ResolutionDecision, type Urs } from './schema.js';
 import {
   pendingAnsweredQuestions,
   checkUrsStructure,
@@ -266,8 +266,46 @@ export async function resolveUrsFile(
   let reviewFile: string | undefined;
   let diffFile: string | undefined;
   const source = () => ({ source: file, source_sha256: sha256(raw) });
-  const reviewedDocument = () => {
-    const next = applyResolutionProposal(staged, proposal);
+  const acceptedDecisions = (): Map<string, ResolutionDecision> =>
+    new Map(
+      [...answers.values()].map((record) => {
+        const recommendation = recommendations.suggestions.find(
+          (item) => item.question_id === record.question_id,
+        );
+        // Saved proposals can be edited offline. Only an unchanged recommendation
+        // carries the agent's basis; an edited answer is the user's own decision.
+        const delegated =
+          record.basis !== 'human' &&
+          recommendation?.answer?.trim() === record.answer.trim() &&
+          recommendation.basis === record.basis &&
+          recommendation.explanation === record.explanation &&
+          isDeepStrictEqual(recommendation.citations, record.citations);
+        const original = document.open_questions
+          .find((question) => question.id === record.question_id)
+          ?.answer?.trim();
+        return [
+          record.question_id,
+          {
+            authority: delegated ? 'delegated' : 'user',
+            basis: delegated ? record.basis : 'human',
+            rationale: delegated
+              ? record.explanation
+              : record.basis === 'human'
+                ? record.explanation || 'Your recorded answer.'
+                : 'Answer edited in the saved review.',
+            citations: delegated ? record.citations : [],
+            ...(original && original !== record.answer.trim() ? { original_answer: original } : {}),
+          },
+        ];
+      }),
+    );
+  const reviewedDocument = (accepted = false) => {
+    const next = applyResolutionProposal(
+      staged,
+      proposal,
+      new Date().toISOString(),
+      accepted ? acceptedDecisions() : undefined,
+    );
     const resolvedIds = new Set([
       ...proposal.requirements.flatMap((change) => change.question_ids),
       ...(proposal.document?.question_ids ?? []),
@@ -537,7 +575,7 @@ export async function resolveUrsFile(
   };
   const apply = async () => {
     await assertCurrent();
-    const next = reviewedDocument();
+    const next = reviewedDocument(true);
     const errors = await checkUrsStructure(next, root);
     if (errors.length)
       throw new Error(

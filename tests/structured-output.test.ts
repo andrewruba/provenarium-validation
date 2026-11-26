@@ -160,6 +160,41 @@ describe.each(providers)('%s native schema contracts', (provider) => {
         },
       ],
     });
+    urs.open_questions = [
+      {
+        id: 'Q-DECISION',
+        question: 'Which result format is intended?',
+        requirement: 'URS-001',
+        answer: 'Use three decimal places.',
+        resolution: {
+          answer_hash: 'a'.repeat(64),
+          applied_at: '2026-11-26T01:00:00.000Z',
+          targets: ['requirement:URS-001'],
+          decision: {
+            authority: 'delegated',
+            basis: 'documented',
+            rationale: 'The selected design defines the format.',
+            citations: [
+              {
+                source: 'https://example.test/design',
+                location: 'https://example.test/design#format',
+              },
+            ],
+            original_answer: 'Choose something reasonable.',
+          },
+        },
+      },
+      {
+        id: 'Q-LEGACY',
+        question: 'Which calculation is intended?',
+        answer: 'Use the stated equation.',
+        resolution: {
+          answer_hash: 'b'.repeat(64),
+          applied_at: '2026-11-25T01:00:00.000Z',
+          targets: ['document'],
+        },
+      },
+    ];
     const result = roundtrip(ursSchema, urs, provider);
     expect(result.decoded).toEqual(urs);
     const requirement =
@@ -243,6 +278,96 @@ describe.each(providers)('%s native schema contracts', (provider) => {
           if (provider === 'openai') expectBareReferences(result.compiled.schema);
         }
       }
+    }
+  });
+  it('roundtrips expanded browser actions and grounded manual exceptions within provider limits', async () => {
+    const plan = planSchema.parse(
+      JSON.parse(await readFile('examples/sample-validation/plan.json', 'utf8')),
+    );
+    plan.cases
+      .find((c) => !c.manual)!
+      .steps[0].actions.push(
+        { op: 'browser', command: 'open_profile', name: 'persistent', url: '/' },
+        { op: 'browser', command: 'open_tab', name: 'second' },
+        { op: 'browser', command: 'restart_profile', name: 'persistent' },
+        { op: 'storage', mode: 'denied' },
+        {
+          op: 'dialog',
+          locator: { by: 'text', value: 'Clear', exact: true },
+          response: 'dismiss',
+          as: 'confirm',
+        },
+        {
+          op: 'observe_download',
+          locator: { by: 'text', value: 'Export', exact: true },
+          as: 'export',
+        },
+      );
+    plan.cases.find((c) => c.manual)!.manual_reason = {
+      kind: 'external_dependency',
+      requirement_id: 'URS-RECOVERY',
+      source: 'URS-RECOVERY/statement',
+      supporting_quote: 'Supply independent recovery evidence.',
+      dependency: 'independent recovery evidence',
+      explanation: 'The evidence must come from the recovery service.',
+    };
+    plan.questions = [
+      {
+        id: 'Q-RECOVERY',
+        question: 'Which recovery evidence will be supplied?',
+        requirement: plan.cases.find((c) => c.manual)!.requirements[0],
+      },
+    ];
+    expect(roundtrip(generatedPlanSchema, { plan, fixtures: [] }, provider).decoded).toEqual({
+      plan,
+      fixtures: [],
+    });
+    for (const mode of ['review', 'technical'] as const) {
+      const schema = makePlanEditsSchema(
+        {
+          plan,
+          fixtures: [{ path: 'fixtures/derivation.txt', content: 'Provisional calculation.' }],
+        },
+        {
+          mode,
+          allowManualConversion: true,
+          allowManualExceptions: true,
+          allowDraftExpectationRevision: true,
+          authorizedRequirementChanges: new Set(plan.cases.flatMap((c) => c.requirements)),
+          questionResolutionFeedback: plan.questions
+            .map((q) => `${q.id}: accepted decision.`)
+            .join('\n'),
+        },
+      );
+      const value = {
+        edits: [
+          {
+            op: 'automate_case',
+            case_id: plan.cases.find((c) => c.manual)!.id,
+            preserved_manual_expected: 'The recovery evidence is complete.',
+            steps: plan.cases.find((c) => !c.manual)!.steps,
+            coverage: [{ obligation_id: 'OB-RECOVERY', assertion_ids: ['AS-RECOVERY'] }],
+            preparation_resolutions: [],
+            automated_prerequisites: [
+              {
+                prerequisite: 'Use a disposable persistent browser profile.',
+                explanation: 'The automated open_profile action creates this test profile.',
+              },
+            ],
+          },
+          ...(mode === 'review'
+            ? [
+                {
+                  op: 'revise_fixture',
+                  path: 'fixtures/derivation.txt',
+                  content: '100 / 4 = 25.',
+                  reason: 'Correct the independent derivation against the URS equation.',
+                },
+              ]
+            : []),
+        ],
+      };
+      expect(roundtrip(schema, value, provider).decoded).toEqual(value);
     }
   });
   it('decodes the exact valid union branch without silently losing fields', () => {

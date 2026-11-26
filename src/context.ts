@@ -324,7 +324,7 @@ export async function extractContext(
             const siblingInfo = inside(sibling) ? await infoIfPresent(sibling) : undefined;
             if (siblingInfo?.isFile() && !siblingInfo.isSymbolicLink()) {
               warning(
-                `Build reference ${JSON.stringify(relative)} was not found; reading same-named local source ${path.relative(locationRoot, sibling)} instead. Confirm it corresponds to the deployed build.`,
+                `Build reference ${JSON.stringify(relative)} was not found; reading same-named local source ${path.relative(locationRoot, sibling)} instead. Source correspondence is checked separately during protocol generation.`,
               );
               candidate = sibling;
             }

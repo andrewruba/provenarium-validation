@@ -103,18 +103,25 @@ Refresh existing HTML/PDF views with `provenarium urs render urs.yaml` after edi
 
 ## An IOQ asks for deployment evidence or test environments before approval
 
-First distinguish unknown expected behavior from setup for an already defined
-test. Missing acceptance criteria still block approval. Obtaining a disposable
-profile, authorized deployment variants, or build evidence for a conditional
-precision probe can be preparation for manual execution when the procedure and
-expected outcomes are already defined.
+Rerun generation with the current CLI after accepting the requirements review.
+Accepted delegated choices now carry their concrete policy and provenance into
+test authoring. The tool should use those choices instead of asking you to
+approve the same policy again or attach a separate decision after execution.
 
-New generation retains these items under **Manual test setup** with their manual
-case IDs. Review and approve the planned protocol normally; the affected checks
-remain `manual_pending`, and missing environments or evidence are not passes.
-Existing unclassified questions remain blockers until an explicit reviewed
-revision reclassifies them. No requirements, cases, or expected results should
-be deleted to remove a setup blocker.
+Newly generated protocols default to automated cases. Disposable persistent
+profiles, tabs, restarts, confirmation dialogs, storage-denial checks, and CSV
+inspection run in the browser test engine. Discovery automatically records
+exact matches between linked JavaScript and deployed scripts; it does not ask
+you to establish a match already supported by those hashes. Different script
+bytes do not establish correspondence or justify invented product requirements.
+
+A real missing acceptance criterion remains a blocker. A manual procedure is
+allowed only with `generate --allow-manual` and a cited requirement that explicitly
+requires human work or names the necessary external dependency. Its setup may
+then appear under **Manual test setup**, and execution still reports
+`manual_pending` until the work is completed. Do not delete requirements or
+weaken expected results to remove a blocker. A test exposing an application
+defect should continue to fail.
 
 ## Protocol generation stops on “Duplicate plan ID 01”
 

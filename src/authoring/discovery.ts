@@ -10,6 +10,8 @@ import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { locatorSchema, type Bindings, type LocatorSpec } from '../schema.js';
 import { assertAllowedUrl, redact, redactValue, safeUrl } from './security.js';
+import type { ContextHash } from '../context.js';
+import { matchDeployedScripts } from './source-correspondence.js';
 
 export const discoveryActionSchema = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('inspect') }),
@@ -218,6 +220,15 @@ export class Discovery {
       }
     });
     return { url, title: redact(await this.page.title(), this.secrets), ...sanitized };
+  }
+  async sourceCorrespondence(hashes: ContextHash[]) {
+    if (!this.page) throw new Error('Discovery is not open.');
+    const scripts = await this.page
+      .locator('script[src]')
+      .evaluateAll((elements) => elements.map((element) => (element as HTMLScriptElement).src));
+    return matchDeployedScripts(scripts, hashes, this.options.url, this.origins, {
+      signal: this.options.signal,
+    });
   }
   async perform(raw: DiscoveryAction): Promise<PageObservation> {
     this.options.signal?.throwIfAborted();

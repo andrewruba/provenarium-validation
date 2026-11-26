@@ -126,7 +126,10 @@ function transport(values: unknown[]) {
 async function run(
   values: unknown[],
   options: Partial<
-    Pick<Parameters<typeof generatePlan>[0], 'existing' | 'existingUrs' | 'feedback'>
+    Pick<
+      Parameters<typeof generatePlan>[0],
+      'existing' | 'existingUrs' | 'feedback' | 'allowManual' | 'urs'
+    >
   > = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'provenarium-plan-authoring-'));
@@ -216,6 +219,33 @@ function predicateEdits() {
     ],
   };
 }
+
+it('corrects an unapproved draft expectation during semantic review and records the change', async () => {
+  const draft = candidate();
+  draft.plan.cases[0].steps[0].assertions[0].expected = false;
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    draft,
+    {
+      findings: [
+        {
+          requirement: 'URS-001',
+          severity: 'conflict',
+          message:
+            'The URS requires the field to be visible, but this draft expects it to be hidden.',
+        },
+      ],
+      summary: 'Correct the draft visibility expectation.',
+    },
+    { edits: [{ op: 'revise_assertion', assertion_id: 'A-01', expected: true }] },
+  ]);
+  expect(result.incomplete).toBe(false);
+  expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  const input = JSON.parse(requestBody(fetchImpl, 3).input[0].content[0].text);
+  expect(input.edit_catalog.provisional_expectation_revision).toBe(true);
+  expect(result.diagnostics?.some((diagnostic) => diagnostic.kind === 'protocol_edits')).toBe(true);
+});
 
 it('supplies exact source bindings and runtime rules and normalizes an unambiguous local source', async () => {
   const generated = candidate();
@@ -368,12 +398,24 @@ it('keeps a genuine product question as an approval blocker without treating it 
 });
 
 it('does not weaken a manual expected result while repairing a source binding', async () => {
+  const manualUrs = structuredClone(urs);
+  const humanRequirement =
+    'A human must inspect the physical workstation display for the Sample ID label and its field.';
+  manualUrs.families[0].requirements[0].details.push(humanRequirement);
   const malformed = candidate();
   const manual = malformed.plan.cases[0];
   manual.manual = true;
   manual.manual_procedure = 'Open the form and inspect the Sample ID label.';
   manual.manual_expected =
     'The Sample ID label is visible and correctly associated with its field.';
+  manual.manual_reason = {
+    kind: 'explicit_manual_requirement',
+    requirement_id: 'URS-001',
+    source: 'URS-001/details/1',
+    supporting_quote: humanRequirement,
+    dependency: 'physical workstation display',
+    explanation: 'The reviewed requirement explicitly requires physical human inspection.',
+  };
   manual.steps = [];
   malformed.plan.obligations[0].assertion_ids = [];
   malformed.plan.obligations[0].manual_case_ids = [manual.id];
@@ -388,7 +430,10 @@ it('does not weaken a manual expected result while repairing a source binding', 
       },
     ],
   };
-  const { result } = await run([{ action: 'finish' }, malformed, weakened, weakened]);
+  const { result } = await run([{ action: 'finish' }, malformed, weakened, weakened], {
+    allowManual: true,
+    urs: manualUrs,
+  });
 
   expect(result.incomplete).toBe(true);
   expect(result.questions.join('\n')).toMatch(/manual|expected/i);
