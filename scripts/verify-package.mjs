@@ -52,6 +52,10 @@ try {
     execFileSync(process.execPath, [localCli, '--version'], { encoding: 'utf8' }).trim(),
     packageInfo.version,
   );
+  execFileSync(process.execPath, [localCli, 'browser', 'install'], {
+    cwd: workspace,
+    stdio: 'inherit',
+  });
 
   const { startSampleApp } = await import(
     pathToFileURL(requireInstalled.resolve('provenarium-validation/example')).href
@@ -136,6 +140,7 @@ try {
   const cliOptions = { env: cliEnv, cwd: workspace, encoding: 'utf8' };
   assert.equal(execFileSync(globalCli, ['--version'], cliOptions).trim(), packageInfo.version);
   assert.match(execFileSync(globalCli, ['--help'], cliOptions), /uninstall/);
+  execFileSync(globalCli, ['browser', 'install'], { ...cliOptions, stdio: 'inherit' });
   const dryRun = execFileSync(globalCli, ['uninstall', '--dry-run'], cliOptions);
   assert.ok(dryRun.includes(globalPrefix), 'Dry run did not identify the isolated prefix');
   await access(globalPackage);
@@ -183,6 +188,7 @@ try {
     good: counts(good),
     defective: counts(defective),
     project_has_node_modules: false,
+    browser_install: 'passed',
     global_install_uninstall: 'passed',
     good_report: goodReport.html,
     defective_report: defectiveReport.html,

@@ -5,20 +5,48 @@ workflows, centered on user requirements, readable protocols, and test evidence.
 
 ## Workflow
 
-The workflow turns a User Requirements Specification (URS) into a
-human-readable Installation and Operational Qualification (IOQ) protocol and
-reviewable, deterministic Playwright tests.
+Start with your source code or design documents and the deployed application
+URL. `provenarium urs` collects those inputs, shows the authoring cost and data
+preview, and drafts a User Requirements Specification (URS): what the application
+must do for its users. There is no preliminary interview. Review the draft and
+resolve any specific missing decisions recorded as open questions.
 
-```text
-provenarium urs template
-provenarium urs generate
-provenarium context add app ../my-app
-provenarium context add design ./design.docx
+```sh
+provenarium urs
+# Review and edit urs.yaml, then check it:
+provenarium urs check urs.yaml
+
+# Turn the reviewed requirements into a protocol and tests:
 provenarium generate --urs urs.yaml --url https://app.example.com
+# Review the generated IOQ before approving:
 provenarium approve
 provenarium run
 provenarium report
 ```
+
+Use the requirements filename printed by setup. Existing files are preserved,
+and a new revision receives a separate filename. `generate --urs` produces a
+human-readable Installation and Operational Qualification (IOQ) protocol and
+deterministic Playwright tests.
+
+You can supply the inputs directly instead of using prompts:
+
+```sh
+provenarium urs generate --context ../my-app --context ./design.docx \
+  --url https://app.example.com
+```
+
+Manual writing and existing requirements remain available as alternatives:
+
+| Starting point | Command | What you do next |
+| --- | --- | --- |
+| Write requirements yourself | `provenarium urs template` | Fill in the blank `urs.yaml`. |
+| Already have requirements in the supported YAML format | `provenarium urs check urs.yaml` | Resolve any issues, then continue to `generate --urs`. |
+
+Context added during setup is reused for later protocol generation. You do not
+need to name each source or link it again. Optional `context` commands let you
+inspect and manage those links. See the [CLI reference](docs/cli-reference.md)
+for additional authoring options.
 
 The CLI supports:
 
@@ -62,7 +90,7 @@ node bin/provenarium.mjs browser install
 node bin/provenarium.mjs --help
 ```
 
-Start with `urs template`, or use `urs generate` with your selected provider.
+Start with `provenarium urs` for guided requirements setup.
 OpenAI and Anthropic authoring offer Quick ($5), Standard ($15), and Thorough
 ($40) default spending ceilings per command. Approval, execution, and reporting
 make no provider calls.

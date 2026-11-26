@@ -2,7 +2,14 @@
 
 ## A blank URS does not pass readiness checks
 
-The blank template intentionally contains no invented obligations. Fill in intended use, meaningful requirement families, and requirements; resolve placeholders and open questions before protocol approval. An offline structural check cannot establish scientific adequacy.
+The blank template intentionally contains no invented obligations. To have AI
+draft requirements, run `provenarium urs` and supply context and the deployed URL.
+An existing blank template is preserved while the draft gets a separate revision
+filename. Use the printed filename for review and subsequent commands. If you
+prefer manual writing, fill in intended use, meaningful requirement families,
+and requirements yourself. Resolve placeholders and open questions before
+protocol approval. An offline structural check cannot establish scientific
+adequacy.
 
 ## The CLI reports missing Chromium
 

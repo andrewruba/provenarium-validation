@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Changed `provenarium urs` to collect application context and a deployed URL,
+  then draft requirements without a general interview or route-selection menu.
+  `urs generate --context <location> --url <url>` supports direct input, and
+  `--brief` is optional guidance. Linked context and the target URL are reused.
+- Grounded draft and review questions in supplied material and observed controls.
+  Missing decisions remain specific open questions. Untouched blank templates
+  can be filled, while existing requirements files are preserved as new revisions.
+- Clarified the requirements workflow: templates and AI drafts are alternative
+  starting points, followed by reviewed requirements, protocol generation, and
+  the existing approval and execution flow.
+- Fixed `provenarium browser install` to use the exported Playwright CLI entry
+  point. Package verification now exercises browser setup from local and global
+  installations.
+
 ## 0.1.0 — prerelease
 
 - Added local URS authoring, context links, typed IOQ plans, hash-based approval,

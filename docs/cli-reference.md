@@ -6,18 +6,73 @@ within it. No project initialization command is required.
 
 ## Requirements
 
+Start with the guided command:
+
+```sh
+provenarium urs
+```
+
+Supply context locations and the deployed application URL. The CLI reads the
+source code or documents, inspects the application, and drafts requirements after
+the provider and spending preview. It does not ask a general intended-use
+interview. Specific unresolved decisions are recorded in the draft's
+`open_questions`, so review starts from concrete requirements and gaps.
+
+To supply the inputs directly:
+
+```sh
+provenarium urs generate --context ../application --context ./design.docx \
+  --url https://app.example.com
+# Review and edit urs.yaml before continuing:
+provenarium urs check urs.yaml
+```
+
+Repeat `--context` for each source folder, document, or HTTPS page. No source IDs
+are required; links are saved for later authoring. Previously linked sources are
+also available. `--brief brief.md` optionally adds written guidance, such as a
+particular use case or scope restriction; a brief is not required.
+
+`urs generate` writes a draft URS; it does not create qualification tests.
+The model is instructed to use supplied evidence first and retain only specific
+material questions that the sources do not answer. For example, a missing
+rounding rule should name the affected calculation or export field. Observed
+application behavior does not establish an acceptance limit or independent
+expected result.
+
+The draft is written to `urs.yaml` by default, with HTML/PDF views. `--out` changes
+the YAML output path; `--no-pdf` skips PDF rendering. If the output file already
+exists, it informs the draft and the new revision gets a separate filename
+automatically. An untouched blank template can be filled by AI while the
+original file is preserved. Follow the printed filename in subsequent commands.
+
+To write the requirements yourself, use this route instead:
+
 ```sh
 provenarium urs template --out urs.yaml
+# Fill in intended use and requirements in urs.yaml:
 provenarium urs check urs.yaml
+```
+
+The template contains writing prompts and needs editing before it can be used.
+Run `provenarium urs` if you want AI to draft or revise requirements instead. If you
+already have a URS in the supported YAML format, start with `urs check` directly.
+
+Optional review and document views are available separately:
+
+```sh
 provenarium urs render urs.yaml
-provenarium urs generate --brief brief.md --detail detailed
 provenarium urs check urs.yaml --review
 ```
 
-`urs` without a subcommand offers a guided choice. The blank template contains
-writing prompts but no invented obligations. Review and rendering are separate:
-`check` is offline unless `--review` is explicitly selected. Existing requirement
-files are preserved; generated revisions receive separate filenames.
+`check` is offline unless `--review` is explicitly selected. Structural checks
+help identify missing information; the author still reviews what the
+requirements say.
+
+Once the URS is reviewed, create the IOQ protocol and tests:
+
+```sh
+provenarium generate --urs urs.yaml --url https://app.example.com
+```
 
 ## Context and paid authoring
 
@@ -25,9 +80,15 @@ files are preserved; generated revisions receive separate filenames.
 provenarium context add app ../application
 provenarium context add design ./design.docx
 provenarium context list
-provenarium generate --urs urs.yaml --url http://localhost:4173 \
-  --provider openai --thoroughness standard --interactive-discovery
 ```
+
+These commands are optional tools for managing existing context links. Normal
+setup accepts locations directly, and `urs generate --context <location>` adds
+them without asking for names. Links persist in the validation project. Adding
+a link alone does not draft or change requirements. Both `urs generate` and
+`generate --urs` use linked sources by default. You do not need to add the same
+sources again for protocol generation. `context list` shows their IDs, and
+`context remove <id>` removes a link.
 
 Both `openai` and `anthropic` are supported. The first paid command previews the
 provider, model, selected sources, and spending ceiling, then requests a masked

@@ -17,6 +17,7 @@ import {
 } from './schema.js';
 import { atomicWrite, exists, readJson, safePath, writeJson, writeNew } from './files.js';
 import { loadUrs, checkUrs, templateText } from './urs.js';
+import { prepareUrsInputs, projectCommand } from './urs-setup.js';
 import {
   loadProject,
   saveProject,
@@ -184,37 +185,26 @@ function discovery(command: Command): Command {
 
 const urs = program
   .command('urs')
-  .description('Write, check, and render human-editable requirements');
+  .description('Draft requirements from application context and its deployed URL');
 urs.action(async () => {
   terminal();
-  const route = answer(
-    await select({
-      message: 'Requirements',
-      options: [
-        { value: 'template', label: 'Start blank' },
-        { value: 'generate', label: 'Generate a draft' },
-        { value: 'check', label: 'Check an existing URS' },
-      ],
-    }),
-  );
-  const args = ['--project', root(urs), 'urs', route];
-  if (route === 'check') {
-    const file = answer(await text({ message: 'URS file', initialValue: 'urs.yaml' }));
-    args.push(file);
-  }
-  await program.parseAsync(args, { from: 'user' });
+  await generateRequirements({ out: 'urs.yaml', detail: 'detailed', pdf: true }, urs);
 });
 urs
   .command('template')
+  .description('Create a blank requirements file to fill in yourself, without AI')
   .option('--out <file>', 'Output path relative to project', 'urs.yaml')
   .action(async (opts, command) => {
     const file = await safePath(root(command), opts.out);
     await writeNew(file, templateText);
-    console.log(`Blank URS: ${file}. Fill in intended use and requirements before generation.`);
+    console.log(
+      `Blank requirements: ${file}\nEdit this YAML to describe intended use and requirements.\nThen check it: ${projectCommand(root(command), ['urs', 'check', opts.out])}`,
+    );
   });
 paid(
   urs
     .command('check')
+    .description('Check requirements before generating the protocol and tests')
     .argument('<file>')
     .option('--review', 'Ask AI for semantic suggestions; never rewrite the URS'),
 ).action(async (file, opts, command) => {
@@ -237,9 +227,16 @@ paid(
     opts.source
   )
     throw new Error('Authoring options require urs check --review.');
+  if (!errors.length) {
+    const url = (await loadProject(root(command))).target_url;
+    console.log(
+      `After reviewing the requirements, generate the protocol and tests:\n${projectCommand(root(command), ['generate', '--urs', file, ...(url ? ['--url', url] : [])])}${url ? '' : ' --url <app-url>'}`,
+    );
+  }
 });
 urs
   .command('render')
+  .description('Create HTML and PDF views of an existing requirements file')
   .argument('<file>')
   .option('--no-pdf', 'Render HTML only')
   .action(async (file, opts, command) => {
@@ -253,9 +250,16 @@ discovery(
   paid(
     urs
       .command('generate')
-      .option('--brief <file>', 'Read an intended-use brief')
+      .description('Draft requirements from source material and a deployed application')
+      .option(
+        '--context <location>',
+        'Source folder, document, or HTTPS page; repeat to add more',
+        (value: string, previous: string[]) => [...previous, value],
+        [],
+      )
+      .option('--brief <file>', 'Optional written guidance in addition to context and the app')
       .option('--out <file>', 'URS output path relative to project', 'urs.yaml')
-      .option('--url <url>', 'Optional existing application')
+      .option('--url <url>', 'Deployed application to inspect; saved for later protocol generation')
       .addOption(
         new Option('--detail <style>', 'Requirements elaboration')
           .choices(['detailed', 'concise'])
@@ -263,27 +267,40 @@ discovery(
       )
       .option('--no-pdf', 'Render HTML only'),
   ),
-).action(async (opts, command) => {
-  let brief = opts.brief ? await readFile(path.resolve(root(command), opts.brief), 'utf8') : '';
-  if (!brief) {
-    terminal();
-    for (const question of [
-      'What is the application used for, and what decisions do its outputs support?',
-      'Who uses it, and what are the main journeys?',
-      'What inputs, calculations, outputs, constraints, and exclusions are known?',
-    ])
-      brief += `${question}\n${answer(await text({ message: question, validate: (value) => (value?.trim() ? undefined : 'Describe known facts; say unknown where needed.') }))}\n`;
-  }
+).action(generateRequirements);
+
+async function generateRequirements(
+  opts: {
+    out: string;
+    detail: 'detailed' | 'concise';
+    pdf: boolean;
+    brief?: string;
+    context?: string[];
+    url?: string;
+    interactiveDiscovery?: boolean;
+    discoveryActor?: string;
+  },
+  command: Command,
+) {
   const directory = root(command);
+  const brief = opts.brief
+    ? await readFile(path.resolve(directory, opts.brief), 'utf8')
+    : undefined;
   let file = await safePath(directory, opts.out);
   const existing = (await exists(file)) ? await loadUrs(file) : undefined;
-  const bindings = await discoveryBindings(command, opts.url);
+  const { url } = await prepareUrsInputs(directory, {
+    locations: opts.context,
+    url: opts.url,
+    hasBrief: !!brief?.trim(),
+    interactive: !!process.stdin.isTTY,
+  });
+  const bindings = await discoveryBindings(command, url);
   const result = await draftUrs({
     ...(await authoring(command)),
     brief,
     existing,
     detail: opts.detail,
-    url: opts.url,
+    url,
     bindings,
     allowInteractions: !!opts.interactiveDiscovery,
     discoveryActor: opts.discoveryActor,
@@ -293,11 +310,15 @@ discovery(
     if (existing) file = file.replace(/\.ya?ml$/i, '') + `.revision-${randomUUID()}.yaml`;
     await writeNew(file, stringify(result.value));
     await renderUrs(result.value, file.replace(/\.ya?ml$/i, ''), opts.pdf);
-    console.log(`Review draft: ${file}${existing ? ' (original preserved)' : ''}`);
+    console.log(
+      `Requirements draft: ${file}${existing ? ' (original preserved)' : ''}\nReview and edit this YAML before generating the protocol and tests.\nThen check it: ${projectCommand(directory, ['urs', 'check', path.relative(directory, file)])}`,
+    );
   }
-});
+}
 
-const context = program.command('context').description('Manage named read-only authoring sources');
+const context = program
+  .command('context')
+  .description('Link optional background sources for requirements and protocol authoring');
 context
   .command('add')
   .argument('<id>')
@@ -342,6 +363,7 @@ discovery(
   paid(
     program
       .command('generate')
+      .description('Create an IOQ protocol and tests from reviewed requirements')
       .requiredOption('--urs <file>', 'Reviewed requirements')
       .option('--url <url>', 'Application target')
       .option('--plan <file>', 'Compile an existing reviewed typed plan offline')
@@ -551,7 +573,7 @@ program
   .command('install')
   .action(async () => {
     const require = createRequire(import.meta.url);
-    const executable = require.resolve('playwright/cli');
+    const executable = require.resolve('@playwright/test/cli');
     await new Promise<void>((resolve, reject) => {
       const child = spawn(process.execPath, [executable, 'install', 'chromium'], {
         stdio: 'inherit',

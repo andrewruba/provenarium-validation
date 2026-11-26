@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { planSchema, ursSchema } from '../src/schema.js';
 import { draftUrs, generatePlan, reviewUrs } from '../src/authoring/index.js';
+import { blankUrs } from '../src/urs.js';
 
 vi.mock('../src/authoring/discovery.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/authoring/discovery.js')>();
@@ -86,7 +87,7 @@ const plan = planSchema.parse({
   ],
 });
 function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
-  return vi.fn(async () => {
+  return vi.fn(async (_url: unknown, _options?: RequestInit) => {
     const value = values.shift();
     if (value instanceof Error) throw value;
     if (value === undefined) throw new Error('Unexpected provider call');
@@ -114,6 +115,8 @@ describe('authoring workflows', () => {
     async (provider) => {
       const changed = structuredClone(urs);
       changed.families[0].requirements[0].statement = 'Model changed a human requirement';
+      changed.document.title = 'Model changed a human title';
+      changed.document.intended_use = 'Model changed intended use';
       const result = await draftUrs({
         root: '/tmp',
         provider,
@@ -128,8 +131,92 @@ describe('authoring workflows', () => {
       expect(result.value?.families[0].requirements[0].statement).toBe(
         urs.families[0].requirements[0].statement,
       );
+      expect(result.value?.document).toEqual(urs.document);
     },
   );
+  it.each(['openai', 'anthropic'] as const)(
+    'drafts with %s from context and the app without requiring an interview brief',
+    async (provider) => {
+      const context = {
+        passages: [
+          {
+            source: 'design',
+            location: 'design.md',
+            text: 'Scientists receive samples in a register. The form must show Sample ID.',
+          },
+        ],
+        hashes: [],
+        warnings: [],
+      };
+      const revised = structuredClone(urs);
+      revised.families[0].requirements[0].citations = [{ source: 'design', location: 'design.md' }];
+      revised.open_questions = [
+        {
+          id: 'Q-DUPLICATE',
+          requirement: 'URS-001',
+          question: 'Should a duplicate Sample ID be rejected or update the existing sample?',
+        },
+      ];
+      const requests = transport(provider, [
+        urs,
+        {
+          findings: [
+            { requirement: 'URS-001', severity: 'suggestion', message: 'Cite the design source.' },
+          ],
+          summary: 'Clarify duplicate handling without guessing.',
+        },
+        revised,
+      ]);
+      const result = await draftUrs({
+        root: '/tmp',
+        provider,
+        key: 'test-key',
+        context,
+        url: 'http://localhost:3210',
+        thoroughness: 'quick',
+        fetchImpl: requests,
+      });
+
+      expect(result.incomplete).toBe(false);
+      expect(result.value).toEqual(revised);
+      expect(result.questions).toEqual([
+        'Q-DUPLICATE: Should a duplicate Sample ID be rejected or update the existing sample?',
+      ]);
+      expect(requests).toHaveBeenCalledTimes(3);
+      for (const [, options] of requests.mock.calls) {
+        const request = JSON.parse(String(options?.body));
+        const payload = JSON.parse(
+          provider === 'openai' ? request.input[0].content[0].text : request.messages[0].content,
+        );
+        expect(payload).not.toHaveProperty('brief');
+        expect(payload.context).toEqual(context);
+        expect(payload.observation).toMatchObject({
+          url: 'http://localhost:3210/',
+          title: 'Samples',
+          text: 'Sample ID',
+        });
+      }
+    },
+  );
+  it('fills an untouched blank template without freezing its empty document fields', async () => {
+    const existing = structuredClone(blankUrs);
+    const requests = transport('openai', [urs, { findings: [], summary: 'Reviewed' }]);
+    const result = await draftUrs({
+      root: '/tmp',
+      provider: 'openai',
+      key: 'test-key',
+      existing,
+      url: 'http://localhost:3210',
+      thoroughness: 'quick',
+      fetchImpl: requests,
+    });
+
+    expect(result.incomplete).toBe(false);
+    expect(result.value).toEqual(urs);
+    expect(existing).toEqual(blankUrs);
+    const request = JSON.parse(String(requests.mock.calls[0][1]?.body));
+    expect(JSON.parse(request.input[0].content[0].text)).not.toHaveProperty('existing');
+  });
   it('retains the completed draft after a later request fails', async () => {
     const result = await draftUrs({
       root: '/tmp',

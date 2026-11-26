@@ -2,11 +2,51 @@
 
 The editable requirements authority is `urs.yaml`. HTML and PDF views are generated from that file. A requirement describes what a user needs the system to do; it does not need browser selectors, automation code, or a separate assertion language.
 
-Start with `provenarium urs template --out urs.yaml`, edit the file, then run `provenarium urs check urs.yaml`. A blank template is a starting point, not a protocol-ready specification. `urs generate` can instead draft requirements from a brief or an interactive interview. AI proposals remain subject to review.
+Start with `provenarium urs`, supply source code or documents and the deployed
+application URL, and review the resulting draft. You do not need to describe the
+application in a preliminary interview. The authoring step reads the material
+first and records specific missing decisions as open questions.
 
-## Describe the intended use
+You can provide the same inputs directly:
 
-Identify the people using the application, the process it supports, decisions its outputs influence, and explicit exclusions. List meaningful roles and inputs/outputs. For calculations, identify the independently justified method, example values, units, precision, and tolerances.
+```sh
+provenarium urs generate --context ../my-app --context ./design.docx \
+  --url https://app.example.com
+```
+
+Repeat `--context` for additional sources. These links are reused when generating
+the protocol. An optional `--brief brief.md` can narrow the scope or provide
+guidance that is absent from the source material.
+
+If you prefer to write from scratch, run `provenarium urs template --out
+urs.yaml` and fill in the file. If you already have requirements in the supported
+YAML format, start with `provenarium urs check` and that file's path.
+
+After editing, run `provenarium urs check urs.yaml`. Use the filename printed by
+setup if it generated a revision; existing files are
+preserved. Resolve missing information and open questions before continuing:
+
+```sh
+provenarium generate --urs urs.yaml --url https://app.example.com
+```
+
+This command writes the IOQ protocol and tests from the reviewed requirements.
+`urs generate` writes the requirements themselves. Both generated requirements
+and generated protocols need human review before approval.
+
+## Review the intended use and specific gaps
+
+Check that the draft describes the people using the application, the process it
+supports, decisions its outputs influence, and explicit exclusions. Confirm its
+roles and inputs/outputs against the supplied material. For calculations, review
+the independently justified method, example values, units, precision, and
+tolerances.
+
+Open questions should identify a concrete missing decision: for example,
+"The CSV specification does not state the dilution-factor precision. How many
+decimal places should that column retain?" Supply the missing fact or reference
+in the requirements file and resolve the corresponding question. Do not invent
+an acceptance value merely to complete a draft.
 
 Do not derive expected results by copying the application's current outputs. A correct test can fail against a defective application. A source-code observation is context, not automatic acceptance of its behavior.
 
