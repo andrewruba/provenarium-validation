@@ -473,7 +473,15 @@ describe('nonrepairable provider failures', () => {
       expect(error).toBeInstanceOf(mode === 'over-budget' ? BudgetError : ProviderError);
       expect(error).not.toBeInstanceOf(ProviderOutputError);
       expect(String(error)).not.toContain('unknown-private');
-      expect(client.diagnostics).toEqual([]);
+      if (mode === 'http') {
+        expect(client.diagnostics).toHaveLength(1);
+        expect(client.diagnostics[0]).toMatchObject({
+          kind: 'provider_http',
+          candidate: { status: 503, error: {} },
+        });
+        expect(client.diagnostics[0]).not.toHaveProperty('raw');
+        expect(JSON.stringify(client.diagnostics)).not.toContain('unknown-private');
+      } else expect(client.diagnostics).toEqual([]);
       expect(transport).toHaveBeenCalledTimes(1);
       expect(budget.snapshot()).toMatchObject({ actual: 0, calls: 1 });
       expect(budget.snapshot().reserved).toBeGreaterThan(0);

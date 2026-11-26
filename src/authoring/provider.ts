@@ -65,7 +65,7 @@ type ProviderValidationFailure =
 export type ProviderOutputDiagnostic = {
   request: number;
   operation?: string;
-  kind: ProviderSchemaFailure | ProviderValidationFailure;
+  kind: ProviderSchemaFailure | ProviderValidationFailure | 'provider_http';
   issues: ProviderOutputIssue[];
   /** Redacted, untrusted output. This is never a validated authoring result. */
   candidate?: unknown;
@@ -428,6 +428,89 @@ export class ProviderClient {
         };
     return new ProviderOutputError(this.retainDiagnostic(kind, value, parsedIssues, raw));
   }
+  /** HTTP errors describe the rejected request, not generated content. Preserve only
+   * bounded, redacted provider error fields; never copy a raw body or request. */
+  private async httpError(response: Response): Promise<ProviderError> {
+    const secrets = [this.options.key, ...(this.options.secrets ?? [])];
+    let truncated = false;
+    const safe = (value: unknown, limit: number): string | undefined => {
+      if (typeof value !== 'string') return undefined;
+      const clean = diagnosticRedact(value, secrets).replace(
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu,
+        '',
+      );
+      const clipped = clipDiagnostic(clean, limit);
+      truncated ||= clipped.truncated;
+      return clipped.text;
+    };
+    let body: Record<string, unknown> | undefined;
+    try {
+      const parsed: unknown = JSON.parse(await boundedResponse(response, MAX_DIAGNOSTIC_BYTES));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        body = parsed as Record<string, unknown>;
+    } catch {
+      // HTML, malformed JSON, oversized bodies, and failed reads retain metadata only.
+      await response.body?.cancel().catch(() => undefined);
+    }
+    const source =
+      body?.error && typeof body.error === 'object' && !Array.isArray(body.error)
+        ? (body.error as Record<string, unknown>)
+        : {};
+    const error: Record<string, string> = {};
+    for (const [key, limit] of [
+      ['type', 128],
+      ['code', 128],
+      ['param', 512],
+      ['message', 8192],
+    ] as const) {
+      const value = safe(source[key], limit);
+      if (value !== undefined) error[key] = value;
+    }
+    const requestId = safe(
+      response.headers.get('x-request-id') ??
+        response.headers.get('request-id') ??
+        body?.request_id,
+      256,
+    );
+    const diagnostic = this.retainDiagnostic(
+      'provider_http',
+      {
+        provider: this.options.provider,
+        model: this.model,
+        status: response.status,
+        ...(requestId ? { request_id: requestId } : {}),
+        error,
+      },
+      validationIssues(
+        [
+          {
+            path: ['error'],
+            code: error.code || error.type || `http_${response.status}`,
+            message:
+              error.message || 'Provider rejected the request without readable error details.',
+          },
+        ],
+        secrets,
+      ),
+      false,
+      'provider request',
+    );
+    diagnostic.truncated ||= truncated;
+    const summary = error.message ? clipDiagnostic(error.message, 2000) : undefined;
+    const details = [
+      summary?.text,
+      ...(summary?.truncated ? ['Further details are retained in the authoring record.'] : []),
+      ...(['type', 'code', 'param'] as const).flatMap((field) =>
+        error[field] ? [`${field}: ${error[field]}`] : [],
+      ),
+      ...(requestId ? [`request ID: ${requestId}`] : []),
+    ]
+      .filter(Boolean)
+      .join('; ');
+    return new ProviderError(
+      `Provider request returned HTTP ${response.status}.${details ? ` ${details}` : ''} No automatic retry was made.`,
+    );
+  }
   /** Retain local structural or preservation failures without throwing or dispatching a request. */
   recordValidationFailure(
     kind: ProviderValidationFailure,
@@ -524,10 +607,7 @@ export class ProviderClient {
         redirect: 'error',
         signal: this.options.signal ? AbortSignal.any([this.options.signal, timeout]) : timeout,
       });
-      if (!response.ok)
-        throw new ProviderError(
-          `Provider request returned HTTP ${response.status}. No automatic retry was made.`,
-        );
+      if (!response.ok) throw await this.httpError(response);
       data = JSON.parse(await boundedResponse(response, 2 * 1024 * 1024)) as Record<
         string,
         unknown

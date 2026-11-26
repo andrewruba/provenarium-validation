@@ -38,6 +38,15 @@ function roundtrip<T>(
   const parsed = compiled.wireSchema.parse(encoded);
   return { compiled, encoded, decoded: schema.parse(compiled.decode(parsed)) };
 }
+function expectBareReferences(schema: Record<string, any>) {
+  if (schema.$ref) expect(Object.keys(schema)).toEqual(['$ref']);
+  for (const child of Object.values(schema.properties ?? {}))
+    expectBareReferences(child as Record<string, any>);
+  for (const child of Object.values(schema.$defs ?? {}))
+    expectBareReferences(child as Record<string, any>);
+  if (schema.items) expectBareReferences(schema.items);
+  for (const child of schema.anyOf ?? []) expectBareReferences(child);
+}
 
 describe.each(providers)('%s native schema contracts', (provider) => {
   it('compiles every authoring contract to a closed nonrecursive schema within provider limits', () => {
@@ -58,7 +67,51 @@ describe.each(providers)('%s native schema contracts', (provider) => {
       expect(() => assertProviderSchemaLimits(native, provider)).not.toThrow();
       expect(JSON.stringify(native)).not.toContain('"additionalProperties":true');
       expect(JSON.stringify(native)).not.toContain('"oneOf"');
+      if (provider === 'openai') expectBareReferences(native);
     }
+  });
+  it('preserves URS reference and citation guidance while normalizing described OpenAI references', () => {
+    const urs = ursSchema.parse({
+      schema_version: 1,
+      document: {
+        id: 'URS-EXAMPLE',
+        revision: 'Draft 0.1',
+        title: 'Example',
+        intended_use: 'Calculate a result.',
+      },
+      families: [
+        {
+          id: 'F-01',
+          title: 'Calculation',
+          requirements: [
+            {
+              id: 'URS-001',
+              title: 'Result',
+              statement: 'Show the calculated result.',
+              references: ['references/spec.txt'],
+              citations: [{ source: 'source-1', location: 'line 1' }],
+            },
+          ],
+        },
+      ],
+    });
+    const result = roundtrip(ursSchema, urs, provider);
+    expect(result.decoded).toEqual(urs);
+    const requirement =
+      result.compiled.schema.properties.families.items.properties.requirements.items;
+    for (const [field, guidance] of [
+      ['references', 'Normative input files'],
+      ['citations', 'Source provenance'],
+    ]) {
+      const native = requirement.properties[field];
+      const valueSchema = provider === 'openai' ? native.anyOf[0] : native;
+      expect(valueSchema.description).toContain(guidance);
+      if (provider === 'openai') {
+        expect(valueSchema.type).toBe('array');
+        expect(valueSchema).not.toHaveProperty('$ref');
+      } else expect(valueSchema.$ref).toMatch(/^#\/\$defs\//);
+    }
+    if (provider === 'openai') expectBareReferences(result.compiled.schema);
   });
   it('roundtrips a real complete plan and enforces its actions and comparisons in the native schema', async () => {
     const plan = planSchema.parse(
@@ -103,6 +156,7 @@ describe.each(providers)('%s native schema contracts', (provider) => {
           const result = roundtrip(schema, value, provider);
           expect(result.decoded).toEqual(value);
           expect(() => assertProviderSchemaLimits(result.compiled.schema, provider)).not.toThrow();
+          if (provider === 'openai') expectBareReferences(result.compiled.schema);
         }
       }
     }
@@ -259,6 +313,12 @@ it('rejects unconstrained or unsupported schemas before provider dispatch can oc
   let deep: z.ZodType = z.string();
   for (let i = 0; i < 12; i++) deep = z.strictObject({ child: deep });
   expect(() => compileStructuredOutput(deep, 'openai')).toThrow(/nesting/);
+});
+
+it('rejects OpenAI reference siblings in the final native contract', () => {
+  const native = compileStructuredOutput(ursSchema, 'openai').schema;
+  native.properties.document.properties.id.description = 'A field-specific description.';
+  expect(() => assertProviderSchemaLimits(native, 'openai')).toThrow(/sibling keywords/);
 });
 
 it('enforces Anthropic optional and union ceilings before dispatch', () => {

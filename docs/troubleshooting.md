@@ -113,6 +113,19 @@ describe behavior the implementation does not provide. Keep those failures as
 evidence. Change the application or deliberately revise the intended requirement;
 do not change the expected result merely to match an observed output.
 
+## Provider request returned HTTP 400
+
+HTTP 400 means the provider rejected the API request. Updated versions display
+the provider's error message, type/code, rejected parameter, and request ID when
+available. These bounded, redacted details are retained under `diagnostics` with
+`kind: provider_http` in the authoring record. Raw error bodies and request
+content are not copied into these diagnostics. HTTP errors are not retried.
+
+Older versions discarded these details, so a record containing only the HTTP
+status cannot establish the original rejection reason. Update the CLI and rerun
+the command to capture that reason if rejection continues. An uncertain budget
+reservation is a conservative allowance, not a confirmed usage charge.
+
 ## Provider output failed local schema validation
 
 Current authoring supplies the actual document schema to the provider's native

@@ -382,6 +382,8 @@ export function assertProviderSchemaLimits(
     optional = 0,
     unions = 0;
   const visit = (node: JsonSchema) => {
+    if (provider === 'openai' && node.$ref && Object.keys(node).length !== 1)
+      throw new Error('OpenAI schema references must not contain sibling keywords.');
     if (node.anyOf || Array.isArray(node.type)) unions++;
     if (node.type === 'object') {
       const keys = Object.keys(node.properties ?? {});
@@ -467,10 +469,16 @@ export function compileStructuredOutput<T>(schema: z.ZodType<T>, provider: Struc
           building.delete(name);
         }
       }
-      return {
+      const reference: JsonSchema = {
         $ref: source.$ref,
         ...(source.description ? { description: source.description } : {}),
       };
+      // Match the official Python SDK's strict-schema normalization: a described
+      // reference becomes its typed target with the field guidance retained.
+      // Bare references remain shared, keeping large authoring schemas bounded.
+      if (provider === 'openai' && source.description)
+        return structuredClone(resolve(reference, { $defs: definitions }));
+      return reference;
     }
     const result: JsonSchema = {};
     for (const key of ['description', 'title', 'type', 'enum', 'const'])

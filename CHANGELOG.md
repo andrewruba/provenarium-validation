@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Retained and displayed bounded, redacted provider HTTP error details and request
+  IDs, so rejected API requests identify the failing parameter instead of only
+  reporting a status code. HTTP failures remain excluded from automatic retries.
+- Normalized described OpenAI schema references to inline typed definitions,
+  matching the official Python SDK's strict-schema compatibility handling.
 - Replaced the unconstrained JSON-string payload envelope with provider-native
   structured output for the actual typed document. Local validation remains the
   authority for semantic rules and execution readiness.
