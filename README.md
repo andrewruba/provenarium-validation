@@ -13,7 +13,9 @@ resolve any specific missing decisions recorded as open questions.
 
 ```sh
 provenarium urs
-# Review and edit urs.yaml, then check it:
+# Answer questions and review the proposed requirement changes:
+provenarium urs resolve urs.yaml
+# Review the resulting requirements, then check them:
 provenarium urs check urs.yaml
 
 # Turn the reviewed requirements into a protocol and tests:
@@ -28,6 +30,12 @@ Use the requirements filename printed by setup. Existing files are preserved,
 and a new revision receives a separate filename. `generate --urs` produces a
 human-readable Installation and Operational Qualification (IOQ) protocol and
 deterministic Playwright tests.
+
+You can answer questions in the CLI or edit the `answer` field beside each
+question in YAML. Run `urs resolve` to incorporate those answers into the
+requirements: it shows the questions, answers, and proposed changes before asking
+you to apply them. Answered questions stay in the document for traceability.
+Use `urs resolve --answers-only` to record answers without an AI request.
 
 You can supply the inputs directly instead of using prompts:
 
@@ -92,10 +100,9 @@ node bin/provenarium.mjs --help
 
 Start with `provenarium urs` for guided requirements setup.
 OpenAI and Anthropic authoring offer Quick ($5), Standard ($15), and Thorough
-($40) default spending ceilings per command. Guided authoring lets you choose
+($40) default spending ceilings per command. Draft and protocol authoring let you choose
 the level before confirming the spend, with your last choice preselected.
-Approval, execution, and reporting
-make no provider calls.
+Approval, execution, and reporting make no provider calls.
 
 Read the [CLI reference](docs/cli-reference.md), [installation and demonstration
 guide](docs/installation.md), [URS writing guide](docs/urs-writing-guide.md), and

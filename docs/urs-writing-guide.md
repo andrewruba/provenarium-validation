@@ -22,9 +22,10 @@ If you prefer to write from scratch, run `provenarium urs template --out
 urs.yaml` and fill in the file. If you already have requirements in the supported
 YAML format, start with `provenarium urs check` and that file's path.
 
-After editing, run `provenarium urs check urs.yaml`. Use the filename printed by
-setup if it generated a revision; existing files are
-preserved. Resolve missing information and open questions before continuing:
+Use `provenarium urs resolve urs.yaml` to answer questions and review the
+corresponding requirement changes. Then run `provenarium urs check urs.yaml`.
+Use the filename printed by setup if it generated a revision; existing files
+are preserved. Resolve missing information before continuing:
 
 ```sh
 provenarium generate --urs urs.yaml --url https://app.example.com
@@ -45,10 +46,56 @@ tolerances.
 Open questions should identify a concrete missing decision: for example,
 "The CSV specification does not state the dilution-factor precision. How many
 decimal places should that column retain?" Supply the missing fact or reference
-in the requirements file and resolve the corresponding question. Do not invent
-an acceptance value merely to complete a draft.
+as the answer. Do not invent an acceptance value merely to complete a draft.
 
 Do not derive expected results by copying the application's current outputs. A correct test can fail against a defective application. A source-code observation is context, not automatic acceptance of its behavior.
+
+## Answer questions and review the resulting requirements
+
+Run `provenarium urs resolve urs.yaml` to work through unanswered questions in the
+terminal. The related requirement is shown for context. Enter your answer, press
+Enter to skip a question, or stop with Ctrl+C; submitted answers are retained.
+On a later run, already answered questions are skipped. Use
+`--question Q-CSV-01` to revisit a particular answer.
+
+Alternatively, fill in the `answer` field directly in YAML:
+
+```yaml
+open_questions:
+  - id: Q-CSV-01
+    requirement: URS-CSV-01
+    question: What should an empty CSV export contain?
+    answer: "Column headings only, with no data rows."
+```
+
+Leave `answer: null` when the decision is still unknown. Keep the question and
+its ID. Answers are decisions to incorporate, so an answered question still
+needs review before it counts as resolved.
+
+Run `urs resolve` after editing answers. It proposes targeted requirement changes
+using one AI request after the provider/spending preview, then shows the full
+question, answer, and before/after text. Review the proposal for consistent
+wording across every affected requirement and confirm whether to apply it. The
+command also handles a decision already expressed by the existing requirement:
+it shows the current text for acknowledgment. An ambiguous answer remains
+pending rather than becoming an invented rule.
+
+Accepted changes update the working YAML and advance its document revision.
+Questions and answers stay in the file with resolution metadata, while review
+artifacts and before/after copies are saved under `.provenarium/resolutions/`.
+Changing an answer or its question reopens that decision for review. Keep the
+metadata written by the CLI; do not delete answered questions to make checks
+pass.
+
+`urs resolve --answers-only` collects answers offline. You can also leave a
+proposal unapplied and return to its printed path with `urs resolve --apply
+<proposal-file>` without making another AI request. See the [CLI
+reference](cli-reference.md#answer-and-resolve-requirements-questions) for scripted
+use and saved-proposal checks.
+
+After applying changes, run `urs check` and regenerate HTML/PDF views with
+`urs render`. Review any remaining structural or reference-file errors before
+protocol generation.
 
 ## Make obligations observable
 

@@ -16,8 +16,9 @@ import {
   type Bindings,
 } from './schema.js';
 import { atomicWrite, exists, readJson, safePath, writeJson, writeNew } from './files.js';
-import { loadUrs, checkUrs, templateText } from './urs.js';
+import { loadUrs, checkUrs, templateText, unresolvedQuestions } from './urs.js';
 import { prepareUrsInputs, projectCommand } from './urs-setup.js';
+import { resolveUrsFile } from './urs-resolve-cli.js';
 import {
   loadProject,
   saveProject,
@@ -33,6 +34,7 @@ import { uninstall } from './uninstall.js';
 import {
   draftUrs,
   reviewUrs,
+  proposeUrsResolution,
   generatePlan,
   DEFAULT_MODELS,
   PRESETS,
@@ -61,28 +63,39 @@ function answer<T>(value: T): Exclude<T, symbol> {
   if (typeof value === 'symbol') throw new Error('Cancelled.');
   return value as Exclude<T, symbol>;
 }
-function paid(command: Command): Command {
-  return command
+function paid(
+  command: Command,
+  options: { thoroughness?: boolean; yesDescription?: string } = {},
+): Command {
+  command
     .addOption(
       new Option('--provider <provider>', 'Authoring provider').choices(['openai', 'anthropic']),
     )
-    .option('--model <model>', 'Model in the supported pricing catalog')
-    .addOption(
+    .option('--model <model>', 'Model in the supported pricing catalog');
+  if (options.thoroughness !== false)
+    command.addOption(
       new Option('--thoroughness <level>', 'Authoring depth and test breadth').choices([
         'quick',
         'standard',
         'thorough',
       ]),
-    )
+    );
+  return command
     .option('--max-spend <USD>', 'Maximum total spend for this command', (value) => {
       const n = Number(value);
       if (!Number.isFinite(n) || n <= 0) throw new Error('--max-spend must be positive.');
       return n;
     })
     .option('--source <ids...>', 'Select linked context source IDs')
-    .option('--yes', 'Accept the displayed data-sharing and spending preview');
+    .option(
+      '--yes',
+      options.yesDescription ?? 'Accept the displayed data-sharing and spending preview',
+    );
 }
-async function authoring(command: Command): Promise<AuthoringOptions> {
+async function authoring(
+  command: Command,
+  options: { resolution?: boolean } = {},
+): Promise<AuthoringOptions> {
   const opts = command.opts(),
     directory = root(command),
     project = await loadProject(directory);
@@ -101,7 +114,7 @@ async function authoring(command: Command): Promise<AuthoringOptions> {
   }
   provider = providerSchema.parse(provider);
   let tier = thoroughnessSchema.parse(opts.thoroughness ?? project.thoroughness ?? 'standard');
-  if (!opts.thoroughness && !opts.yes) {
+  if (!options.resolution && !opts.thoroughness && !opts.yes) {
     terminal();
     const capLabel = (level: keyof typeof PRESETS) =>
       `$${(opts.maxSpend ?? PRESETS[level].cap).toFixed(2)} max per command`;
@@ -140,7 +153,9 @@ async function authoring(command: Command): Promise<AuthoringOptions> {
   if (opts.source?.some((id: string) => !project.context.some((s) => s.id === id)))
     throw new Error('Unknown selected context source. Use provenarium context list.');
   console.log(
-    `Authoring: ${provider} / ${model}; ${tier}; maximum $${cap.toFixed(2)} USD for this command.`,
+    options.resolution
+      ? `Answer resolution: ${provider} / ${model}; one proposal request; maximum $${cap.toFixed(2)} USD.`
+      : `Authoring: ${provider} / ${model}; ${tier}; maximum $${cap.toFixed(2)} USD for this command.`,
   );
   console.log(
     'Requirements, selected context excerpts, and sanitized application observations go directly to this provider.',
@@ -264,6 +279,51 @@ paid(
     );
   }
 });
+paid(
+  urs
+    .command('resolve')
+    .description('Answer URS questions and review their proposed requirement changes')
+    .argument('[file]', 'Working requirements YAML file', 'urs.yaml')
+    .option('--answers-only', 'Record answers without an AI request or requirement changes')
+    .option('--apply <proposal>', 'Review a saved proposal without another AI request')
+    .option(
+      '--question <id>',
+      'Enter or revise a specific answer; repeat to select more',
+      (value: string, previous: string[]) => [...previous, value],
+      [],
+    ),
+  {
+    thoroughness: false,
+    yesDescription: 'Accept the authoring preview; with --apply, accept the saved changes',
+  },
+).action(async (file, opts, command) => {
+  if (
+    (opts.answersOnly || opts.apply) &&
+    (opts.provider || opts.model || opts.thoroughness || opts.maxSpend || opts.source)
+  )
+    throw new Error('--answers-only and --apply are offline and do not accept authoring options.');
+  const directory = root(command);
+  await resolveUrsFile(
+    {
+      root: directory,
+      file,
+      answersOnly: opts.answersOnly,
+      apply: opts.apply,
+      yes: opts.yes,
+      questions: opts.question,
+    },
+    {
+      propose: async (document) => {
+        const result = await proposeUrsResolution({
+          ...(await authoring(command, { resolution: true })),
+          urs: document,
+        });
+        await retainResult(directory, result);
+        return result;
+      },
+    },
+  );
+});
 urs
   .command('render')
   .description('Create HTML and PDF views of an existing requirements file')
@@ -343,6 +403,10 @@ async function generateRequirements(
     console.log(
       `Requirements draft: ${file}${existing ? ' (original preserved)' : ''}\nReview and edit this YAML before generating the protocol and tests.\nThen check it: ${projectCommand(directory, ['urs', 'check', path.relative(directory, file)])}`,
     );
+    if (unresolvedQuestions(result.value).length)
+      console.log(
+        `Answer and review the questions: ${projectCommand(directory, ['urs', 'resolve', path.relative(directory, file)])}`,
+      );
   }
 }
 

@@ -10,9 +10,10 @@ import {
   loadProject,
 } from '../src/project.js';
 import { checkUrs, templateText } from '../src/urs.js';
+import { applyResolutionProposal } from '../src/urs-resolution.js';
 import { parseYaml, safePath, sha256, writeJson } from '../src/files.js';
 import { compilePlan, validatePlan } from '../src/compiler.js';
-import { protocolHtml, renderReport } from '../src/reports.js';
+import { protocolHtml, renderReport, ursHtml } from '../src/reports.js';
 
 const roots: string[] = [];
 async function directory() {
@@ -149,6 +150,72 @@ describe('requirements and approval contracts', () => {
     incomplete.questions = [{ id: 'Q-1', question: 'What is the expected limit?' }];
     await createCandidate(root, urs, incomplete, { pdf: false });
     await expect(approveCandidate(root, { pdf: false })).rejects.toThrow('expected limit');
+  });
+  it('retains reviewed questions and answers in approved packages without blocking approval', async () => {
+    const root = await directory();
+    const answered = structuredClone(urs);
+    answered.open_questions = [
+      {
+        id: 'Q-SAVE',
+        requirement: 'URS-001',
+        question: 'May the operator save a sample?',
+        answer: 'Yes, the operator can save a sample.',
+      },
+    ];
+    expect(validatePlan(plan, answered)).toContain('Resolve URS questions before approval.');
+    expect((await checkUrs(answered)).join('\n')).toContain('urs resolve');
+    const resolved = applyResolutionProposal(answered, {
+      requirements: [
+        {
+          question_ids: ['Q-SAVE'],
+          value: answered.families[0].requirements[0],
+          reason: 'The existing statement already specifies the accepted save behavior.',
+        },
+      ],
+      unresolved: [],
+    });
+    const updatedPlan = structuredClone(plan);
+    updatedPlan.urs_revision = resolved.document.revision;
+    expect(await checkUrs(resolved)).toEqual([]);
+    expect(validatePlan(updatedPlan, resolved)).toEqual([]);
+    await createCandidate(root, resolved, updatedPlan, { pdf: false });
+    const approval = await approveCandidate(root, { pdf: false });
+    const retained = ursSchema.parse(
+      parseYaml(
+        await readFile(path.join(root, 'packages', approval.package_id, 'urs.yaml'), 'utf8'),
+      ),
+    );
+    expect(retained.open_questions).toEqual(resolved.open_questions);
+  });
+  it('renders retained answers and question statuses while escaping their content', () => {
+    const answered = structuredClone(urs);
+    answered.open_questions = [
+      {
+        id: 'Q-SAVE',
+        requirement: 'URS-001',
+        question: 'May the operator save <script>alert(1)</script>?',
+        answer: 'Show <strong>Save</strong> to the operator.',
+      },
+    ];
+    const pendingHtml = ursHtml(answered);
+    expect(pendingHtml).toContain('Answer recorded; changes pending review');
+    expect(pendingHtml).toContain('Show &lt;strong&gt;Save&lt;/strong&gt;');
+    expect(pendingHtml).not.toContain('<script>');
+    const resolved = applyResolutionProposal(answered, {
+      requirements: [
+        {
+          question_ids: ['Q-SAVE'],
+          value: answered.families[0].requirements[0],
+          reason: 'Synthetic rendering fixture.',
+        },
+      ],
+      unresolved: [],
+    });
+    const resolvedHtml = ursHtml(resolved);
+    expect(resolvedHtml).toContain('Resolved; requirement changes reviewed');
+    expect(resolvedHtml).toContain('Q-SAVE');
+    expect(resolvedHtml).toContain('Show &lt;strong&gt;Save&lt;/strong&gt;');
+    expect(resolvedHtml).not.toContain('<script>');
   });
   it('rejects traversal and symlinks when assembling packages', async () => {
     const root = await directory();

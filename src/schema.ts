@@ -11,6 +11,18 @@ export const questionSchema = z.strictObject({
   question: nonempty,
   requirement: z.string().optional(),
 });
+export const ursQuestionSchema = questionSchema.extend({
+  answer: z.string().nullable().optional(),
+  resolution: z
+    .strictObject({
+      answer_hash: z.string().regex(/^[a-f0-9]{64}$/),
+      applied_at: z.iso.datetime(),
+      targets: z
+        .array(z.string().regex(/^(document|requirement:[A-Za-z0-9][A-Za-z0-9_.-]*)$/))
+        .min(1),
+    })
+    .optional(),
+});
 export const requirementSchema = z.strictObject({
   id,
   title: nonempty,
@@ -50,7 +62,7 @@ export const ursSchema = z.strictObject({
   families: z.array(
     z.strictObject({ id, title: nonempty, requirements: z.array(requirementSchema) }),
   ),
-  open_questions: z.array(questionSchema).default([]),
+  open_questions: z.array(ursQuestionSchema).default([]),
 });
 export type Urs = z.infer<typeof ursSchema>;
 export const providerSchema = z.enum(['openai', 'anthropic']);

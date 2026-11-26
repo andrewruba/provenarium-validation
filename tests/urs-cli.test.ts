@@ -2,12 +2,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { stringify } from 'yaml';
 import { loadProject, saveProject } from '../src/project.js';
 import { loadUrs, templateText } from '../src/urs.js';
 import { ursSchema } from '../src/schema.js';
 
 const mocks = vi.hoisted(() => ({
   draftUrs: vi.fn(),
+  proposeUrsResolution: vi.fn(),
   getProviderKey: vi.fn(),
   renderUrs: vi.fn(),
   text: vi.fn(),
@@ -31,6 +33,7 @@ vi.mock('../src/credentials.js', () => ({
 vi.mock('../src/authoring/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/authoring/index.js')>()),
   draftUrs: mocks.draftUrs,
+  proposeUrsResolution: mocks.proposeUrsResolution,
 }));
 vi.mock('../src/reports.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/reports.js')>()),
@@ -78,6 +81,9 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   mocks.getProviderKey.mockResolvedValue('test-provider-key');
+  mocks.proposeUrsResolution.mockImplementation(() => {
+    throw new Error('Unexpected resolution authoring request');
+  });
   mocks.draftUrs.mockResolvedValue({
     value: draft,
     incomplete: false,
@@ -295,4 +301,143 @@ it('uses the saved level without adding prompts to an unattended command', async
   expect(mocks.confirm).not.toHaveBeenCalled();
   expect(mocks.draftUrs.mock.calls[0][0]).toMatchObject({ thoroughness: 'thorough', maxSpend: 40 });
   expect((await loadProject(root)).thoroughness).toBe('thorough');
+});
+
+async function resolutionFixture(answer: string | null) {
+  const root = await fixture();
+  const document = structuredClone(draft);
+  document.open_questions = [
+    {
+      id: 'Q-CSV',
+      requirement: 'URS-RESULT-001',
+      question: 'Should exporting an empty register produce a header-only CSV?',
+      answer,
+    },
+  ];
+  await writeFile(join(root, 'urs.yaml'), stringify(document));
+  return { root, document };
+}
+
+it('dispatches answers-only resolution without authoring or credential access', async () => {
+  const { root, document } = await resolutionFixture(null);
+  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+  mocks.text.mockResolvedValueOnce('Yes, download column headings with no data rows.');
+
+  await runCli(root, ['urs', 'resolve', 'urs.yaml', '--answers-only']);
+
+  expect(mocks.text).toHaveBeenCalledOnce();
+  expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
+  expect(mocks.select).not.toHaveBeenCalled();
+  expect(mocks.confirm).not.toHaveBeenCalled();
+  const saved = await loadUrs(join(root, 'urs.yaml'));
+  expect(saved.families).toEqual(document.families);
+  expect(saved.open_questions[0]).toMatchObject({
+    id: 'Q-CSV',
+    question: document.open_questions[0].question,
+    answer: 'Yes, download column headings with no data rows.',
+  });
+  expect(saved.open_questions[0]).not.toHaveProperty('resolution');
+});
+
+it('stages manual answers for review and applies the saved proposal offline on a later invocation', async () => {
+  const { root, document } = await resolutionFixture('Download a header-only CSV.');
+  const updated = structuredClone(document.families[0].requirements[0]);
+  updated.details = ['An empty register shall export the column headings and no data rows.'];
+  mocks.proposeUrsResolution.mockResolvedValueOnce({
+    value: {
+      requirements: [
+        {
+          question_ids: ['Q-CSV'],
+          value: updated,
+          reason: 'Specify the empty-export behavior selected by the reviewer.',
+        },
+      ],
+      unresolved: [],
+    },
+    incomplete: false,
+    questions: [],
+    spend: { cap: 5, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  });
+
+  await runCli(root, [
+    'urs',
+    'resolve',
+    'urs.yaml',
+    '--provider',
+    'openai',
+    '--max-spend',
+    '5',
+    '--yes',
+  ]);
+
+  expect(mocks.proposeUrsResolution).toHaveBeenCalledOnce();
+  expect(mocks.proposeUrsResolution.mock.calls[0][0]).toMatchObject({
+    urs: document,
+    provider: 'openai',
+    maxSpend: 5,
+  });
+  expect(await loadUrs(join(root, 'urs.yaml'))).toEqual(document);
+  const reviewFiles = await readdir(join(root, '.provenarium', 'resolutions'));
+  const proposalName = reviewFiles.find((name) => name.endsWith('.proposal.json'));
+  const diffName = reviewFiles.find((name) => name.endsWith('.diff.txt'));
+  expect(proposalName).toBeDefined();
+  expect(diffName).toBeDefined();
+  const diff = await readFile(join(root, '.provenarium', 'resolutions', diffName!), 'utf8');
+  expect(diff).toContain('Before:');
+  expect(diff).toContain('After:');
+  expect(diff).toContain(updated.details[0]);
+  expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+    'Proposed requirement changes',
+  );
+
+  vi.resetModules();
+  mocks.proposeUrsResolution.mockClear();
+  mocks.getProviderKey.mockClear();
+  await runCli(root, [
+    'urs',
+    'resolve',
+    'urs.yaml',
+    '--apply',
+    `.provenarium/resolutions/${proposalName}`,
+    '--yes',
+  ]);
+
+  expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
+  expect(mocks.confirm).not.toHaveBeenCalled();
+  const applied = await loadUrs(join(root, 'urs.yaml'));
+  expect(applied.document.revision).toBe('2');
+  expect(applied.families[0].requirements[0]).toEqual(updated);
+  expect(applied.open_questions[0]).toMatchObject({
+    ...document.open_questions[0],
+    resolution: { targets: ['requirement:URS-RESULT-001'] },
+  });
+});
+
+it('rejects authoring flags on offline saved-proposal application before accessing credentials', async () => {
+  const { root } = await resolutionFixture('Download a header-only CSV.');
+  process.argv = [
+    process.execPath,
+    'provenarium',
+    '--project',
+    root,
+    'urs',
+    'resolve',
+    'urs.yaml',
+    '--apply',
+    'unread-proposal.json',
+    '--provider',
+    'openai',
+    '--yes',
+  ];
+  await import('../src/cli.js');
+
+  expect(process.exitCode).toBe(1);
+  expect(console.error).toHaveBeenCalledExactlyOnceWith(
+    'Error: --answers-only and --apply are offline and do not accept authoring options.',
+  );
+  expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
 });

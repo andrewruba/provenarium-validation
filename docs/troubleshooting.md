@@ -11,6 +11,39 @@ and requirements yourself. Resolve placeholders and open questions before
 protocol approval. An offline structural check cannot establish scientific
 adequacy.
 
+## I answered a question, but it still blocks readiness
+
+An answer in YAML records a decision; the linked requirement must still be
+updated or acknowledged. Run `provenarium urs resolve urs.yaml` to review the
+proposed requirement changes, then accept the correct changes. Keep the answered
+question in the file. Applied answers stop blocking readiness; editing the
+answer, question, or linked requirement ID makes them pending again.
+
+Use `urs resolve --question Q-CSV-01` to revise an existing answer in the terminal.
+Use `--answers-only` to collect answers without a provider call, then return to
+`urs resolve` when ready to review requirement changes. Ctrl+C retains answers
+already submitted.
+
+## A resolution proposal was saved but not applied
+
+Fresh proposed requirement changes need review even when authoring was invoked
+with `--yes`. Review the printed `.diff.txt` file and use
+`provenarium urs resolve urs.yaml --apply <proposal-file>` to reopen the saved
+proposal without a new AI call. After prior review, `--apply <proposal-file>
+--yes` applies that saved artifact explicitly.
+
+If the URS changed since the proposal was created, the saved proposal is stale.
+Run `urs resolve` again to generate a proposal against the current file. The
+command refuses to edit candidates, approved packages, and resolution-history
+files; work on the editable URS in the selected validation project.
+
+## All questions are resolved, but the URS still fails checks
+
+Read the remaining `urs check` messages. Missing reference files, placeholders,
+duplicate IDs, and other structural issues are separate from question
+resolution. Correct those issues in the working requirements, then check again.
+Refresh existing HTML/PDF views with `provenarium urs render urs.yaml` after edits.
+
 ## The CLI reports missing Chromium
 
 Install the browser using the setup command printed by the installed CLI. Browser files are version-specific. Linux may also need system libraries. Execution and report generation never install dependencies automatically.

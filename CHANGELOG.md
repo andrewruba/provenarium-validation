@@ -2,8 +2,15 @@
 
 ## Unreleased
 
-- Added a Quick/Standard/Thorough selector to interactive authoring before the
-  spending confirmation. It shows each level's spending cap and remembers the
+- Added `provenarium urs resolve` and editable answer fields beside URS questions.
+  The CLI saves answers as they are submitted, supports skipping and revisiting
+  questions, and can capture answers offline with `--answers-only`.
+- Added targeted requirement-change proposals with question/answer context,
+  before/after review, explicit application, retained questions, and local
+  resolution history. Saved proposals can be reviewed and applied offline;
+  stale proposals are rejected. Changed answers become pending again.
+- Added a Quick/Standard/Thorough selector to interactive drafting and review
+  before the spending confirmation. It shows each level's spending cap and remembers the
   selected level; explicit `--thoroughness` and scripted `--yes` skip the selector.
 - Changed `provenarium urs` to collect application context and a deployed URL,
   then draft requirements without a general interview or route-selection menu.

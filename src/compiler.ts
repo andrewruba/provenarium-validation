@@ -1,5 +1,5 @@
 import { type Action, type Assertion, type Plan, type Urs } from './schema.js';
-import { requirements } from './urs.js';
+import { requirements, unresolvedQuestions } from './urs.js';
 
 export function describeAction(action: Action): string {
   switch (action.op) {
@@ -44,7 +44,7 @@ export function validatePlan(plan: Plan, urs: Urs): string[] {
   if (plan.urs_revision !== urs.document.revision)
     errors.push('Plan does not match the URS revision.');
   if (plan.questions.length) errors.push(...plan.questions.map((q) => `${q.id}: ${q.question}`));
-  if (urs.open_questions.length) errors.push('Resolve URS questions before approval.');
+  if (unresolvedQuestions(urs).length) errors.push('Resolve URS questions before approval.');
   const origins = new Set<string>();
   for (const origin of plan.target.allowed_origins) {
     const u = new URL(origin);

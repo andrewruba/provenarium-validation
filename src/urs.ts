@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { ursSchema, type Urs } from './schema.js';
-import { exists, readYaml, safePath } from './files.js';
+import { exists, readYaml, safePath, sha256 } from './files.js';
 
 export const blankUrs: Urs = ursSchema.parse({
   schema_version: 1,
@@ -21,6 +21,46 @@ export async function loadUrs(file: string): Promise<Urs> {
 }
 export function requirements(urs: Urs) {
   return urs.families.flatMap((f) => f.requirements);
+}
+export type UrsQuestion = Urs['open_questions'][number];
+export type QuestionStatus = 'unanswered' | 'answered' | 'resolved';
+
+/** Bind a reviewed resolution to the question, its link, and the exact decision. */
+export function questionAnswerHash(question: UrsQuestion): string {
+  return sha256(
+    JSON.stringify({
+      id: question.id,
+      question: question.question,
+      requirement: question.requirement ?? null,
+      answer: question.answer?.trim() ?? '',
+    }),
+  );
+}
+function validResolutionTarget(urs: Urs, target: string): boolean {
+  return (
+    target === 'document' ||
+    (target.startsWith('requirement:') &&
+      requirements(urs).some((requirement) => requirement.id === target.slice(12)))
+  );
+}
+export function questionStatus(urs: Urs, question: UrsQuestion): QuestionStatus {
+  if (!question.answer?.trim()) return 'unanswered';
+  const resolution = question.resolution;
+  if (
+    resolution &&
+    resolution.answer_hash === questionAnswerHash(question) &&
+    resolution.targets.length > 0 &&
+    resolution.targets.every((target) => validResolutionTarget(urs, target)) &&
+    (!question.requirement || resolution.targets.includes(`requirement:${question.requirement}`))
+  )
+    return 'resolved';
+  return 'answered';
+}
+export function pendingAnsweredQuestions(urs: Urs): UrsQuestion[] {
+  return urs.open_questions.filter((question) => questionStatus(urs, question) === 'answered');
+}
+export function unresolvedQuestions(urs: Urs): UrsQuestion[] {
+  return urs.open_questions.filter((question) => questionStatus(urs, question) !== 'resolved');
 }
 export async function checkUrs(urs: Urs, root?: string): Promise<string[]> {
   const errors: string[] = [];
@@ -62,7 +102,22 @@ export async function checkUrs(urs: Urs, root?: string): Promise<string[]> {
     ids.add(question.id);
     if (question.requirement && !requirements(urs).some((r) => r.id === question.requirement))
       errors.push(`${question.id}: unknown requirement ${question.requirement}`);
-    errors.push(`${question.id}: ${question.question}`);
+    if (question.resolution) {
+      for (const target of question.resolution.targets)
+        if (!validResolutionTarget(urs, target))
+          errors.push(`${question.id}: unknown resolution target ${target}.`);
+      if (new Set(question.resolution.targets).size !== question.resolution.targets.length)
+        errors.push(`${question.id}: duplicate resolution targets.`);
+    }
+    const status = questionStatus(urs, question);
+    if (status === 'unanswered')
+      errors.push(
+        `${question.id}: ${question.question} Answer beside the question in YAML or run provenarium urs resolve <file>.`,
+      );
+    else if (status === 'answered')
+      errors.push(
+        `${question.id}: answer recorded but requirement changes need review. Run provenarium urs resolve <file>.`,
+      );
   }
   return errors;
 }

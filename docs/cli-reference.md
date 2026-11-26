@@ -23,7 +23,9 @@ To supply the inputs directly:
 ```sh
 provenarium urs generate --context ../application --context ./design.docx \
   --url https://app.example.com
-# Review and edit urs.yaml before continuing:
+# Answer questions and review requirement changes:
+provenarium urs resolve urs.yaml
+# Review the resulting URS before continuing:
 provenarium urs check urs.yaml
 ```
 
@@ -74,6 +76,90 @@ Once the URS is reviewed, create the IOQ protocol and tests:
 provenarium generate --urs urs.yaml --url https://app.example.com
 ```
 
+## Answer and resolve requirements questions
+
+```sh
+provenarium urs resolve urs.yaml
+```
+
+The filename defaults to `urs.yaml`. In an interactive terminal, the command
+shows each unanswered question and its related requirement. Enter your decision,
+press Enter to skip, or press Ctrl+C to stop while retaining answers already
+submitted. Questions with recorded answers are skipped. To revise one of those
+answers, use `--question Q-CSV-01`; repeat `--question` for additional IDs.
+
+You can also edit answers directly beside the questions:
+
+```yaml
+open_questions:
+  - id: Q-CSV-01
+    requirement: URS-CSV-01
+    question: What should an empty CSV export contain?
+    answer: "Column headings only, with no data rows."
+```
+
+New drafts include `answer: null`; older files without the field still work.
+Blank or null answers remain unanswered. Recording an answer does not yet change
+the requirement or remove its readiness blocker. Run `urs resolve` to review
+how the answer should be incorporated.
+
+With pending answers, the command uses the selected provider to make one targeted
+proposal. You can select `--provider`, `--model`, `--source`, and `--max-spend`;
+the command previews the provider, selected material, and spending ceiling.
+It uses the saved/default spending ceiling unless `--max-spend` overrides it;
+there is no thoroughness selection or repeated review loop for resolution.
+The CLI displays the exact questions and answers, complete before/after
+requirement text, reasons for each change, and the proposed document revision.
+Accept only changes that express your intended decisions. A requirement that
+already expresses an answer is shown for acknowledgment without a text change.
+Ambiguous answers remain pending with a specific explanation.
+
+After acceptance, the working URS is updated, its revision advances, and questions
+remain beside their answers and application records. Applied answers stop
+blocking readiness. Changing the answer, question, or linked requirement ID
+requires another resolution review. Do not delete answered questions or manually
+set resolution metadata to bypass that review.
+
+To collect answers without a provider request or requirement edits:
+
+```sh
+provenarium urs resolve urs.yaml --answers-only
+```
+
+Reviews are retained as `.diff.txt` and `.proposal.json` files under
+`.provenarium/resolutions/`. The CLI prints their paths. To return to a saved
+proposal without another AI request, use its printed path:
+
+```sh
+provenarium urs resolve urs.yaml --apply .provenarium/resolutions/REVIEW_ID.proposal.json
+```
+
+The proposal must match the current source file; changing the YAML after proposal
+creation requires a fresh proposal. `--yes` on a new resolution request accepts
+authoring consent but still requires interactive confirmation before fresh
+requirement changes are applied. Without an interactive terminal, the proposal
+is retained for later review. After reviewing a saved proposal, `--apply ...
+--yes` explicitly applies that saved artifact without a prompt. The offline
+`--apply` and `--answers-only` modes do not accept authoring options.
+
+Before/after copies of applied requirement changes are retained under
+`.provenarium/resolutions/`, along with earlier copies made when recording
+answers. These local records support review and traceability; they do not certify
+the identity of the person who approved a decision. The command edits only a
+working URS inside the selected `--project` directory, not generated candidates,
+approved packages, or history files.
+
+Finish by checking the complete URS and refreshing its document views:
+
+```sh
+provenarium urs check urs.yaml
+provenarium urs render urs.yaml
+```
+
+Resolving questions does not clear unrelated errors such as missing reference
+files or unresolved placeholders. `urs render --no-pdf` refreshes HTML without
+Chromium PDF rendering.
+
 ## Context and paid authoring
 
 ```sh
@@ -103,8 +189,9 @@ preview for scripted use; it never supplies credentials or raises the ceiling.
 | standard | $15 | Additional boundary, access, persistence, and export review |
 | thorough | $40 | Additional adversarial and consequential-combination review |
 
-Interactive authoring asks you to choose a thoroughness level before the spending
-confirmation, with the saved level (or Standard on first use) preselected. Each
+Interactive drafting, requirements review, and protocol generation ask you to
+choose a thoroughness level before the spending confirmation, with the saved
+level (or Standard on first use) preselected. Each
 option shows its maximum spend for this command. To choose up front, use
 `--thoroughness quick|standard|thorough` on `urs generate`, `generate`, or
 `urs check --review`. An explicit level skips the selector. Scripted `--yes`

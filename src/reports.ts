@@ -12,7 +12,7 @@ import {
   approvalSchema,
 } from './schema.js';
 import { atomicWrite, exists, readJson, readYaml, safePath, sha256 } from './files.js';
-import { loadUrs, requirements } from './urs.js';
+import { loadUrs, questionStatus, requirements } from './urs.js';
 import { describeAction, describeAssertion } from './compiler.js';
 import { loadProject } from './project.js';
 
@@ -41,12 +41,18 @@ export function ursHtml(urs: Urs): string {
             urs.document.interfaces.map((i) => [i.name, i.direction, i.format, i.transfer, i.data]),
           )}`
         : ''
-    }${urs.families.map((f) => `<h2>${e(f.title)}</h2>${f.requirements.length ? f.requirements.map((r) => `<section><h3>${e(r.id)} — ${e(r.title)}</h3><p>${e(r.statement)}</p>${r.details ? `<ul>${r.details.map((d) => `<li>${e(d)}</li>`).join('')}</ul>` : ''}${r.table ? table(r.table.columns, r.table.rows) : ''}${r.applicable ? '' : `<p class="warning">Not applicable: ${e(r.non_applicability_reason)}</p>`}${r.rationale ? `<p>Rationale: ${e(r.rationale)}</p>` : ''}${r.references.length ? `<p>References: ${e(r.references.join(', '))}</p>` : ''}${r.citations.length ? `<p class="muted">Sources: ${e(r.citations.map((c) => `${c.source}: ${c.location}`).join('; '))}</p>` : ''}</section>`).join('') : '<p class="warning">No requirements have been written.</p>'}`).join('')}<h2>Open questions</h2>${
+    }${urs.families.map((f) => `<h2>${e(f.title)}</h2>${f.requirements.length ? f.requirements.map((r) => `<section><h3>${e(r.id)} — ${e(r.title)}</h3><p>${e(r.statement)}</p>${r.details ? `<ul>${r.details.map((d) => `<li>${e(d)}</li>`).join('')}</ul>` : ''}${r.table ? table(r.table.columns, r.table.rows) : ''}${r.applicable ? '' : `<p class="warning">Not applicable: ${e(r.non_applicability_reason)}</p>`}${r.rationale ? `<p>Rationale: ${e(r.rationale)}</p>` : ''}${r.references.length ? `<p>References: ${e(r.references.join(', '))}</p>` : ''}${r.citations.length ? `<p class="muted">Sources: ${e(r.citations.map((c) => `${c.source}: ${c.location}`).join('; '))}</p>` : ''}</section>`).join('') : '<p class="warning">No requirements have been written.</p>'}`).join('')}<h2>Questions and decisions</h2>${
       urs.open_questions.length
-        ? table(
-            ['ID', 'Requirement', 'Question'],
-            urs.open_questions.map((q) => [q.id, q.requirement, q.question]),
-          )
+        ? urs.open_questions
+            .map((q) => {
+              const status = {
+                unanswered: 'Unanswered',
+                answered: 'Answer recorded; changes pending review',
+                resolved: 'Resolved; requirement changes reviewed',
+              }[questionStatus(urs, q)];
+              return `<section><h3>${e(q.id)}${q.requirement ? ` · ${e(q.requirement)}` : ''}</h3><p><strong>Question:</strong> ${e(q.question)}</p><p style="white-space:pre-wrap"><strong>Answer:</strong> ${e(q.answer || 'Not answered')}</p><p class="muted"><strong>Status:</strong> ${e(status)}</p></section>`;
+            })
+            .join('')
         : '<p>None recorded.</p>'
     }`,
   );

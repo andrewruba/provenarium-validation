@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { planSchema, ursSchema } from '../src/schema.js';
-import { draftUrs, generatePlan, reviewUrs } from '../src/authoring/index.js';
+import { draftUrs, generatePlan, proposeUrsResolution, reviewUrs } from '../src/authoring/index.js';
 import { blankUrs } from '../src/urs.js';
+import { applyResolutionProposal } from '../src/urs-resolution.js';
 
 vi.mock('../src/authoring/discovery.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/authoring/discovery.js')>();
@@ -109,6 +110,243 @@ function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
     );
   });
 }
+
+function answeredUrs() {
+  const document = structuredClone(urs);
+  document.open_questions = [
+    {
+      id: 'Q-ACCESS',
+      requirement: 'URS-001',
+      question: 'Should Sample ID be visible on the receipt form?',
+      answer: 'Yes, show Sample ID to the operator.',
+    },
+  ];
+  return document;
+}
+function answerProposal(document = answeredUrs()) {
+  return {
+    requirements: [
+      {
+        question_ids: ['Q-ACCESS'],
+        value: structuredClone(document.families[0].requirements[0]),
+        reason: 'The existing visibility requirement already expresses the recorded answer.',
+      },
+    ],
+    unresolved: [],
+  };
+}
+
+describe('answer-based requirements authoring', () => {
+  it.each(['openai', 'anthropic'] as const)(
+    'proposes one scoped requirement update using recorded answers with %s',
+    async (provider) => {
+      const document = answeredUrs();
+      const proposal = answerProposal(document);
+      proposal.requirements[0].value.details = ['The operator shall see Sample ID on receipt.'];
+      const requests = transport(provider, [proposal]);
+      const context = { passages: [], hashes: [], warnings: [] };
+      const result = await proposeUrsResolution({
+        root: '/tmp',
+        provider,
+        key: 'test-key',
+        urs: document,
+        context,
+        thoroughness: 'thorough',
+        fetchImpl: requests,
+      });
+
+      expect(result.incomplete).toBe(false);
+      expect(result.value).toEqual(proposal);
+      expect(result.spend.calls).toBe(1);
+      expect(requests).toHaveBeenCalledOnce();
+      const request = JSON.parse(String(requests.mock.calls[0][1]?.body));
+      const payload = JSON.parse(
+        provider === 'openai' ? request.input[0].content[0].text : request.messages[0].content,
+      );
+      expect(payload).toEqual({ urs: document, answers: document.open_questions, context });
+      expect(document.open_questions[0]).not.toHaveProperty('resolution');
+      expect(document.families[0].requirements[0]).not.toHaveProperty('details');
+    },
+  );
+
+  it('makes no provider request when there are no unapplied answers', async () => {
+    const answered = answeredUrs();
+    const resolved = applyResolutionProposal(answered, answerProposal(answered));
+    const requests = transport('openai', []);
+    const result = await proposeUrsResolution({
+      root: '/tmp',
+      provider: 'openai',
+      key: '',
+      urs: resolved,
+      fetchImpl: requests,
+    });
+    expect(requests).not.toHaveBeenCalled();
+    expect(result.value).toEqual({ requirements: [], unresolved: [] });
+    expect(result.spend.calls).toBe(0);
+  });
+
+  it('retains a specific ambiguity without applying or inventing an answer', async () => {
+    const document = answeredUrs();
+    document.open_questions[0].answer = 'It depends on the operator.';
+    const proposal = {
+      requirements: [],
+      unresolved: [{ question_id: 'Q-ACCESS', reason: 'Which operator roles may see Sample ID?' }],
+    };
+    const result = await proposeUrsResolution({
+      root: '/tmp',
+      provider: 'openai',
+      key: 'test-key',
+      urs: document,
+      fetchImpl: transport('openai', [proposal]),
+    });
+    expect(result.incomplete).toBe(false);
+    expect(result.value).toEqual(proposal);
+    expect(result.questions).toContain('Q-ACCESS: Which operator roles may see Sample ID?');
+    expect(document.open_questions[0]).not.toHaveProperty('resolution');
+  });
+
+  it('rejects a proposal that introduces a requirement outside the existing document', async () => {
+    const proposal = answerProposal();
+    proposal.requirements[0].value.id = 'INVENTED';
+    const result = await proposeUrsResolution({
+      root: '/tmp',
+      provider: 'openai',
+      key: 'test-key',
+      urs: answeredUrs(),
+      fetchImpl: transport('openai', [proposal]),
+    });
+    expect(result.incomplete).toBe(true);
+    expect(result.value).toBeUndefined();
+    expect(result.questions.join()).toContain('INVENTED');
+  });
+
+  it('stops before dispatch when the budget cannot cover resolution authoring', async () => {
+    const requests = transport('openai', [answerProposal()]);
+    const result = await proposeUrsResolution({
+      root: '/tmp',
+      provider: 'openai',
+      key: 'test-key',
+      urs: answeredUrs(),
+      maxSpend: 0.000001,
+      fetchImpl: requests,
+    });
+    expect(result.incomplete).toBe(true);
+    expect(result.value).toBeUndefined();
+    expect(requests).not.toHaveBeenCalled();
+    expect(result.questions.join()).toContain('spending cap');
+  });
+
+  it('removes invented answers and resolution claims from both drafts and revisions', async () => {
+    const proposed = answeredUrs();
+    proposed.open_questions[0].resolution = {
+      answer_hash: 'a'.repeat(64),
+      applied_at: '2026-11-25T00:00:00.000Z',
+      targets: ['requirement:URS-001'],
+    };
+    const requests = transport('openai', [
+      proposed,
+      {
+        findings: [
+          { requirement: 'URS-001', severity: 'suggestion', message: 'Keep the question.' },
+        ],
+        summary: 'Review',
+      },
+      proposed,
+    ]);
+    const result = await draftUrs({
+      root: '/tmp',
+      provider: 'openai',
+      key: 'test-key',
+      thoroughness: 'quick',
+      fetchImpl: requests,
+    });
+    expect(result.value?.open_questions[0]).toEqual({
+      id: 'Q-ACCESS',
+      requirement: 'URS-001',
+      question: proposed.open_questions[0].question,
+      answer: null,
+    });
+    const reviewRequest = JSON.parse(String(requests.mock.calls[1][1]?.body));
+    const reviewedQuestion = JSON.parse(reviewRequest.input[0].content[0].text).urs
+      .open_questions[0];
+    expect(reviewedQuestion.answer).toBeNull();
+    expect(reviewedQuestion).not.toHaveProperty('resolution');
+  });
+
+  it('preserves the original answered question and its accepted resolution during redrafting', async () => {
+    const answered = answeredUrs();
+    const existing = applyResolutionProposal(answered, answerProposal(answered));
+    const proposed = structuredClone(existing);
+    proposed.open_questions[0].question = 'May the model replace the decision?';
+    proposed.open_questions[0].answer = 'Model replacement';
+    delete proposed.open_questions[0].resolution;
+    const result = await draftUrs({
+      root: '/tmp',
+      provider: 'openai',
+      key: 'test-key',
+      existing,
+      fetchImpl: transport('openai', [proposed, { findings: [], summary: 'Reviewed' }]),
+    });
+    expect(result.value?.open_questions).toEqual(existing.open_questions);
+    expect(result.questions).toEqual([]);
+  });
+
+  it('keeps resolved URS history out of unresolved plan questions while retaining new conflicts', async () => {
+    const answered = answeredUrs();
+    const resolved = applyResolutionProposal(answered, answerProposal(answered));
+    for (const newConflict of [false, true]) {
+      const proposedPlan = structuredClone(plan);
+      proposedPlan.urs_revision = resolved.document.revision;
+      proposedPlan.questions = [
+        {
+          id: 'Q-ACCESS',
+          requirement: 'URS-001',
+          question: newConflict
+            ? 'A new conflict with visibility needs review.'
+            : answered.open_questions[0].question,
+        },
+      ];
+      const result = await generatePlan({
+        root: '/tmp',
+        provider: 'openai',
+        key: 'test-key',
+        urs: resolved,
+        url: 'http://localhost:3210',
+        fetchImpl: transport('openai', [
+          { action: 'finish' },
+          { plan: proposedPlan, fixtures: [] },
+          { findings: [], summary: 'Reviewed' },
+        ]),
+      });
+      expect(result.incomplete).toBe(false);
+      expect(result.value?.plan.questions).toEqual(newConflict ? proposedPlan.questions : []);
+      expect(result.questions.join()).not.toContain('Resolve URS questions');
+      if (newConflict) expect(result.questions.join()).toContain('new conflict');
+    }
+  });
+
+  it('keeps an answer awaiting requirement review as a plain plan approval blocker', async () => {
+    const result = await generatePlan({
+      root: '/tmp',
+      provider: 'openai',
+      key: 'test-key',
+      urs: answeredUrs(),
+      url: 'http://localhost:3210',
+      fetchImpl: transport('openai', [
+        { action: 'finish' },
+        { plan, fixtures: [] },
+        { findings: [], summary: 'Reviewed' },
+      ]),
+    });
+    expect(result.value?.plan.questions[0]).toEqual({
+      id: 'Q-ACCESS',
+      requirement: 'URS-001',
+      question: 'Answer recorded; run provenarium urs resolve to review its requirement changes.',
+    });
+    expect(result.questions.join()).toContain('Resolve URS questions');
+  });
+});
+
 describe('authoring workflows', () => {
   it.each(['openai', 'anthropic'] as const)(
     'drafts and reviews with %s while preserving human edits',
@@ -155,6 +393,7 @@ describe('authoring workflows', () => {
           id: 'Q-DUPLICATE',
           requirement: 'URS-001',
           question: 'Should a duplicate Sample ID be rejected or update the existing sample?',
+          answer: null,
         },
       ];
       const requests = transport(provider, [
