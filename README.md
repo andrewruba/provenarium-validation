@@ -31,6 +31,12 @@ and a new revision receives a separate filename. `generate --urs` produces a
 human-readable Installation and Operational Qualification (IOQ) protocol and
 deterministic Playwright tests.
 
+Protocol generation checks requirement links, actor declarations, and required
+files before creating a candidate. It corrects unambiguous source notation and
+can request up to two technical corrections under the same spending ceiling.
+Uncorrected tool-format errors remain in an incomplete authoring record;
+genuine product decisions and missing required evidence still need review.
+
 `urs resolve` suggests answers from the linked context and deployed application.
 For each question, review the suggestion and its source, then accept, edit, choose
 an alternative, or skip. You can also edit the `answer` field beside each question

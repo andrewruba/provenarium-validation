@@ -24,7 +24,17 @@ import {
 import { Discovery, discoveryActionSchema, type PageObservation } from './discovery.js';
 import { redact, safeUrl } from './security.js';
 import { rehearsePlan, type Rehearsal } from './rehearsal.js';
-import { validatePlan } from '../compiler.js';
+import {
+  validatePlan,
+  validatePlanStructure,
+  obligationSourceCatalog,
+  normalizeObligationSources,
+} from '../compiler.js';
+import {
+  collectPlanInputCatalog,
+  validateGeneratedPlanInputs,
+  PLAN_INPUT_INSTRUCTIONS,
+} from '../plan-inputs.js';
 import {
   blankUrs,
   checkUrsStructure,
@@ -551,7 +561,14 @@ function unchangedExpectations(
   const assertions = new Map(
     next.cases.flatMap((c) => c.steps.flatMap((s) => s.assertions)).map((a) => [a.id, a]),
   );
-  for (const testCase of previous.cases)
+  for (const testCase of previous.cases) {
+    if (testCase.manual && !testCase.requirements.every((id) => allowedChanges.has(id))) {
+      const revised = next.cases.find((item) => item.id === testCase.id);
+      if (!revised?.manual || revised.manual_expected !== testCase.manual_expected)
+        throw new Error(
+          'Revision changed or removed a manual expected result. Revise the requirement or expectation explicitly before authoring a replacement.',
+        );
+    }
     for (const assertion of testCase.steps.flatMap((s) => s.assertions)) {
       // An assertion shared with an unchanged requirement remains frozen. A changed
       // revision alone is insufficient: the linked requirement itself must change.
@@ -566,6 +583,7 @@ function unchangedExpectations(
           'Revision changed or removed an accepted expected result. Revise the requirement or expectation explicitly before authoring a replacement.',
         );
     }
+  }
 }
 
 export async function generatePlan(
@@ -606,7 +624,32 @@ export async function generatePlan(
   let rehearsal: Rehearsal | undefined;
   let discoveryComplete = false;
   try {
-    const material = await context(options);
+    await requireValidAuthoredStructure(options.urs, options.root);
+    const inputCatalog = await collectPlanInputCatalog(options.root, options.urs);
+    if (inputCatalog.errors.length) throw new Error(inputCatalog.errors.join('\n'));
+    const material = structuredClone(await context(options));
+    if (inputCatalog.references.length) {
+      const ids = new Set(material.passages.map((passage) => passage.source));
+      let sequence = 0;
+      const referenceSources = inputCatalog.references.map((reference) => {
+        let id: string;
+        do {
+          id = `normative-input-${++sequence}`;
+        } while (ids.has(id));
+        ids.add(id);
+        return { id, path: reference.path };
+      });
+      const referenceMaterial = await extractContext(options.root, referenceSources, undefined, {
+        signal: options.signal,
+        maxCharacters: Math.max(
+          0,
+          120_000 - material.passages.reduce((total, passage) => total + passage.text.length, 0),
+        ),
+      });
+      material.passages.push(...referenceMaterial.passages);
+      material.hashes.push(...referenceMaterial.hashes);
+      material.warnings.push(...referenceMaterial.warnings);
+    }
     questions.push(...material.warnings);
     const observations: PageObservation[] = [];
     try {
@@ -657,7 +700,9 @@ export async function generatePlan(
     const prompt =
       BASE +
       '\nRetained URS questions with accepted resolution records document human decisions. Preserve those decisions and do not copy them into unresolved plan questions. New uncertainties must use new question IDs.' +
-      '\nAuthor the IOQ plan and text fixtures. Use only supported typed operations. Every automated assertion maps to a numbered step and requirement clause; manual cases need explicit procedure and expected result. Evidence requests must support the claim. Include an accurate non-secret actor inventory with role/state and fresh-login versus reusable-session needs. Start each independent case from declared prerequisites. Inputs use fixtures/ relative paths. Do not embed credential values. Unknown expectations belong in questions. Numeric expected results require supplied independent reference values. Model-generated code is forbidden. Locators must be supported by observations. Include plan schema/runtime version 1. Context hashes are assigned by the caller. When selected context informs a case, include case-level citations using the supplied source ID and exact supporting location; do not invent sources or cite irrelevant material. Assertion variable paths use names established by read/request/download actions; request results expose status and body. Never assume implementation/database inspection is evidence.';
+      '\n' +
+      PLAN_INPUT_INSTRUCTIONS +
+      '\nAuthor the IOQ plan and text fixtures. Copy obligation source strings exactly from obligation_sources for the linked requirement. The runtime_contract defines supported binding and actor syntax; internal schema, source bindings, file paths, and runtime compatibility are generator responsibilities, never questions for the user. Use only supported typed operations. Every automated assertion maps to a numbered step and requirement clause; manual cases need explicit procedure and expected result. Prefer automated form entry, validation, record and CSV checks whenever supported. Read-only discovery limits exploration now, not the synthetic interactions authored for later approved execution. Use manual procedures only for genuinely unsupported operations or unavailable evidence, such as a full browser restart; isolate those checks so they do not turn unrelated browser checks into manual work. Evidence requests must support the claim. Include an accurate non-secret actor inventory with role/state and fresh-login versus reusable-session needs. Start each independent case from declared prerequisites. Do not embed credential values. Only genuine missing intended behavior or evidence belongs in questions, linked to an existing requirement where applicable. Numeric expected results require supplied independent values or transparent derivations from the reviewed URS equations and unit equivalences. Where the URS permits hand calculations, retain explicit arithmetic and expected display strings in a generated text fixture for human review. Do not copy application outputs or source-code results as an oracle. Do not invent mandatory preparer identities, separate reviewer assignments, approval gates, or external attachments that the URS does not require; the normal protocol approval reviews proposed derivations. Model-generated code is forbidden. Locators must be supported by observations. Include plan schema/runtime version 1. Context hashes are assigned by the caller. When selected context informs a case, include case-level citations using the supplied source ID and exact supporting location; do not invent sources or cite irrelevant material. Assertion variable paths use names established by read/request/download actions; request results expose status and body. Never assume implementation/database inspection is evidence.';
     const input = {
       urs: options.urs,
       target: { url: options.url, allowed_origins: origins },
@@ -666,20 +711,84 @@ export async function generatePlan(
       existing: options.existing,
       feedback: options.feedback,
       thoroughness: tier,
+      obligation_sources: obligationSourceCatalog(options.urs),
+      available_reference_files: inputCatalog.references,
+      runtime_contract: {
+        source_syntax:
+          'Copy an exact source from obligation_sources, such as URS-001/statement, URS-001/details/0, or URS-001/table. Do not use free-form clause labels.',
+        anonymous_access:
+          'A public no-login actor uses state signed_out and mode anonymous. This combination is supported.',
+        artifact_rules: PLAN_INPUT_INSTRUCTIONS,
+        technical_corrections:
+          'Repair technical errors using these contracts. Never defer them to a human question or replace automated tests with manual cases to evade validation.',
+      },
     };
-    value = validateGenerated(
-      await client.complete(generatedPlanSchema, prompt, input),
-      options.urs,
-      options.url,
-      origins,
-    );
-    value.plan.context_hashes = material.hashes;
-    if (options.existing)
-      unchangedExpectations(
-        options.existing,
-        value.plan,
-        changedRequirements(options.existingUrs, options.urs),
-      );
+    let technicalRepairs = 0;
+    const checkedCandidate = async (candidate: GeneratedPlan): Promise<GeneratedPlan> => {
+      while (true) {
+        candidate = validateGenerated(candidate, options.urs, options.url, origins);
+        const normalized = normalizeObligationSources(candidate.plan, options.urs);
+        candidate.plan = normalized.plan;
+        if (normalized.changes.length)
+          options.onProgress?.(
+            `Normalized ${normalized.changes.length} requirement source bindings.`,
+          );
+        candidate.plan.context_hashes = material.hashes;
+        if (options.existing)
+          unchangedExpectations(
+            options.existing,
+            candidate.plan,
+            changedRequirements(options.existingUrs, options.urs),
+          );
+        value = candidate;
+        const errors = [
+          ...validatePlanStructure(candidate.plan, options.urs),
+          ...(await validateGeneratedPlanInputs(options.root, candidate, inputCatalog)),
+        ];
+        if (!errors.length) return candidate;
+        if (technicalRepairs >= 2)
+          throw new Error(
+            `Protocol generation could not correct its technical validation errors. The attempted plan is retained for diagnostics; no candidate can be published.\n${errors.join('\n')}`,
+          );
+        technicalRepairs++;
+        options.onProgress?.(`Correcting generated protocol structure (${technicalRepairs}/2).`);
+        const repaired = await client.complete(
+          generatedPlanSchema,
+          prompt +
+            '\nCorrect the supplied technical validation_errors. Preserve requirement coverage, case/obligation/assertion IDs, existing expected outcomes, and automated cases. Do not delete checks, downgrade cases to manual, invent missing reference files, or turn tool errors into user questions. Remove a runtime-compatibility question only after correcting its technical cause; retain genuine product or evidence questions.',
+          { ...input, candidate, validation_errors: errors },
+        );
+        unchangedExpectations(candidate.plan, repaired.plan);
+        for (const testCase of candidate.plan.cases) {
+          const next = repaired.plan.cases.find((item) => item.id === testCase.id);
+          if (!next || (!testCase.manual && next.manual))
+            throw new Error(
+              'Technical correction removed a case or downgraded an automated case to manual.',
+            );
+          if (testCase.requirements.some((id) => !next.requirements.includes(id)))
+            throw new Error('Technical correction removed a case requirement.');
+          if (
+            testCase.manual &&
+            (!next.manual || next.manual_expected !== testCase.manual_expected)
+          )
+            throw new Error('Technical correction changed a manual expected result.');
+        }
+        for (const obligation of candidate.plan.obligations) {
+          const next = repaired.plan.obligations.find((item) => item.id === obligation.id);
+          if (
+            !next ||
+            next.requirement_id !== obligation.requirement_id ||
+            obligation.assertion_ids.some((id) => !next.assertion_ids.includes(id)) ||
+            obligation.manual_case_ids.some((id) => !next.manual_case_ids.includes(id))
+          )
+            throw new Error(
+              'Technical correction removed or changed reviewed requirement coverage.',
+            );
+        }
+        candidate = repaired;
+      }
+    };
+    value = await checkedCandidate(await client.complete(generatedPlanSchema, prompt, input));
     if (options.rehearse) {
       options.onProgress?.(
         'Rehearsing the candidate as authoring diagnostics, not qualification evidence.',
@@ -694,28 +803,28 @@ export async function generatePlan(
     }
     for (let i = 0; i < PRESETS[tier].reviews; i++) {
       options.onProgress?.(`Reviewing protocol coverage (${i + 1}/${PRESETS[tier].reviews}).`);
-      const review = await client.complete(reviewSchema, BASE + '\n' + REVIEWS[i], {
-        ...input,
-        candidate: value,
-        rehearsal,
-        structuralFindings: validatePlan(value.plan, options.urs),
-      });
+      const review = await client.complete(
+        reviewSchema,
+        prompt +
+          '\nFor this request, review the candidate using the same authoring and runtime rules. Return review findings only. Do not invent role assignments or external approval gates, or downgrade automatable checks because discovery was read-only.\n' +
+          REVIEWS[i],
+        {
+          ...input,
+          candidate: value,
+          rehearsal,
+          structuralFindings: validatePlanStructure(value.plan, options.urs),
+        },
+      );
       rounds++;
       if (!review.findings.length) break;
-      const revised = validateGenerated(
-        await client.complete(
-          generatedPlanSchema,
-          prompt +
-            '\nAddress the review findings without changing or removing existing expected outcomes. Navigation and locators may change; additional relevant cases are allowed. Rehearsal failures may be genuine defects; never weaken an expectation to pass.',
-          { ...input, candidate: value, findings: review.findings, rehearsal },
-        ),
-        options.urs,
-        options.url,
-        origins,
+      const revised = await client.complete(
+        generatedPlanSchema,
+        prompt +
+          '\nAddress the review findings without changing or removing existing expected outcomes. Navigation and locators may change; additional relevant cases are allowed. Rehearsal failures may be genuine defects; never weaken an expectation to pass.',
+        { ...input, candidate: value, findings: review.findings, rehearsal },
       );
       unchangedExpectations(value.plan, revised.plan);
-      revised.plan.context_hashes = material.hashes;
-      value = revised;
+      value = await checkedCandidate(revised);
     }
     questions.push(...value.plan.questions.map((q) => `${q.id}: ${q.question}`));
     questions.push(...validatePlan(value.plan, options.urs));

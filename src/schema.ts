@@ -283,8 +283,16 @@ export type TestCase = z.infer<typeof caseSchema>;
 export const accessSchema = z.strictObject({
   id,
   role: nonempty,
-  state: z.enum(['active', 'disabled', 'nonexistent', 'signed_out', 'incorrect_password']),
-  mode: z.enum(['credentials', 'session', 'anonymous']),
+  state: z
+    .enum(['active', 'disabled', 'nonexistent', 'signed_out', 'incorrect_password'])
+    .describe(
+      'Public no-login access uses signed_out with mode anonymous. A reusable session requires active state.',
+    ),
+  mode: z
+    .enum(['credentials', 'session', 'anonymous'])
+    .describe(
+      'anonymous is valid exactly when state is signed_out; use it for public apps without login. session requires an active account.',
+    ),
   purpose: nonempty,
   cases: z.array(id),
   organization: z.string().optional(),
@@ -316,7 +324,9 @@ export const planSchema = z.strictObject({
     z.strictObject({
       id,
       requirement_id: id,
-      source: nonempty,
+      source: nonempty.describe(
+        'Copy an exact source from the supplied obligation source catalog, e.g. URS-ID/statement, URS-ID/details/0, or URS-ID/table. The ID must match requirement_id and the field must exist. An absolute JSON pointer such as /families/0/requirements/0/statement is also supported. Bare clause names, bracket notation, prose, IDs, and metadata fields are not bindings.',
+      ),
       statement: nonempty,
       assertion_ids: z.array(id).default([]),
       manual_case_ids: z.array(id).default([]),
@@ -324,8 +334,18 @@ export const planSchema = z.strictObject({
   ),
   cases: z.array(caseSchema).min(1),
   questions: z.array(questionSchema).default([]),
-  fixtures: z.array(nonempty).default([]),
-  references: z.array(nonempty).default([]),
+  fixtures: z
+    .array(nonempty)
+    .default([])
+    .describe(
+      'Exact safe fixtures/ paths for generated text inputs included in the fixtures output. Never descriptions or document titles.',
+    ),
+  references: z
+    .array(nonempty)
+    .default([])
+    .describe(
+      'Exact paths from available_reference_files, or generated fixtures/ text files containing derivations for human review. The URS is already bundled. Never document titles, prose, test IDs, URLs, runtime instructions, approval gates, or nonexistent files.',
+    ),
   context_hashes: z.array(contextHashSchema).default([]),
 });
 export type Plan = z.infer<typeof planSchema>;

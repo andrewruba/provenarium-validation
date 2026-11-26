@@ -78,6 +78,41 @@ placeholders, duplicate IDs, and other structural issues are separate from
 question resolution. Correct those issues in the working requirements, then check again.
 Refresh existing HTML/PDF views with `provenarium urs render urs.yaml` after edits.
 
+## Protocol generation reports invalid source bindings or opens a document title as a file
+
+Older protocol generation could emit bare labels such as `statement` or
+`details[0]` where a requirement binding was needed, then ask the user to explain
+the runtime grammar. It could also put descriptive text in `plan.references`
+and try to open that text as a filename. These are generation defects, not
+missing user requirements.
+
+Updated generation supplies exact bindings and the public anonymous-access
+contract, normalizes equivalent source notation, and validates every response
+and package input before publishing a candidate. It can make at most two
+technical correction requests under the original command budget. If correction
+fails, the incomplete authoring record and diagnostics are retained; the CLI
+does not ask you to approve invalid runtime syntax or proceed to a filename
+error.
+
+Keep the printed authoring record when reporting a failure. After updating the
+CLI, rerun `generate --urs` with the reviewed requirements and target URL. The
+old record is retained and is not automatically promoted to a candidate.
+Do not remove genuine normative files or weaken acceptance criteria just to
+obtain a candidate.
+
+## The generated protocol still has questions after the URS was resolved
+
+Protocol design can expose a specific ambiguity or missing independent expected
+value that the requirements draft did not identify. Review those questions
+against the accepted requirements and supplied evidence. Tool syntax,
+obligation binding grammar, and supported actor modes are internal authoring
+responsibilities; they should not become user decisions.
+
+A valid protocol may fail against the application when accepted requirements
+describe behavior the implementation does not provide. Keep those failures as
+evidence. Change the application or deliberately revise the intended requirement;
+do not change the expected result merely to match an observed output.
+
 ## The CLI reports missing Chromium
 
 Install the browser using the setup command printed by the installed CLI. Browser files are version-specific. Linux may also need system libraries. Execution and report generation never install dependencies automatically.

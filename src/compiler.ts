@@ -1,6 +1,112 @@
 import { type Action, type Assertion, type Plan, type Urs } from './schema.js';
 import { requirements, unresolvedQuestions } from './urs.js';
 
+type Requirement = Urs['families'][number]['requirements'][number];
+export type ObligationSource = {
+  requirement_id: string;
+  source: string;
+  content: string | NonNullable<Requirement['table']>;
+};
+
+/** Supply authoring with executable source bindings instead of asking it to invent paths. */
+export function obligationSourceCatalog(urs: Urs): ObligationSource[] {
+  return requirements(urs).flatMap((requirement) => [
+    {
+      requirement_id: requirement.id,
+      source: `${requirement.id}/statement`,
+      content: requirement.statement,
+    },
+    ...(requirement.details ?? []).flatMap((content, index) =>
+      content.trim()
+        ? [
+            {
+              requirement_id: requirement.id,
+              source: `${requirement.id}/details/${index}`,
+              content,
+            },
+          ]
+        : [],
+    ),
+    ...(requirement.table
+      ? [
+          {
+            requirement_id: requirement.id,
+            source: `${requirement.id}/table`,
+            content: requirement.table,
+          },
+        ]
+      : []),
+  ]);
+}
+
+function resolvePointer(value: unknown, parts: string[]): unknown {
+  for (const part of parts) {
+    if (!value || typeof value !== 'object' || !Object.hasOwn(value, part)) return undefined;
+    value = (value as Record<string, unknown>)[part];
+  }
+  return value;
+}
+
+/** Only behavior text and table content can establish an obligation, never metadata. */
+function behaviorPath(requirement: Requirement | undefined, parts: string[]): unknown {
+  if (!requirement) return undefined;
+  const path = parts.join('/');
+  if (
+    !/^(?:statement|details(?:\/(?:0|[1-9]\d*))?|table(?:\/(?:columns(?:\/(?:0|[1-9]\d*))?|rows(?:\/(?:0|[1-9]\d*)(?:\/(?:0|[1-9]\d*))?)?))?)$/.test(
+      path,
+    )
+  )
+    return undefined;
+  const value = resolvePointer(requirement, parts);
+  if (typeof value === 'string') return value.trim() ? value : undefined;
+  if (path === 'table' && requirement.table) return requirement.table;
+  if (Array.isArray(value) && value.length) return value;
+  return undefined;
+}
+
+function resolveObligationSource(urs: Urs, requirementId: string, source: string): unknown {
+  const requirement = requirements(urs).find((item) => item.id === requirementId);
+  if (source.startsWith(`${requirementId}/`))
+    return behaviorPath(requirement, source.slice(requirementId.length + 1).split('/'));
+  if (!source.startsWith('/')) return undefined;
+  const parts = source
+    .slice(1)
+    .split('/')
+    .map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'));
+  if (parts[0] !== 'families' || parts[2] !== 'requirements') return undefined;
+  const containing = resolvePointer(urs, parts.slice(0, 4)) as { id?: string } | undefined;
+  if (containing?.id !== requirementId) return undefined;
+  return behaviorPath(requirement, parts.slice(4));
+}
+
+/** Correct only equivalent path notation, preserving every meaning-bearing plan field. */
+export function normalizeObligationSources(
+  input: Plan,
+  urs: Urs,
+): { plan: Plan; changes: { obligation: string; before: string; after: string }[] } {
+  const plan = structuredClone(input);
+  const changes: { obligation: string; before: string; after: string }[] = [];
+  for (const obligation of plan.obligations) {
+    if (resolveObligationSource(urs, obligation.requirement_id, obligation.source) !== undefined)
+      continue;
+    let relative = obligation.source.trim();
+    for (const separator of ['/', '.'])
+      if (relative.startsWith(obligation.requirement_id + separator)) {
+        relative = relative.slice(obligation.requirement_id.length + 1);
+        break;
+      }
+    relative = relative
+      .replace(/^\//, '')
+      .replace(/\[(0|[1-9]\d*)\]/g, '/$1')
+      .replaceAll('.', '/');
+    const canonical = `${obligation.requirement_id}/${relative}`;
+    if (resolveObligationSource(urs, obligation.requirement_id, canonical) === undefined) continue;
+    changes.push({ obligation: obligation.id, before: obligation.source, after: canonical });
+    obligation.source = canonical;
+  }
+  return { plan, changes };
+}
+
 export function describeAction(action: Action): string {
   switch (action.op) {
     case 'navigate':
@@ -29,7 +135,7 @@ export function describeAssertion(a: Assertion): string {
   const subject = a.locator ? `${a.read} of ${a.locator.value}` : a.variable;
   return `${subject} ${a.comparison.replaceAll('_', ' ')}${a.expected === undefined ? '' : ` ${JSON.stringify(a.expected)}`}${a.tolerance === undefined ? '' : ` (tolerance ${a.tolerance})`}`;
 }
-export function validatePlan(plan: Plan, urs: Urs): string[] {
+export function validatePlanStructure(plan: Plan, urs: Urs): string[] {
   const errors: string[] = [];
   const ids = new Set<string>();
   const reqs = requirements(urs);
@@ -41,10 +147,15 @@ export function validatePlan(plan: Plan, urs: Urs): string[] {
     if (ids.has(id)) errors.push(`Duplicate plan ID: ${id}`);
     ids.add(id);
   };
+  for (const question of plan.questions) {
+    addId(question.id);
+    if (question.requirement && !reqIds.has(question.requirement))
+      errors.push(
+        `${question.id}: question requirement must name an existing URS requirement. Tool/runtime schema problems must be repaired by authoring, not assigned as user decisions.`,
+      );
+  }
   if (plan.urs_revision !== urs.document.revision)
     errors.push('Plan does not match the URS revision.');
-  if (plan.questions.length) errors.push(...plan.questions.map((q) => `${q.id}: ${q.question}`));
-  if (unresolvedQuestions(urs).length) errors.push('Resolve URS questions before approval.');
   const origins = new Set<string>();
   for (const origin of plan.target.allowed_origins) {
     const u = new URL(origin);
@@ -188,33 +299,7 @@ export function validatePlan(plan: Plan, urs: Urs): string[] {
     addId(obligation.id);
     if (!reqIds.has(obligation.requirement_id))
       errors.push(`${obligation.id}: unknown requirement.`);
-    const requirement = reqs.find((r) => r.id === obligation.requirement_id);
-    let source: unknown;
-    const resolvePointer = (value: unknown, parts: string[]) => {
-      for (const part of parts) {
-        if (!value || typeof value !== 'object' || !Object.hasOwn(value, part)) return undefined;
-        value = (value as Record<string, unknown>)[part];
-      }
-      return value;
-    };
-    if (obligation.source.startsWith(`${obligation.requirement_id}/`))
-      source = resolvePointer(
-        requirement,
-        obligation.source.slice(obligation.requirement_id.length + 1).split('/'),
-      );
-    else if (obligation.source.startsWith('/')) {
-      const parts = obligation.source
-        .slice(1)
-        .split('/')
-        .map((p) => p.replaceAll('~1', '/').replaceAll('~0', '~'));
-      const containing = resolvePointer(urs, parts.slice(0, 4)) as { id?: string } | undefined;
-      if (
-        parts[0] === 'families' &&
-        parts[2] === 'requirements' &&
-        containing?.id === obligation.requirement_id
-      )
-        source = resolvePointer(urs, parts);
-    }
+    const source = resolveObligationSource(urs, obligation.requirement_id, obligation.source);
     if (source === undefined)
       errors.push(
         `${obligation.id}: source must point to existing text or a table in its requirement.`,
@@ -239,6 +324,13 @@ export function validatePlan(plan: Plan, urs: Urs): string[] {
     if (plan.obligations.some((o) => o.requirement_id === req.id))
       errors.push(`${req.id}: inapplicable requirement has test obligations.`);
   return errors;
+}
+export function validatePlan(plan: Plan, urs: Urs): string[] {
+  return [
+    ...validatePlanStructure(plan, urs),
+    ...plan.questions.map((question) => `${question.id}: ${question.question}`),
+    ...(unresolvedQuestions(urs).length ? ['Resolve URS questions before approval.'] : []),
+  ];
 }
 export function compilePlan(plan: Plan): Record<string, string> {
   return Object.fromEntries(

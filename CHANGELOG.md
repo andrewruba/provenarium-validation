@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fixed protocol authoring that emitted invalid obligation bindings or treated
+  document descriptions as file references. Generation now supplies exact source
+  bindings and runtime rules, normalizes equivalent notation, and validates each
+  response and required file before creating a candidate.
+- Added at most two technical correction requests per generation command under
+  its existing spending ceiling. Corrections preserve reviewed coverage and
+  expected results; unresolved technical errors remain incomplete diagnostics
+  instead of becoming user questions or runtime file-open failures.
+- Included required normative file excerpts in protocol-authoring context and
+  preview. Clarified that read-only discovery still permits authoring automated
+  tests for later approved execution.
 - Added context-based answer suggestions to interactive `urs resolve`, with
   accept, edit, concrete alternatives, and skip choices. Suggestions identify
   their evidence and distinguish documented requirements from implementation

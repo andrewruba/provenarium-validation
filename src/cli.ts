@@ -15,13 +15,15 @@ import {
   thoroughnessSchema,
   type Bindings,
 } from './schema.js';
-import { atomicWrite, exists, readJson, safePath, writeJson, writeNew } from './files.js';
+import { atomicWrite, exists, readJson, safePath, sha256, writeJson, writeNew } from './files.js';
 import { loadUrs, checkUrs, checkUrsStructure, templateText, unresolvedQuestions } from './urs.js';
 import { prepareUrsInputs, projectCommand } from './urs-setup.js';
 import { resolveUrsFile } from './urs-resolve-cli.js';
 import { repairUrsReferences } from './urs-reference-repair.js';
 import { extractContext } from './context.js';
 import { Discovery, type PageObservation } from './authoring/discovery.js';
+import { validatePlanStructure } from './compiler.js';
+import { collectPlanInputCatalog, validateGeneratedPlanInputs } from './plan-inputs.js';
 import {
   loadProject,
   saveProject,
@@ -99,7 +101,11 @@ function paid(
 }
 async function authoring(
   command: Command,
-  options: { resolution?: boolean; resolutionSuggestions?: boolean } = {},
+  options: {
+    resolution?: boolean;
+    resolutionSuggestions?: boolean;
+    referenceFiles?: string[];
+  } = {},
 ): Promise<AuthoringOptions> {
   const opts = command.opts(),
     directory = root(command),
@@ -172,6 +178,10 @@ async function authoring(
   );
   if (options.resolutionSuggestions && project.target_url)
     console.log(`  Read-only application observation: ${project.target_url}`);
+  if (options.referenceFiles?.length)
+    console.log(
+      `  Declared requirement reference excerpts:\n${options.referenceFiles.map((file) => `    ${file}`).join('\n')}`,
+    );
   if (!opts.yes) {
     terminal();
     if (
@@ -576,6 +586,12 @@ discovery(
     for (const name of new Set([...plan.fixtures, ...plan.references]))
       files[name] = await readFile(await safePath(path.dirname(source), name));
   } else {
+    const structuralErrors = await checkUrsStructure(document, directory);
+    const inputCatalog = await collectPlanInputCatalog(directory, document);
+    if (structuralErrors.length || inputCatalog.errors.length)
+      throw new Error(
+        `Requirements or their declared reference files are not ready for protocol generation:\n${[...new Set([...structuralErrors, ...inputCatalog.errors])].join('\n')}`,
+      );
     const project = await loadProject(directory),
       url = opts.url ?? project.target_url;
     if (!url) throw new Error('Supply --url for application discovery.');
@@ -596,7 +612,9 @@ discovery(
       );
     }
     const result = await generatePlan({
-      ...(await authoring(command)),
+      ...(await authoring(command, {
+        referenceFiles: inputCatalog.references.map((reference) => reference.path),
+      })),
       urs: document,
       url,
       existing,
@@ -607,18 +625,46 @@ discovery(
       rehearse: !!opts.rehearse,
       discoveryActor: opts.discoveryActor,
     });
+    if (result.value && !result.incomplete) {
+      const generatedErrors = [
+        ...validatePlanStructure(result.value.plan, document),
+        ...(await validateGeneratedPlanInputs(directory, result.value, inputCatalog)),
+      ];
+      if (generatedErrors.length) {
+        result.incomplete = true;
+        result.questions.push(
+          'Generated protocol failed technical validation before packaging.',
+          ...generatedErrors,
+        );
+      }
+    }
     await retainResult(directory, result);
     if (!result.value) return;
     plan = result.value.plan;
     files = Object.fromEntries(result.value.fixtures.map((f) => [f.path, f.content]));
     if (result.incomplete) {
       console.log(
-        'The partial plan is retained in the authoring record; it is not an approvable candidate.',
+        'Generation stopped before packaging. The attempted plan and diagnostics are retained in the authoring record; no candidate was published.',
       );
       return;
     }
     for (const ref of plan.references)
-      if (files[ref] === undefined) files[ref] = await readFile(await safePath(directory, ref));
+      if (files[ref] === undefined) {
+        const expected = inputCatalog.references.find((reference) => reference.path === ref);
+        let bytes: Buffer;
+        try {
+          bytes = await readFile(await safePath(directory, ref));
+        } catch {
+          throw new Error(
+            `Declared reference ${ref} is no longer available. No candidate was published; restore the reference and regenerate.`,
+          );
+        }
+        if (!expected || sha256(bytes) !== expected.sha256)
+          throw new Error(
+            `Declared reference ${ref} changed during generation. No candidate was published; regenerate against the current reference.`,
+          );
+        files[ref] = bytes;
+      }
   }
   const candidate = await createCandidate(directory, document, plan, { files, pdf: opts.pdf });
   console.log(

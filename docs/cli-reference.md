@@ -258,6 +258,37 @@ Generation preserves the URS. Subsequent generation asks for revision feedback,
 or accepts `--feedback feedback.md`. Expected outcomes remain frozen unless a
 reviewed URS revision changes the corresponding normative requirements.
 
+## Protocol generation checks
+
+`generate --urs` supplies the authoring model with the supported runtime contract
+and exact source bindings for the supplied requirements. Every initial and
+revised response is checked for structural validity and readable package inputs
+before a candidate is created. A requirement clause label or document title is
+not a filename. The URS is already included in the package; plan references may
+name only existing normative files declared by that URS or generated text
+fixtures. Required normative files are listed in the data-sharing preview and
+included as bounded context excerpts.
+
+Unambiguous equivalent source notation is normalized locally. Other technical
+defects can trigger at most two correction requests across the entire command,
+including its review rounds. These requests share the original spending cap.
+Corrections must preserve cases, requirement coverage, and expected results;
+they cannot make a failing format check disappear by converting automated cases
+to manual work. If errors remain or the budget cannot cover a correction, the
+authoring record retains the incomplete attempt and diagnostics, and no
+candidate is published.
+
+Runtime syntax and tool-format questions belong to those technical diagnostics,
+not to the user's requirements decisions. Genuine uncertainties about intended
+behavior, independent expected values, or required evidence remain explicit
+questions and block approval. A structurally valid candidate still needs human
+review before execution.
+
+Read-only discovery limits what the authoring session does to the application.
+It does not prevent authoring automated fill, click, calculation, or download
+tests for later approved execution. Manual procedures are appropriate for
+operations the supported execution vocabulary cannot perform.
+
 ## Offline reviewed-plan route
 
 Developers and reviewers can compile an existing typed plan without a provider:
@@ -318,6 +349,18 @@ explicit assertions, and required evidence. Text comparisons preserve exact
 whitespace. `matches` supports literal text with `*` wildcards, not regular
 expressions. Numeric comparisons require a declared expected number and tolerance.
 Variable references identify preceding reads, HTTP responses, or downloads.
+
+An obligation's `source` identifies actual text or a table in the linked
+requirement. Canonical examples are `URS-INPUT-01/statement`,
+`URS-INPUT-01/details/0`, and `URS-INPUT-01/table`. An absolute JSON pointer such
+as `/families/0/requirements/0/statement` is also supported when it resolves to
+the same requirement. The generator receives these bindings with their source
+content; users do not need to determine the grammar. Metadata such as titles,
+IDs, or applicability flags cannot establish a test obligation.
+
+For a public application without login, an access declaration with
+`state: signed_out` and `mode: anonymous` is valid. Reusable session access uses
+`mode: session` with `state: active`.
 
 Unrestricted JavaScript, shell commands, generalized expressions, and arbitrary
 imports are rejected. Unsupported behavior needs an explicit manual procedure.
