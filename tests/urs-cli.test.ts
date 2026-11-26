@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadProject } from '../src/project.js';
+import { loadProject, saveProject } from '../src/project.js';
 import { loadUrs, templateText } from '../src/urs.js';
 import { ursSchema } from '../src/schema.js';
 
@@ -139,6 +139,8 @@ it('dispatches context and URL flags to drafting without any interview or brief'
     root,
     brief: undefined,
     url,
+    thoroughness: 'standard',
+    maxSpend: 15,
     sources: [{ id: 'source-1', path: 'design.md' }],
   });
   expect(await loadUrs(join(root, 'urs.yaml'))).toEqual(draft);
@@ -159,7 +161,7 @@ it('bare urs collects only context and URL, then preserves an existing template 
     .mockResolvedValueOnce('design.md')
     .mockResolvedValueOnce('')
     .mockResolvedValueOnce(url);
-  mocks.select.mockResolvedValueOnce('openai');
+  mocks.select.mockResolvedValueOnce('openai').mockResolvedValueOnce('thorough');
   mocks.confirm.mockResolvedValueOnce(true);
 
   await runCli(root, ['urs']);
@@ -170,11 +172,26 @@ it('bare urs collects only context and URL, then preserves an existing template 
     expect.stringMatching(/Add more context/),
     'Deployed application URL',
   ]);
-  expect(mocks.select).toHaveBeenCalledOnce();
+  expect(mocks.select).toHaveBeenCalledTimes(2);
   expect(mocks.select.mock.calls[0][0].message).toBe('Authoring provider');
+  expect(mocks.select.mock.calls[1][0]).toMatchObject({
+    message: 'Authoring thoroughness',
+    initialValue: 'standard',
+  });
+  const levels = mocks.select.mock.calls[1][0].options;
+  expect(levels.map((option: { value: string }) => option.value)).toEqual([
+    'quick',
+    'standard',
+    'thorough',
+  ]);
+  for (const [index, cap] of [5, 15, 40].entries())
+    expect(levels[index].label).toContain(`$${cap.toFixed(2)} max per command`);
   expect(mocks.confirm).toHaveBeenCalledOnce();
   expect(mocks.confirm.mock.calls[0][0].message).toMatch(/provider.*spending ceiling/);
   expect(mocks.text.mock.invocationCallOrder.at(-1)).toBeLessThan(
+    mocks.select.mock.invocationCallOrder[1],
+  );
+  expect(mocks.select.mock.invocationCallOrder[1]).toBeLessThan(
     mocks.confirm.mock.invocationCallOrder[0],
   );
   expect(mocks.confirm.mock.invocationCallOrder[0]).toBeLessThan(
@@ -186,6 +203,8 @@ it('bare urs collects only context and URL, then preserves an existing template 
   expect(mocks.draftUrs.mock.calls[0][0]).toMatchObject({
     brief: undefined,
     url,
+    thoroughness: 'thorough',
+    maxSpend: 40,
     sources: [{ id: 'source-1', path: 'design.md' }],
   });
   expect(await readFile(join(root, 'urs.yaml'), 'utf8')).toBe(templateText);
@@ -195,6 +214,85 @@ it('bare urs collects only context and URL, then preserves an existing template 
   expect(await loadProject(root)).toMatchObject({
     target_url: url,
     provider: 'openai',
+    thoroughness: 'thorough',
     context: [{ id: 'source-1', path: 'design.md' }],
   });
+});
+
+it.each([undefined, 7])(
+  'preselects the saved level and honors a custom ceiling of %s in the chooser',
+  async (ceiling) => {
+    const root = await fixture();
+    const project = await loadProject(root);
+    project.provider = 'openai';
+    project.thoroughness = 'quick';
+    await saveProject(root, project);
+    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+    mocks.select.mockResolvedValueOnce('standard');
+    mocks.confirm.mockResolvedValueOnce(true);
+
+    await runCli(root, [
+      'urs',
+      'generate',
+      '--context',
+      'design.md',
+      '--no-pdf',
+      ...(ceiling ? ['--max-spend', String(ceiling)] : []),
+    ]);
+
+    expect(mocks.select).toHaveBeenCalledOnce();
+    expect(mocks.select.mock.calls[0][0]).toMatchObject({
+      message: 'Authoring thoroughness',
+      initialValue: 'quick',
+    });
+    if (ceiling)
+      for (const option of mocks.select.mock.calls[0][0].options)
+        expect(option.label).toContain(`$${ceiling.toFixed(2)} max per command`);
+    expect(mocks.draftUrs.mock.calls[0][0]).toMatchObject({
+      thoroughness: 'standard',
+      maxSpend: ceiling ?? 15,
+    });
+    expect((await loadProject(root)).thoroughness).toBe('standard');
+  },
+);
+
+it('honors an explicit level and custom ceiling without asking for the level again', async () => {
+  const root = await fixture();
+  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+  mocks.confirm.mockResolvedValueOnce(true);
+
+  await runCli(root, [
+    'urs',
+    'generate',
+    '--context',
+    'design.md',
+    '--provider',
+    'openai',
+    '--thoroughness',
+    'quick',
+    '--max-spend',
+    '2',
+    '--no-pdf',
+  ]);
+
+  expect(mocks.select).not.toHaveBeenCalled();
+  expect(mocks.confirm).toHaveBeenCalledOnce();
+  expect(mocks.draftUrs.mock.calls[0][0]).toMatchObject({ thoroughness: 'quick', maxSpend: 2 });
+  expect((await loadProject(root)).thoroughness).toBe('quick');
+});
+
+it('uses the saved level without adding prompts to an unattended command', async () => {
+  const root = await fixture();
+  const project = await loadProject(root);
+  project.provider = 'openai';
+  project.thoroughness = 'thorough';
+  await saveProject(root, project);
+
+  await runCli(root, ['urs', 'generate', '--context', 'design.md', '--yes', '--no-pdf']);
+
+  expect(mocks.text).not.toHaveBeenCalled();
+  expect(mocks.select).not.toHaveBeenCalled();
+  expect(mocks.confirm).not.toHaveBeenCalled();
+  expect(mocks.draftUrs.mock.calls[0][0]).toMatchObject({ thoroughness: 'thorough', maxSpend: 40 });
+  expect((await loadProject(root)).thoroughness).toBe('thorough');
 });

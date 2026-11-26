@@ -103,6 +103,13 @@ preview for scripted use; it never supplies credentials or raises the ceiling.
 | standard | $15 | Additional boundary, access, persistence, and export review |
 | thorough | $40 | Additional adversarial and consequential-combination review |
 
+Interactive authoring asks you to choose a thoroughness level before the spending
+confirmation, with the saved level (or Standard on first use) preselected. Each
+option shows its maximum spend for this command. To choose up front, use
+`--thoroughness quick|standard|thorough` on `urs generate`, `generate`, or
+`urs check --review`. An explicit level skips the selector. Scripted `--yes`
+also skips it, using the explicit, saved, or default level in that order.
+
 `--max-spend <USD>` overrides only the ceiling. `--model` selects a model from the
 verified catalog. Models do not switch automatically between tiers. `--detail`
 controls requirements elaboration independently. Actual effort, estimated usage,

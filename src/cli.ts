@@ -100,7 +100,37 @@ async function authoring(command: Command): Promise<AuthoringOptions> {
     );
   }
   provider = providerSchema.parse(provider);
-  const tier = thoroughnessSchema.parse(opts.thoroughness ?? project.thoroughness ?? 'standard');
+  let tier = thoroughnessSchema.parse(opts.thoroughness ?? project.thoroughness ?? 'standard');
+  if (!opts.thoroughness && !opts.yes) {
+    terminal();
+    const capLabel = (level: keyof typeof PRESETS) =>
+      `$${(opts.maxSpend ?? PRESETS[level].cap).toFixed(2)} max per command`;
+    tier = thoroughnessSchema.parse(
+      answer(
+        await select({
+          message: 'Authoring thoroughness',
+          initialValue: tier,
+          options: [
+            {
+              value: 'quick',
+              label: `Quick (${capLabel('quick')})`,
+              hint: 'Focused draft and review',
+            },
+            {
+              value: 'standard',
+              label: `Standard (${capLabel('standard')})`,
+              hint: 'Broader review of boundaries, access, and exports',
+            },
+            {
+              value: 'thorough',
+              label: `Thorough (${capLabel('thorough')})`,
+              hint: 'Extra review of edge cases and failure scenarios',
+            },
+          ],
+        }),
+      ),
+    );
+  }
   const model =
     opts.model ??
     (provider === project.provider ? project.model : undefined) ??

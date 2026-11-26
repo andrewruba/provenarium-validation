@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added a Quick/Standard/Thorough selector to interactive authoring before the
+  spending confirmation. It shows each level's spending cap and remembers the
+  selected level; explicit `--thoroughness` and scripted `--yes` skip the selector.
 - Changed `provenarium urs` to collect application context and a deployed URL,
   then draft requirements without a general interview or route-selection menu.
   `urs generate --context <location> --url <url>` supports direct input, and

@@ -92,7 +92,9 @@ node bin/provenarium.mjs --help
 
 Start with `provenarium urs` for guided requirements setup.
 OpenAI and Anthropic authoring offer Quick ($5), Standard ($15), and Thorough
-($40) default spending ceilings per command. Approval, execution, and reporting
+($40) default spending ceilings per command. Guided authoring lets you choose
+the level before confirming the spend, with your last choice preselected.
+Approval, execution, and reporting
 make no provider calls.
 
 Read the [CLI reference](docs/cli-reference.md), [installation and demonstration
