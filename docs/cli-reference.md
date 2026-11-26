@@ -291,6 +291,15 @@ Generation preserves the URS. Subsequent generation asks for revision feedback,
 or accepts `--feedback feedback.md`. Expected outcomes remain frozen unless a
 reviewed URS revision changes the corresponding normative requirements.
 
+Missing intended behavior or acceptance criteria remain approval blockers.
+Preparation for a fully defined manual test, such as obtaining a persistent
+browser profile, authorized deployment variants, or evidence needed to select a
+conditional probe, appears separately as **Manual test setup**. Such items use
+`kind: execution_preparation` and identify their manual `case_ids`. Each case
+must retain prerequisites, a complete procedure, and expected results. Approval
+does not supply missing evidence: these checks remain `manual_pending` during
+execution. Setup items cannot be attached to automated cases to bypass blockers.
+
 To answer a question raised only in the IOQ, include its exact ID and your answer
 in that revision feedback, for example `IOQ-Q-01: Use the installed Chromium
 browser.` Then run `provenarium generate --urs urs.yaml --feedback feedback.md`.
@@ -299,6 +308,13 @@ original question, exact supporting feedback quote, and recorded resolution stay
 in the authoring record's edit diagnostics. Autonomous review cannot clear these
 questions. An answer that changes intended application behavior still requires
 a reviewed URS revision before changing protected expected results.
+
+An older question can be reclassified as manual test setup through explicit
+revision feedback naming its ID, the affected manual cases, and the reason it is
+preparation rather than unknown behavior. The typed edit preserves the original
+question and logs the exact feedback quote and before/after classification.
+Legacy unclassified questions continue to block approval. Candidate changes
+also retain question/preparation differences in `changes.json`.
 
 ## Protocol generation checks
 

@@ -118,6 +118,47 @@ async function setup(sessionEcho?: string, storageValue?: string, statusText = '
 }
 
 describe('qualification runtime evidence', () => {
+  it('runs independent automation while defined setup checks remain manual_pending', async () => {
+    const { root, plan, urs } = await setup();
+    plan.cases.push({
+      id: 'C-MANUAL',
+      title: 'Persistent status',
+      classification: 'OQ',
+      requirements: ['R1'],
+      prerequisites: ['Prepare a disposable persistent profile.'],
+      manual: true,
+      manual_procedure: 'Restart the browser and inspect the status.',
+      manual_expected: 'The status remains Ready.',
+      steps: [],
+      citations: [],
+    });
+    plan.obligations[0].manual_case_ids.push('C-MANUAL');
+    plan.questions = [
+      {
+        id: 'SETUP-PROFILE',
+        question: 'Prepare the persistent profile before this check.',
+        kind: 'execution_preparation',
+        requirement: 'R1',
+        case_ids: ['C-MANUAL'],
+      },
+    ];
+    await createCandidate(root, urs, plan, { pdf: false });
+    await approveCandidate(root, { pdf: false });
+    const run = await executePackage(root, undefined, { bindings: {} });
+    expect(run.complete).toBe(true);
+    expect(run.cases.map((c) => [c.id, c.status])).toEqual([
+      ['C1', 'passed'],
+      ['C-MANUAL', 'manual_pending'],
+    ]);
+    const records = (await readFile(join(root, 'runs', run.id, 'observations.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => observationSchema.parse(JSON.parse(line)));
+    expect(
+      records.some((record) => record.case_id === 'C-MANUAL' && record.status === 'passed'),
+    ).toBe(false);
+  });
+
   it('preserves trusted record and artifact metadata when a storage value is a single digit', async () => {
     const { root, plan, urs } = await setup(undefined, '1');
     plan.cases[0].steps[0].evidence.push({ id: 'E2', kind: 'screenshot', required: true });

@@ -11,6 +11,10 @@ export const questionSchema = z.strictObject({
   question: nonempty,
   requirement: z.string().optional(),
 });
+export const planQuestionSchema = questionSchema.extend({
+  kind: z.enum(['requirement_decision', 'execution_preparation']).optional(),
+  case_ids: z.array(id).optional(),
+});
 export const ursQuestionSchema = questionSchema.extend({
   answer: z.string().nullable().optional(),
   resolution: z
@@ -343,7 +347,7 @@ export const planSchema = z.strictObject({
     }),
   ),
   cases: z.array(caseSchema).min(1),
-  questions: z.array(questionSchema).default([]),
+  questions: z.array(planQuestionSchema).default([]),
   fixtures: z
     .array(nonempty)
     .default([])

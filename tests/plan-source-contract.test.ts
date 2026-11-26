@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { caseSchema, planSchema, ursSchema, type Plan, type Urs } from '../src/schema.js';
+import {
+  caseSchema,
+  planQuestionSchema,
+  planSchema,
+  ursQuestionSchema,
+  ursSchema,
+  type Plan,
+  type Urs,
+} from '../src/schema.js';
+import { protocolHtml } from '../src/reports.js';
 import {
   normalizeObligationSources,
   obligationSourceCatalog,
@@ -240,6 +249,107 @@ describe('deterministic source notation repair', () => {
 });
 
 describe('technical errors versus human decisions', () => {
+  it('preserves legacy question objects and their approval blockers without changing URS questions', () => {
+    const { urs, plan } = fixture();
+    const legacy = { id: 'Q-RETENTION', question: 'How long must records persist?' };
+    expect(planQuestionSchema.parse(legacy)).toEqual(legacy);
+    plan.questions = [legacy];
+    expect(planSchema.parse(plan)).toEqual(plan);
+    expect(validatePlan(plan, urs)).toEqual(['Q-RETENTION: How long must records persist?']);
+    expect(
+      ursQuestionSchema.safeParse({ ...legacy, kind: 'execution_preparation', case_ids: ['OQ-1'] })
+        .success,
+    ).toBe(false);
+  });
+
+  it('keeps execution setup visible on manual cases without blocking protocol approval', () => {
+    const { urs, plan } = fixture();
+    plan.cases[0].prerequisites = ['Provide an authorized alternate deployment.'];
+    plan.questions = [
+      {
+        id: 'Q-SETUP',
+        question: 'Provide the alternate deployment before performing isolation checks.',
+        requirement: 'URS-1',
+        kind: 'execution_preparation',
+        case_ids: ['OQ-1'],
+      },
+    ];
+    const original = structuredClone(plan);
+    expect(validatePlanStructure(plan, urs)).toEqual([]);
+    expect(validatePlan(plan, urs)).toEqual([]);
+    expect(plan).toEqual(original);
+    const html = protocolHtml(plan, urs, 'candidate');
+    expect(html).toContain('Preparation for manual checks');
+    expect(html).toContain('Affected manual cases');
+    expect(html).toContain('Provide the alternate deployment before performing isolation checks.');
+    expect(html).toContain('<td>OQ-1</td>');
+    expect(html).toContain('Affected manual checks remain manual_pending');
+    expect(html).toContain('<h3>Expected result</h3><p>The record appears once.</p>');
+    expect(html).toContain('Open questions</h2><p>None recorded.</p>');
+  });
+
+  it.each([
+    { cases: undefined, error: 'execution preparation must identify affected manual cases.' },
+    { cases: [], error: 'execution preparation must identify affected manual cases.' },
+    { cases: ['OQ-1', 'OQ-1'], error: 'execution preparation has duplicate case IDs.' },
+    {
+      cases: ['missing'],
+      error: 'execution preparation case missing must be an existing manual case.',
+    },
+  ])('rejects an invalid execution preparation case list: $cases', ({ cases, error }) => {
+    const { urs, plan } = fixture();
+    plan.cases[0].prerequisites = ['Supply approved deployment configurations.'];
+    plan.questions = [
+      {
+        id: 'Q-SETUP',
+        question: 'Supply test configurations.',
+        kind: 'execution_preparation',
+        case_ids: cases,
+      },
+    ];
+    expect(validatePlan(plan, urs)).toContain(`Q-SETUP: ${error}`);
+  });
+
+  it('does not allow preparation to bypass automated checks, undeclared prerequisites, or requirement coverage', () => {
+    const { urs, plan } = fixture();
+    plan.questions = [
+      {
+        id: 'Q-SETUP',
+        question: 'Supply test configurations.',
+        requirement: 'URS-1',
+        kind: 'execution_preparation',
+        case_ids: ['OQ-1'],
+      },
+    ];
+    expect(validatePlan(plan, urs)).toContain(
+      'Q-SETUP: execution preparation case OQ-1 must declare its prerequisites.',
+    );
+    plan.cases[0].prerequisites = ['Supply test configurations.'];
+    plan.cases[0].requirements = ['OTHER'];
+    expect(validatePlan(plan, urs)).toContain(
+      'Q-SETUP: execution preparation case OQ-1 does not cover its requirement.',
+    );
+    plan.cases[0].requirements = ['URS-1'];
+    plan.cases[0].manual = false;
+    expect(validatePlan(plan, urs)).toContain(
+      'Q-SETUP: execution preparation case OQ-1 must be an existing manual case.',
+    );
+  });
+
+  it('keeps execution preparation IDs in the global ID namespace', () => {
+    const { urs, plan } = fixture();
+    plan.cases[0].prerequisites = ['Supply test configurations.'];
+    plan.questions = [
+      {
+        id: 'OB-1',
+        question: 'Supply test configurations.',
+        kind: 'execution_preparation',
+        case_ids: ['OQ-1'],
+      },
+    ];
+    expect(validatePlan(plan, urs)).toContain('Duplicate plan ID: OB-1');
+  });
+
   it('keeps human questions out of structural diagnostics while preserving approval blockers', () => {
     const { urs, plan } = fixture();
     plan.questions = [

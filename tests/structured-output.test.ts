@@ -197,11 +197,22 @@ describe.each(providers)('%s native schema contracts', (provider) => {
     const plan = planSchema.parse(
       JSON.parse(await readFile('examples/sample-validation/plan.json', 'utf8')),
     );
-    plan.questions = [{ id: 'Q-1', question: 'Is the approved explanation accepted?' }];
+    const manualCase = plan.cases.find((c) => c.manual)!;
+    plan.questions = [
+      { id: 'Q-1', question: 'Is the approved explanation accepted?' },
+      {
+        id: 'Q-PREP',
+        question: 'Which recovery procedure will be supplied for execution?',
+        requirement: manualCase.requirements[0],
+      },
+    ];
     const authorizedRequirementChanges = new Set(plan.cases.flatMap((c) => c.requirements));
     for (const mode of ['review', 'technical'] as const) {
       for (const authorized of [undefined, authorizedRequirementChanges]) {
-        for (const questionResolutionFeedback of [undefined, 'Q-1: approved explanation']) {
+        for (const questionResolutionFeedback of [
+          undefined,
+          'Q-1: approved explanation. Q-PREP: Keep the recovery procedure as manual test preparation.',
+        ]) {
           const schema = makePlanEditsSchema(
             { plan, fixtures: [] },
             { mode, authorizedRequirementChanges: authorized, questionResolutionFeedback },
@@ -214,6 +225,14 @@ describe.each(providers)('%s native schema contracts', (provider) => {
                     question_id: 'Q-1',
                     supporting_quote: questionResolutionFeedback,
                     resolution: 'The preparer approved the explanation.',
+                  },
+                  {
+                    op: 'reclassify_question_as_preparation',
+                    question_id: 'Q-PREP',
+                    case_ids: [manualCase.id],
+                    supporting_quote: questionResolutionFeedback,
+                    resolution:
+                      'Retain the supplied procedure as a prerequisite for manual execution.',
                   },
                 ]
               : [],
@@ -388,13 +407,28 @@ it('rejects OpenAI reference siblings in the final native contract', () => {
 
 it('enforces Anthropic optional and union ceilings before dispatch', () => {
   const schema = z.strictObject(
-    Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`p${i}`, z.string().optional()])),
+    Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`p${i}`, z.string().optional()])),
   );
   const contract = compileStructuredOutput(schema, 'anthropic');
   expect(Object.keys(contract.schema.properties).length - contract.schema.required.length).toBe(24);
+  expect(contract.schema.properties.p24).toEqual(contract.schema.properties.p59);
+  expect(contract.schema.properties.p24.$ref).toMatch(/^#\/\$defs\//);
+  const value = { p0: 'first', p24: 'shared omission contract', p59: 'last' };
+  expect(roundtrip(schema, value, 'anthropic').decoded).toEqual(value);
+  const invalid = contract.encode({ p59: 42 });
+  expect(contract.wireSchema.safeParse(invalid).success).toBe(false);
+  // Sharing equivalent omission wrappers does not raise the union ceiling:
+  // genuinely distinct union contracts must still fit the provider's limit.
   expect(() =>
     compileStructuredOutput(
-      z.strictObject({ ...schema.shape, extra: z.string().optional() }),
+      z.strictObject(
+        Object.fromEntries(
+          Array.from({ length: 17 }, (_, i) => [
+            `p${i}`,
+            z.union([z.literal(`value-${i}`), z.literal(i)]),
+          ]),
+        ),
+      ),
       'anthropic',
     ),
   ).toThrow(/16 union/);

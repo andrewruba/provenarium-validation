@@ -151,6 +151,48 @@ describe('requirements and approval contracts', () => {
     await createCandidate(root, urs, incomplete, { pdf: false });
     await expect(approveCandidate(root, { pdf: false })).rejects.toThrow('expected limit');
   });
+  it('retains an auditable preparation reclassification while preserving all expected results', async () => {
+    const root = await directory();
+    const before = structuredClone(plan);
+    before.cases.push({
+      id: 'OQ-MANUAL',
+      title: 'Persistent browser check',
+      classification: 'OQ',
+      requirements: ['URS-001'],
+      prerequisites: ['Prepare a persistent browser profile.'],
+      manual: true,
+      manual_procedure: 'Save a record and restart the browser.',
+      manual_expected: 'The record remains saved.',
+      steps: [],
+      citations: [],
+    });
+    before.questions = [
+      { id: 'Q-PROFILE', question: 'Which profile will be used?', requirement: 'URS-001' },
+    ];
+    const original = await createCandidate(root, urs, before, { pdf: false });
+    expect((await inspectCandidate(root)).errors.join('\n')).toContain('Q-PROFILE');
+    const after = structuredClone(before);
+    after.questions[0].kind = 'execution_preparation';
+    after.questions[0].case_ids = ['OQ-MANUAL'];
+    const next = await createCandidate(root, urs, after, { pdf: false });
+    expect((await inspectCandidate(root)).errors).toEqual([]);
+    const diff = JSON.parse(await readFile(path.join(next.directory, 'changes.json'), 'utf8'));
+    expect(diff.previous_candidate).toContain(original.id);
+    expect(diff.expectations).toEqual([]);
+    expect(diff.question_changes).toEqual([
+      { id: 'Q-PROFILE', previous: before.questions[0], next: after.questions[0] },
+    ]);
+    expect(
+      JSON.parse(await readFile(path.join(original.directory, 'plan.json'), 'utf8')).questions,
+    ).toEqual(before.questions);
+    const approval = await approveCandidate(root, { pdf: false });
+    const retained = JSON.parse(
+      await readFile(path.join(root, 'packages', approval.package_id, 'plan.json'), 'utf8'),
+    );
+    expect(retained.questions).toEqual(after.questions);
+    expect(retained.cases).toEqual(before.cases);
+  });
+
   it('retains reviewed questions and answers in approved packages without blocking approval', async () => {
     const root = await directory();
     const answered = structuredClone(urs);

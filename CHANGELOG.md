@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Separated missing requirement decisions from preparation for defined manual
+  tests. Protocols retain setup needs and linked cases without blocking approval;
+  those cases remain `manual_pending`. Existing questions stay blocking unless
+  explicitly reclassified, with before/after changes retained for review.
 - Matched protocol step-ID validation to runtime identity: step numbers may repeat
   across test cases, while duplicates within one case remain invalid. Scoped edits
   and their audit records now consistently identify steps by case and step,

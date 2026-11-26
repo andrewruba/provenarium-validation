@@ -58,6 +58,7 @@ export function ursHtml(urs: Urs): string {
   );
 }
 export function protocolHtml(plan: Plan, urs: Urs, identity: string): string {
+  const decisions = plan.questions.filter((q) => q.kind !== 'execution_preparation');
   const cases = plan.cases
     .map(
       (c) =>
@@ -105,17 +106,27 @@ export function protocolHtml(plan: Plan, urs: Urs, identity: string): string {
       .filter((r) => !r.applicable)
       .map((r) => `<p>${e(r.id)} excluded: ${e(r.non_applicability_reason)}</p>`)
       .join('')}<h2>Open questions</h2>${
-      plan.questions.length
+      decisions.length
         ? table(
             ['ID', 'Question'],
-            plan.questions.map((q) => [q.id, q.question]),
+            decisions.map((q) => [q.id, q.question]),
           )
         : '<p>None recorded.</p>'
-    }${cases}<h2>Context references</h2>${table(
+    }${executionPreparationsHtml(plan)}${cases}<h2>Context references</h2>${table(
       ['Source', 'Location', 'SHA-256'],
       plan.context_hashes.map((h) => [h.source, h.location, h.sha256]),
     )}<p class="muted">Context hashes identify material read during authoring; they do not verify alignment with the deployed build.</p>`,
   );
+}
+
+function executionPreparationsHtml(plan: Plan): string {
+  const preparations = plan.questions.filter((q) => q.kind === 'execution_preparation');
+  return preparations.length
+    ? `<h2>Preparation for manual checks</h2><p>These setup and evidence needs do not block protocol approval. Affected manual checks remain manual_pending; approval does not establish that this work is complete.</p>${table(
+        ['ID', 'Preparation or evidence needed', 'Affected manual cases'],
+        preparations.map((q) => [q.id, q.question, (q.case_ids ?? []).join(', ')]),
+      )}`
+    : '';
 }
 export async function renderPdf(html: string, file: string): Promise<void> {
   let browser;
@@ -302,7 +313,7 @@ export async function renderReport(
       )}<h2>Case results</h2>${table(
         ['Case', 'Status', 'Details'],
         run.cases.map((c) => [c.id, c.status, c.message]),
-      )}<h2>Original procedures and expected results</h2>${plan.cases
+      )}${executionPreparationsHtml(plan)}<h2>Original procedures and expected results</h2>${plan.cases
         .map(
           (c) =>
             `<h3>${e(c.id)} — ${e(c.title)}</h3>${

@@ -6,8 +6,8 @@ import {
   caseSchema,
   evidenceSchema,
   locatorSchema,
+  planQuestionSchema,
   planSchema,
-  questionSchema,
   stepSchema,
   type Plan,
   type Urs,
@@ -53,7 +53,7 @@ const operations = [
   z.strictObject({ op: z.literal('add_case_requirement'), case_id: id, requirement_id: id }),
   z.strictObject({ op: z.literal('add_actor'), value: accessSchema }),
   z.strictObject({ op: z.literal('add_actor_case'), actor_id: id, case_id: id }),
-  z.strictObject({ op: z.literal('add_question'), value: questionSchema }),
+  z.strictObject({ op: z.literal('add_question'), value: planQuestionSchema }),
   z.strictObject({ op: z.literal('add_fixture'), value: fixtureSchema }),
   z.strictObject({
     op: z.literal('update_instruction'),
@@ -128,6 +128,13 @@ const questionResolutions = [
     supporting_quote: text,
     resolution: text,
   }),
+  z.strictObject({
+    op: z.literal('reclassify_question_as_preparation'),
+    question_id: id,
+    case_ids: z.array(id).min(1),
+    supporting_quote: text,
+    resolution: text,
+  }),
 ] as const;
 
 /** No operation can delete a case/assertion; predicate revisions require explicit URS changes. */
@@ -194,6 +201,14 @@ export function makePlanEditsSchema(
   const resolvableQuestionIds = base.plan.questions
     .filter((question) => feedbackNamesQuestion(options.questionResolutionFeedback, question.id))
     .map((question) => question.id);
+  const preparationQuestionIds = base.plan.questions
+    .filter(
+      (question) =>
+        question.kind !== 'execution_preparation' &&
+        resolvableQuestionIds.includes(question.id) &&
+        preparationCases(base, question.requirement).length,
+    )
+    .map((question) => question.id);
   const mayResolve = resolvableQuestionIds.length > 0;
   if (options.mode === 'review' && !mayRevise && !mayResolve) return planReviewEditsSchema;
   return z.strictObject({
@@ -206,6 +221,9 @@ export function makePlanEditsSchema(
           ...(mayResolve
             ? [questionResolutions[0].extend({ question_id: z.enum(resolvableQuestionIds) })]
             : []),
+          ...(preparationQuestionIds.length
+            ? [questionResolutions[1].extend({ question_id: z.enum(preparationQuestionIds) })]
+            : []),
         ]),
       )
       .max(100),
@@ -216,6 +234,17 @@ function feedbackNamesQuestion(feedback: string | undefined, questionId: string)
   if (!feedback?.trim()) return false;
   const escaped = questionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?:^|[^A-Za-z0-9_.-])${escaped}(?=$|[^A-Za-z0-9_.-])`).test(feedback);
+}
+
+function preparationCases(base: GeneratedPlanDocument, requirement?: string) {
+  return base.plan.cases.filter(
+    (c) =>
+      c.manual &&
+      c.prerequisites.some((prerequisite) => prerequisite.trim()) &&
+      c.manual_procedure?.trim() &&
+      c.manual_expected?.trim() &&
+      (!requirement || c.requirements.includes(requirement)),
+  );
 }
 
 function diagnosedFields(plan: Plan): Map<string, Set<PredicateField>> {
@@ -295,6 +324,19 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
         question: question.question,
         requirement: question.requirement,
       })),
+    preparation_questions: base.plan.questions
+      .filter(
+        (question) =>
+          question.kind !== 'execution_preparation' &&
+          feedbackNamesQuestion(options.questionResolutionFeedback, question.id),
+      )
+      .map((question) => ({
+        id: question.id,
+        question: question.question,
+        requirement: question.requirement,
+        manual_case_ids: preparationCases(base, question.requirement).map((c) => c.id),
+      }))
+      .filter((question) => question.manual_case_ids.length),
     requirement_revision_cases: base.plan.cases
       .filter(
         (c) =>
@@ -349,7 +391,7 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
     input_declarations_repairable:
       options.mode === 'technical' && invalidInputDeclarations(base, options.urs),
     instructions:
-      'Use only scoped edits. Existing IDs, assertions, valid expected values, manual expectations, coverage links, and fixture contents are preserved by application code. Propose a new explicit question if an intended result needs human clarification; never rewrite it. Repair operations are available only for the listed technical faults. Resolve only listed resolvable_questions using an exact supporting quote from the explicit human feedback and a resolution grounded in that quote. Resolution removes the active question and retains the original question, resolution, and quote in the change record; it does not authorize changes to assertions or manual expectations.',
+      'Use only scoped edits. Existing IDs, assertions, valid expected values, manual expectations, coverage links, and fixture contents are preserved by application code. Propose a new explicit question if an intended result needs human clarification; never rewrite it. Repair operations are available only for the listed technical faults. Resolve only listed resolvable_questions using an exact supporting quote from the explicit human feedback and a resolution grounded in that quote. Resolution removes the active question and retains the original question, resolution, and quote in the change record; it does not authorize changes to assertions or manual expectations. Reclassify only listed preparation_questions whose human feedback confirms a setup need for the listed existing manual cases, such as supplying a deployment or collecting applicability evidence. Never reclassify an unknown intended behavior or expected result. Reclassification retains the complete question and attaches it to those manual cases; it does not satisfy the prerequisite or mark any test passed. New execution_preparation questions must likewise identify affected manual cases with defined procedures and expected results.',
   };
 }
 
@@ -526,7 +568,8 @@ export function applyPlanEdits(
         record(edit.op, edit.value.id, undefined, edit.value);
         break;
       }
-      case 'resolve_question': {
+      case 'resolve_question':
+      case 'reclassify_question_as_preparation': {
         const original =
           base.plan.questions.find((question) => question.id === edit.question_id) ??
           fail(`Unknown original question ${edit.question_id}.`);
@@ -539,15 +582,42 @@ export function applyPlanEdits(
             `Question ${original.id} supporting quote must occur exactly in the supplied human feedback.`,
             { code: 'question_resolution_not_grounded' },
           );
-        write(`question/${original.id}`);
-        record(edit.op, original.id, original, {
-          question_id: original.id,
-          resolution: edit.resolution,
-          supporting_quote: edit.supporting_quote,
-        });
-        value.plan.questions = value.plan.questions.filter(
-          (question) => question.id !== original.id,
-        );
+        if (edit.op === 'reclassify_question_as_preparation') {
+          unique(edit.case_ids, 'preparation case links');
+          const eligible = new Set(preparationCases(base, original.requirement).map((c) => c.id));
+          if (
+            original.kind === 'execution_preparation' ||
+            edit.case_ids.some((caseId) => !eligible.has(caseId))
+          )
+            fail(
+              `Question ${original.id} can only become preparation for existing manual cases with prerequisites, defined procedures and expected results, and the linked requirement.`,
+              { code: 'question_preparation_invalid_cases' },
+            );
+          write(`question/${original.id}`);
+          const replacement = planQuestionSchema.parse({
+            ...original,
+            kind: 'execution_preparation',
+            case_ids: edit.case_ids,
+          });
+          value.plan.questions = value.plan.questions.map((question) =>
+            question.id === original.id ? replacement : question,
+          );
+          record(edit.op, original.id, original, {
+            question: replacement,
+            resolution: edit.resolution,
+            supporting_quote: edit.supporting_quote,
+          });
+        } else {
+          write(`question/${original.id}`);
+          record(edit.op, original.id, original, {
+            question_id: original.id,
+            resolution: edit.resolution,
+            supporting_quote: edit.supporting_quote,
+          });
+          value.plan.questions = value.plan.questions.filter(
+            (question) => question.id !== original.id,
+          );
+        }
         break;
       }
       case 'add_fixture': {

@@ -887,3 +887,162 @@ describe('explicit human resolution of protocol questions', () => {
     expect(original).toEqual(withQuestions());
   });
 });
+
+describe('reviewed execution preparation for manual cases', () => {
+  const question = {
+    id: 'Q-RESTART-SETUP',
+    question: 'Which persistent browser profile will be used for restart testing?',
+    requirement: 'URS-2',
+  };
+  const feedback =
+    'Q-RESTART-SETUP: Retain the need for a persistent profile as preparation for OQ-04; the required persistence behavior is already defined.';
+  const proposal = {
+    edits: [
+      {
+        op: 'reclassify_question_as_preparation',
+        question_id: question.id,
+        case_ids: ['OQ-04'],
+        supporting_quote: feedback,
+        resolution: 'Record the profile before executing the manual restart test.',
+      },
+    ],
+  };
+  const withPreparation = () => {
+    const original = baseline();
+    original.plan.cases[1].prerequisites = ['Use a disposable persistent browser profile.'];
+    original.plan.questions = [structuredClone(question)];
+    return original;
+  };
+  const reviewed = { ...options, questionResolutionFeedback: feedback };
+
+  it('retains the full question and audit quote without changing expectations or coverage', () => {
+    const original = withPreparation();
+    const before = structuredClone(original);
+    const result = applyPlanEdits(original, proposal, reviewed);
+    const classified = { ...question, kind: 'execution_preparation', case_ids: ['OQ-04'] };
+    expect(result.value.plan.questions).toEqual([classified]);
+    expect(result.changes).toEqual([
+      {
+        op: 'reclassify_question_as_preparation',
+        target: question.id,
+        before: question,
+        after: {
+          question: classified,
+          resolution: proposal.edits[0].resolution,
+          supporting_quote: feedback,
+        },
+      },
+    ]);
+    expect(result.value.plan.cases).toEqual(before.plan.cases);
+    expect(result.value.plan.obligations).toEqual(before.plan.obligations);
+    expect(result.value.fixtures).toEqual(before.fixtures);
+    expect(original).toEqual(before);
+    expect(validatePlanStructure(result.value.plan, urs)).toEqual([]);
+    expect(planEditCatalog(original, reviewed).preparation_questions).toEqual([
+      {
+        ...question,
+        manual_case_ids: ['OQ-04'],
+      },
+    ]);
+  });
+
+  it.each([undefined, '', 'Review all questions.', 'Q-RESTART-SETUP-2: Treat as preparation.'])(
+    'requires explicit human feedback naming the exact question: %s',
+    (questionResolutionFeedback) => {
+      const original = withPreparation();
+      const unauthorized = { ...options, questionResolutionFeedback };
+      expect(makePlanEditsSchema(original, unauthorized).safeParse(proposal).success).toBe(false);
+      expect(planEditCatalog(original, unauthorized).preparation_questions).toEqual([]);
+      expect(() => applyPlanEdits(original, proposal, unauthorized)).toThrow(PlanEditError);
+      expect(original).toEqual(withPreparation());
+    },
+  );
+
+  it('rejects an invented supporting quote', () => {
+    const original = withPreparation();
+    expect(() =>
+      applyPlanEdits(
+        original,
+        {
+          edits: [{ ...proposal.edits[0], supporting_quote: 'The profile has been supplied.' }],
+        },
+        reviewed,
+      ),
+    ).toThrow(/supporting quote must occur exactly/);
+    expect(original).toEqual(withPreparation());
+  });
+
+  it.each([[], ['missing'], ['OQ-01'], ['OQ-04', 'OQ-04']])(
+    'rejects missing, unknown, automated, or duplicate manual case links %j',
+    (case_ids) => {
+      const original = withPreparation();
+      expect(() =>
+        applyPlanEdits(
+          original,
+          {
+            edits: [{ ...proposal.edits[0], case_ids }],
+          },
+          reviewed,
+        ),
+      ).toThrow(PlanEditError);
+      expect(original).toEqual(withPreparation());
+    },
+  );
+
+  it('does not expose reclassification when the existing manual case lacks a defined test or prerequisite', () => {
+    for (const field of [
+      'prerequisites',
+      'manual_procedure',
+      'manual_expected',
+      'requirements',
+    ] as const) {
+      const original = withPreparation();
+      if (field === 'prerequisites' || field === 'requirements') original.plan.cases[1][field] = [];
+      else original.plan.cases[1][field] = '';
+      expect(makePlanEditsSchema(original, reviewed).safeParse(proposal).success).toBe(false);
+      expect(planEditCatalog(original, reviewed).preparation_questions).toEqual([]);
+      expect(() => applyPlanEdits(original, proposal, reviewed)).toThrow(PlanEditError);
+    }
+  });
+
+  it('accepts new typed preparation questions only when their affected cases validate', () => {
+    const original = withPreparation();
+    original.plan.questions = [];
+    const value = { ...question, kind: 'execution_preparation', case_ids: ['OQ-04'] };
+    const result = applyPlanEdits(original, { edits: [{ op: 'add_question', value }] }, options);
+    expect(result.value.plan.questions).toEqual([value]);
+    expect(() =>
+      applyPlanEdits(
+        original,
+        {
+          edits: [{ op: 'add_question', value: { ...value, case_ids: ['OQ-01'] } }],
+        },
+        options,
+      ),
+    ).toThrow(PlanEditError);
+  });
+
+  it('rejects conflicting classification and any accompanying expected-result change atomically', () => {
+    const original = withPreparation();
+    expect(() =>
+      applyPlanEdits(original, { edits: [...proposal.edits, ...proposal.edits] }, reviewed),
+    ).toThrow(/Conflicting duplicate edit/);
+    expect(() =>
+      applyPlanEdits(
+        original,
+        {
+          edits: [
+            ...proposal.edits,
+            {
+              op: 'revise_manual_expected',
+              case_id: 'OQ-04',
+              expected: 'Any record is acceptable.',
+            },
+          ],
+        },
+        reviewed,
+      ),
+    ).toThrow(PlanEditError);
+    expect(original).toEqual(withPreparation());
+  });
+});

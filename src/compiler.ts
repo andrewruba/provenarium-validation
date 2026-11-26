@@ -154,6 +154,30 @@ export function validatePlanStructure(plan: Plan, urs: Urs): string[] {
       errors.push(
         `${question.id}: question requirement must name an existing URS requirement. Tool/runtime schema problems must be repaired by authoring, not assigned as user decisions.`,
       );
+    if (question.kind === 'execution_preparation') {
+      const affected = question.case_ids ?? [];
+      if (!affected.length)
+        errors.push(`${question.id}: execution preparation must identify affected manual cases.`);
+      if (new Set(affected).size !== affected.length)
+        errors.push(`${question.id}: execution preparation has duplicate case IDs.`);
+      for (const caseId of affected) {
+        const target = cases.get(caseId);
+        if (!target?.manual)
+          errors.push(
+            `${question.id}: execution preparation case ${caseId} must be an existing manual case.`,
+          );
+        else {
+          if (!target.prerequisites.length)
+            errors.push(
+              `${question.id}: execution preparation case ${caseId} must declare its prerequisites.`,
+            );
+          if (question.requirement && !target.requirements.includes(question.requirement))
+            errors.push(
+              `${question.id}: execution preparation case ${caseId} does not cover its requirement.`,
+            );
+        }
+      }
+    }
   }
   if (plan.urs_revision !== urs.document.revision)
     errors.push('Plan does not match the URS revision.');
@@ -322,7 +346,9 @@ export function validatePlanStructure(plan: Plan, urs: Urs): string[] {
 export function validatePlan(plan: Plan, urs: Urs): string[] {
   return [
     ...validatePlanStructure(plan, urs),
-    ...plan.questions.map((question) => `${question.id}: ${question.question}`),
+    ...plan.questions
+      .filter((question) => question.kind !== 'execution_preparation')
+      .map((question) => `${question.id}: ${question.question}`),
     ...(unresolvedQuestions(urs).length ? ['Resolve URS questions before approval.'] : []),
   ];
 }

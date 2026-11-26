@@ -14,6 +14,7 @@ import {
   providerSchema,
   thoroughnessSchema,
   type Bindings,
+  type Plan,
 } from './schema.js';
 import { atomicWrite, exists, readJson, safePath, sha256, writeJson, writeNew } from './files.js';
 import {
@@ -70,6 +71,15 @@ const program = new Command()
   .option('--project <directory>', 'Validation project directory', '.');
 function root(command: Command) {
   return path.resolve(command.optsWithGlobals().project as string);
+}
+function showExecutionPreparations(plan: Plan) {
+  const preparations = plan.questions.filter(
+    (question) => question.kind === 'execution_preparation',
+  );
+  if (preparations.length)
+    console.log(
+      `Manual test setup — these cases remain manual_pending until their evidence is recorded:\n${preparations.map((question) => `- ${question.id} [${question.case_ids?.join(', ')}]: ${question.question}`).join('\n')}`,
+    );
 }
 function terminal() {
   if (!process.stdin.isTTY)
@@ -780,8 +790,11 @@ discovery(
     `Candidate ${candidate.id}\nReview: ${path.join(candidate.directory, 'ioq.html')}\nChanges: ${path.join(candidate.directory, 'changes.json')}\nAccess: ${plan.access.map((a) => `${a.id} (${a.role}/${a.state})`).join(', ') || 'none'}`,
   );
   const inspected = await inspectCandidate(directory);
+  showExecutionPreparations(inspected.plan);
   if (inspected.errors.length)
     console.log(`Approval blockers:\n${inspected.errors.map((e) => `- ${e}`).join('\n')}`);
+  else
+    console.log(`Review the protocol, then approve it: ${projectCommand(directory, ['approve'])}`);
 });
 program
   .command('approve')
@@ -798,6 +811,7 @@ program
       await safePath(candidate.directory, 'changes.json'),
     );
     console.log(diff.summary.join('\n'));
+    showExecutionPreparations(candidate.plan);
     if (diff.expectations.length)
       console.log(
         `Expected-result changes requiring review:\n${JSON.stringify(diff.expectations, null, 2)}`,

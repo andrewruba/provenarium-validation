@@ -101,6 +101,21 @@ placeholders, duplicate IDs, and other structural issues are separate from
 question resolution. Correct those issues in the working requirements, then check again.
 Refresh existing HTML/PDF views with `provenarium urs render urs.yaml` after edits.
 
+## An IOQ asks for deployment evidence or test environments before approval
+
+First distinguish unknown expected behavior from setup for an already defined
+test. Missing acceptance criteria still block approval. Obtaining a disposable
+profile, authorized deployment variants, or build evidence for a conditional
+precision probe can be preparation for manual execution when the procedure and
+expected outcomes are already defined.
+
+New generation retains these items under **Manual test setup** with their manual
+case IDs. Review and approve the planned protocol normally; the affected checks
+remain `manual_pending`, and missing environments or evidence are not passes.
+Existing unclassified questions remain blockers until an explicit reviewed
+revision reclassifies them. No requirements, cases, or expected results should
+be deleted to remove a setup blocker.
+
 ## Protocol generation stops on “Duplicate plan ID 01”
 
 Older versions required step IDs to be unique across the entire protocol, even

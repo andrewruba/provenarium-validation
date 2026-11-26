@@ -275,6 +275,45 @@ it('publishes a structurally valid candidate while retaining genuine product que
   expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain('Approval blockers:');
 });
 
+it('shows defined manual-test preparation separately from approval blockers', async () => {
+  const value = candidate();
+  value.plan.cases.push({
+    id: 'OQ-MANUAL',
+    title: 'Persistent browser check',
+    classification: 'OQ',
+    requirements: ['URS-001'],
+    prerequisites: ['Prepare a disposable browser profile.'],
+    manual: true,
+    manual_procedure: 'Restart and inspect the field.',
+    manual_expected: 'The Sample ID field remains visible.',
+    steps: [],
+    citations: [],
+  });
+  value.plan.questions = [
+    {
+      id: 'PREP-PROFILE',
+      question: 'Prepare a disposable persistent browser profile.',
+      requirement: 'URS-001',
+      kind: 'execution_preparation',
+      case_ids: ['OQ-MANUAL'],
+    },
+  ];
+  const root = await runCli(value);
+  expect(process.exitCode).toBeUndefined();
+  const output = vi.mocked(console.log).mock.calls.flat().join('\n');
+  expect(output).toContain('Manual test setup');
+  expect(output).toContain('PREP-PROFILE [OQ-MANUAL]');
+  expect(output).toContain('manual_pending');
+  expect(output).not.toContain('Approval blockers:');
+  expect(output).toContain('Review the protocol, then approve it:');
+  const project = await loadProject(root);
+  const stored = JSON.parse(
+    await readFile(join(root, project.current_candidate!, 'questions.json'), 'utf8'),
+  );
+  expect(stored.questions).toEqual(value.plan.questions);
+  expect(stored.validation_errors).toEqual([]);
+});
+
 it('persists redacted rejected responses and field diagnostics when schema corrections are exhausted', async () => {
   const malformed = candidate();
   malformed.plan.cases[0].classification = 'PQ' as never;

@@ -73,6 +73,20 @@ function changes(previous: { urs: Urs; plan: Plan } | undefined, urs: Urs, plan:
   );
   compare('Case', previous.plan.cases, plan.cases);
   compare('Clause', previous.plan.obligations, plan.obligations);
+  compare('Protocol question or preparation', previous.plan.questions, plan.questions);
+  const previousQuestions = new Map(
+    previous.plan.questions.map((question) => [question.id, question]),
+  );
+  const nextQuestions = new Map(plan.questions.map((question) => [question.id, question]));
+  const questionChanges = [
+    ...new Set([...previousQuestions.keys(), ...nextQuestions.keys()]),
+  ].flatMap((id) => {
+    const before = previousQuestions.get(id) ?? null;
+    const after = nextQuestions.get(id) ?? null;
+    return JSON.stringify(before) === JSON.stringify(after)
+      ? []
+      : [{ id, previous: before, next: after }];
+  });
   const before = new Map(
     previous.plan.cases.flatMap((c) => c.steps.flatMap((s) => s.assertions)).map((a) => [a.id, a]),
   );
@@ -91,6 +105,7 @@ function changes(previous: { urs: Urs; plan: Plan } | undefined, urs: Urs, plan:
   return {
     summary: summary.length ? summary : ['No requirement, clause, or case changes.'],
     expectations,
+    question_changes: questionChanges,
   };
 }
 export async function createCandidate(

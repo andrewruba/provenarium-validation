@@ -814,6 +814,7 @@ export async function generatePlan(
     const prompt =
       BASE +
       '\nRetained URS questions with accepted resolution records document human decisions. Preserve those decisions and do not copy them into unresolved plan questions. New uncertainties must use new question IDs.' +
+      '\nDistinguish unknown required behavior from preparation for a defined manual test. Use question kind requirement_decision for missing intended behavior, acceptance criteria, or independent expected results; these block protocol approval. Use kind execution_preparation with case_ids only for concrete setup or evidence collection already described in the linked manual cases, such as obtaining authorized deployment variants or identifying which conditional precision probes apply. Each linked case must retain prerequisites, a complete procedure, and defined expected results; its execution remains manual_pending until evidence is recorded. Do not invent a new approval gate merely because execution setup has not been completed. Never label unknown expected behavior as setup, link setup to automated cases, remove coverage, or claim missing evidence was obtained. Unmatched source/build information is provenance uncertainty, not a reason to reopen settled requirements. Preserve it in the affected manual test preparation when the URS already defines the conditional behavior.' +
       '\n' +
       PLAN_INPUT_INSTRUCTIONS +
       '\nAuthor the IOQ plan and text fixtures. Copy obligation source strings exactly from obligation_sources for the linked requirement. The runtime_contract defines supported binding and actor syntax; internal schema, source bindings, file paths, and runtime compatibility are generator responsibilities, never questions for the user. Use only supported typed operations. Every automated assertion maps to a numbered step and requirement clause; manual cases need explicit procedure and expected result. Prefer automated form entry, validation, record and CSV checks whenever supported. Read-only discovery limits exploration now, not the synthetic interactions authored for later approved execution. Use manual procedures only for genuinely unsupported operations or unavailable evidence, such as a full browser restart; isolate those checks so they do not turn unrelated browser checks into manual work. Evidence requests must support the claim. Include an accurate non-secret actor inventory with role/state and fresh-login versus reusable-session needs. Start each independent case from declared prerequisites. Do not embed credential values. Only genuine missing intended behavior or evidence belongs in questions, linked to an existing requirement where applicable. Numeric expected results require supplied independent values or transparent derivations from the reviewed URS equations and unit equivalences. Where the URS permits hand calculations, retain explicit arithmetic and expected display strings in a generated text fixture for human review. Do not copy application outputs or source-code results as an oracle. Do not invent mandatory preparer identities, separate reviewer assignments, approval gates, or external attachments that the URS does not require; the normal protocol approval reviews proposed derivations. Model-generated code is forbidden. Locators must be supported by observations. Include plan schema/runtime version 1. Context hashes are assigned by the caller. When selected context informs a case, include case-level citations using the supplied source ID and exact supporting location; do not invent sources or cite irrelevant material. Assertion variable paths use names established by read/request/download actions; request results expose status and body. Never assume implementation/database inspection is evidence.';
@@ -828,6 +829,8 @@ export async function generatePlan(
       obligation_sources: obligationSourceCatalog(options.urs),
       available_reference_files: inputCatalog.references,
       runtime_contract: {
+        question_kinds:
+          'requirement_decision (also the legacy default) blocks approval. execution_preparation is a retained setup item linked through nonempty case_ids to fully specified manual cases with prerequisites; it does not complete those cases or change their expected results.',
         id_scope:
           'Step IDs are unique within each case; different cases may each use 01, 02, etc. Address a step by case_id and step_id together. Case, assertion, evidence, actor, obligation, and question IDs must remain globally unique across the plan.',
         source_syntax:
@@ -1056,7 +1059,11 @@ export async function generatePlan(
         ),
       );
     }
-    questions.push(...value.plan.questions.map((q) => `${q.id}: ${q.question}`));
+    questions.push(
+      ...value.plan.questions
+        .filter((q) => q.kind !== 'execution_preparation')
+        .map((q) => `${q.id}: ${q.question}`),
+    );
     questions.push(...validatePlan(value.plan, options.urs));
     if (!discoveryComplete)
       value.plan.questions.push({

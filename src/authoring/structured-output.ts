@@ -445,6 +445,19 @@ export function compileStructuredOutput<T>(schema: z.ZodType<T>, provider: Struc
   }) as JsonSchema;
   const definitions: Record<string, JsonSchema> = {};
   const building = new Set<string>();
+  const omissionDefinitions = new Map<string, string>();
+  const shareOmission = (node: JsonSchema): JsonSchema => {
+    const canonical = JSON.stringify(node);
+    let name = omissionDefinitions.get(canonical);
+    if (!name) {
+      let index = omissionDefinitions.size;
+      do name = `__provenarium_optional_${index++}`;
+      while (name in definitions || name in (original.$defs ?? {}));
+      omissionDefinitions.set(canonical, name);
+      definitions[name] = node;
+    }
+    return { $ref: `#/$defs/${name}` };
+  };
   // Claude permits native optional properties, but caps them at 24 and unions at 16.
   // Only excess optional fields need OpenAI's explicit omission representation.
   let nativeOptionalFields = 0;
@@ -570,6 +583,10 @@ export function compileStructuredOutput<T>(schema: z.ZodType<T>, provider: Struc
               OMIT,
               'Use null when this optional field is unused; otherwise supply its typed value.',
             );
+          // Anthropic counts union definitions, even identical inline nullable
+          // wrappers. Share the complete typed omission contract without erasing
+          // field guidance or relaxing the provider's union limit.
+          if (provider === 'anthropic') transformed = shareOmission(transformed);
         }
         result.properties[key] = transformed;
       }

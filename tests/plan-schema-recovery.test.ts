@@ -152,6 +152,42 @@ function inputAt(fetchImpl: ReturnType<typeof transport>, index: number, provide
 }
 
 it.each(['openai', 'anthropic'] as const)(
+  '%s retains defined manual-test preparation without reopening requirements',
+  async (provider) => {
+    const draft = candidate();
+    draft.plan.cases.push({
+      id: 'OQ-MANUAL',
+      title: 'Persistent browser check',
+      classification: 'OQ',
+      requirements: ['URS-001'],
+      prerequisites: ['Prepare a disposable persistent profile.'],
+      manual: true,
+      manual_procedure: 'Restart the browser and inspect the field.',
+      manual_expected: 'The Sample ID field remains visible.',
+      steps: [],
+      citations: [],
+    });
+    draft.plan.questions = [
+      {
+        id: 'SETUP-PROFILE',
+        question: 'Prepare the persistent profile before this check.',
+        kind: 'execution_preparation',
+        requirement: 'URS-001',
+        case_ids: ['OQ-MANUAL'],
+      },
+    ];
+    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, reviewed], { provider });
+    expect(result.incomplete).toBe(false);
+    expect(result.value).toEqual(draft);
+    expect(result.questions).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    const input = inputAt(fetchImpl, 1, provider);
+    expect(input.runtime_contract.question_kinds).toContain('execution_preparation');
+    expect(input.runtime_contract.question_kinds).toContain('does not complete');
+  },
+);
+
+it.each(['openai', 'anthropic'] as const)(
   'accepts repeated case-local step numbers from %s without paid repair requests',
   async (provider) => {
     const draft = candidate();
