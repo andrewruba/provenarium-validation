@@ -1,3 +1,4 @@
+import { providerOutputText } from './provider-fixture.js';
 import { describe, expect, it, vi } from 'vitest';
 import { planSchema, ursSchema } from '../src/schema.js';
 import { draftUrs, generatePlan, proposeUrsResolution, reviewUrs } from '../src/authoring/index.js';
@@ -92,7 +93,7 @@ function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
     const value = values.shift();
     if (value instanceof Error) throw value;
     if (value === undefined) throw new Error('Unexpected provider call');
-    const text = JSON.stringify({ payload: JSON.stringify(value) });
+    const text = providerOutputText(_options, value);
     return new Response(
       JSON.stringify(
         provider === 'openai'
@@ -564,8 +565,7 @@ describe('authoring workflows', () => {
     }
   });
   it('does not change expected outcomes to make rehearsal or feedback pass', async () => {
-    const changed = structuredClone(plan);
-    changed.cases[0].steps[0].assertions[0].expected = false;
+    const forbidden = { edits: [{ op: 'revise_assertion', assertion_id: 'A-1', expected: false }] };
     const result = await generatePlan({
       root: '/tmp',
       provider: 'openai',
@@ -576,11 +576,12 @@ describe('authoring workflows', () => {
       feedback: 'Make it pass',
       fetchImpl: transport('openai', [
         { action: 'finish' },
-        ...Array.from({ length: 3 }, () => ({ plan: changed, fixtures: [] })),
+        ...Array.from({ length: 3 }, () => forbidden),
       ]),
     });
     expect(result.incomplete).toBe(true);
-    expect(result.questions.join()).toContain('expected result');
+    expect(result.questions.join()).toMatch(/expected|reviewed|requirement|protect/i);
+    expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
   });
   it('keeps unknown requirements explicit in generated candidates', async () => {
     const unresolved = structuredClone(urs);
@@ -607,9 +608,7 @@ describe('authoring workflows', () => {
     revisedUrs.document.revision = '2';
     revisedUrs.families[0].requirements[0].statement =
       'The sample receipt form shall hide Sample ID.';
-    const revisedPlan = structuredClone(plan);
-    revisedPlan.urs_revision = '2';
-    revisedPlan.cases[0].steps[0].assertions[0].expected = false;
+    const revision = { edits: [{ op: 'revise_assertion', assertion_id: 'A-1', expected: false }] };
     const result = await generatePlan({
       root: '/tmp',
       provider: 'openai',
@@ -620,7 +619,7 @@ describe('authoring workflows', () => {
       url: 'http://localhost:3210',
       fetchImpl: transport('openai', [
         { action: 'finish' },
-        { plan: revisedPlan, fixtures: [] },
+        revision,
         { findings: [], summary: 'Reviewed requirement change' },
       ]),
     });
@@ -638,11 +637,12 @@ describe('authoring workflows', () => {
       url: 'http://localhost:3210',
       fetchImpl: transport('openai', [
         { action: 'finish' },
-        ...Array.from({ length: 3 }, () => ({ plan: revisedPlan, fixtures: [] })),
+        ...Array.from({ length: 3 }, () => revision),
       ]),
     });
     expect(unchanged.incomplete).toBe(true);
-    expect(unchanged.questions.join()).toContain('expected result');
+    expect(unchanged.questions.join()).toMatch(/expected|reviewed|requirement|protect/i);
+    expect(unchanged.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
   });
   it('rejects unsupported executable provider actions before executing anything', async () => {
     const requests = transport(

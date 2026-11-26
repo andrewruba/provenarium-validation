@@ -115,6 +115,12 @@ do not change the expected result merely to match an observed output.
 
 ## Provider output failed local schema validation
 
+Current authoring supplies the actual document schema to the provider's native
+structured-output API. Earlier versions constrained only a `payload` string and
+validated the document encoded inside it afterward. Local validation remains
+necessary for requirement links, expected-value protection, and other rules
+that structural schemas cannot establish.
+
 Older versions discarded the rejected response and its field-level errors before
 the protocol correction loop could inspect them. A retained record containing
 only that generic message cannot reveal which field failed; the original output
@@ -134,6 +140,12 @@ validation details needed to investigate. Refusals, incomplete provider output,
 and uncertain network failures do not trigger automatic schema retries.
 
 ## A correction changed or removed an expected result
+
+Protocol revisions now return typed edits rather than replacement documents.
+Unchanged assertions, manual expected text, IDs, and requirement links are kept
+by the application, rather than copied back by the model. The edit vocabulary
+does not permit deleting existing checks or rewriting protected expectations.
+Unsupported edits are rejected atomically and retained in diagnostics.
 
 Older generation could author a regex under `matches`, whose runtime supports
 only literal text and `*` wildcards. A long pattern then failed validation, but
@@ -157,6 +169,17 @@ Update the CLI and rerun generation. Do not change an intended requirement just
 to accommodate a malformed generated predicate. If a correction remains blocked,
 inspect the printed authoring record's `diagnostics` for the specific protected
 expectation or coverage change.
+
+## An answered IOQ question still blocks approval
+
+For a question raised in the IOQ, put its exact ID and answer in the revision
+feedback, such as `IOQ-Q-01: Use the installed Chromium browser.` Rerun
+`provenarium generate --urs urs.yaml --feedback feedback.md` and review the new
+candidate. The original question, supporting quote, and resolution remain in
+the authoring record's diagnostics after the active blocker is removed.
+Autonomous review cannot dismiss questions. If your answer changes intended
+application behavior or an expected result, first update and review the URS
+revision; feedback alone cannot authorize that change.
 
 ## The CLI reports missing Chromium
 

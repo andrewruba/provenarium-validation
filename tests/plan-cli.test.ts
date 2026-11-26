@@ -1,9 +1,11 @@
+import { providerOutputText } from './provider-fixture.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { stringify } from 'yaml';
-import { planSchema, ursSchema } from '../src/schema.js';
+import { planSchema, ursSchema, type Plan, type Urs } from '../src/schema.js';
+import { createCandidate, loadProject } from '../src/project.js';
 
 const mocks = vi.hoisted(() => ({
   generatePlan: vi.fn(),
@@ -127,15 +129,36 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function runCli(value: ReturnType<typeof candidate>, providerValues?: unknown[]) {
+async function runCli(
+  value: ReturnType<typeof candidate>,
+  providerValues?: unknown[],
+  prior?: {
+    plan: Plan;
+    fixtures: { path: string; content: string | Buffer }[];
+    urs?: Urs;
+    nextUrs?: Urs;
+    projectFiles?: Record<string, string | Buffer>;
+  },
+) {
   const root = await mkdtemp(join(tmpdir(), 'provenarium plan CLI '));
   roots.push(root);
-  await writeFile(join(root, 'urs.yaml'), stringify(urs));
+  await writeFile(join(root, 'urs.yaml'), stringify(prior?.nextUrs ?? urs));
+  for (const [name, contents] of Object.entries(prior?.projectFiles ?? {})) {
+    await mkdir(dirname(join(root, name)), { recursive: true });
+    await writeFile(join(root, name), contents);
+  }
+  if (prior) {
+    await createCandidate(root, prior.urs ?? urs, prior.plan, {
+      files: Object.fromEntries(prior.fixtures.map((fixture) => [fixture.path, fixture.content])),
+      pdf: false,
+    });
+    await writeFile(join(root, 'feedback.txt'), 'Add a second manual accessibility review.');
+  }
   if (providerValues) {
     const { generatePlan } = await vi.importActual<typeof import('../src/authoring/index.js')>(
       '../src/authoring/index.js',
     );
-    mocks.fetchImpl.mockImplementation(async () => {
+    mocks.fetchImpl.mockImplementation(async (_url: unknown, requestOptions?: RequestInit) => {
       const output = providerValues.shift();
       if (output === undefined) throw new Error('Unexpected additional provider request.');
       return new Response(
@@ -148,7 +171,7 @@ async function runCli(value: ReturnType<typeof candidate>, providerValues?: unkn
               content: [
                 {
                   type: 'output_text',
-                  text: JSON.stringify({ payload: JSON.stringify(output) }),
+                  text: providerOutputText(requestOptions, output),
                 },
               ],
             },
@@ -184,6 +207,7 @@ async function runCli(value: ReturnType<typeof candidate>, providerValues?: unkn
     'quick',
     '--yes',
     '--no-pdf',
+    ...(prior ? ['--feedback', 'feedback.txt'] : []),
   ];
   await import('../src/cli.js');
   return root;
@@ -307,4 +331,131 @@ it('publishes a repaired plan without turning technical diagnostics into approva
   expect(questions.questions).toEqual([]);
   expect(questions.validation_errors).toEqual([]);
   expect(vi.mocked(console.log).mock.calls.flat().join('\n')).not.toContain('Approval blockers:');
+});
+
+it('loads existing fixture and generated reference contents and preserves them through scoped revision', async () => {
+  const value = candidate();
+  value.plan.fixtures = ['fixtures/sample.csv'];
+  value.plan.references = ['fixtures/derivation.txt'];
+  const fixtures = [
+    { path: 'fixtures/sample.csv', content: '\uFEFFsample,value\r\nα,1.250\r\n' },
+    { path: 'fixtures/derivation.txt', content: 'Accepted derivation: 5 ÷ 4 = 1.250.\r\n' },
+  ];
+  const newCase = {
+    ...structuredClone(value.plan.cases[0]),
+    id: 'OQ-02',
+    title: 'Additional manual accessibility review',
+  };
+  const root = await runCli(
+    value,
+    [
+      { action: 'finish' },
+      {
+        edits: [
+          { op: 'add_case', value: newCase },
+          {
+            op: 'add_obligation',
+            value: {
+              ...structuredClone(value.plan.obligations[0]),
+              id: 'OB-02',
+              manual_case_ids: ['OQ-02'],
+            },
+          },
+        ],
+      },
+      { findings: [], summary: 'Coverage is complete.' },
+    ],
+    { plan: value.plan, fixtures },
+  );
+
+  expect(process.exitCode).toBeUndefined();
+  expect(console.error).not.toHaveBeenCalled();
+  expect(mocks.generatePlan.mock.calls[0][0].existingFixtures).toEqual(fixtures);
+  expect(mocks.fetchImpl).toHaveBeenCalledTimes(3);
+  const project = await loadProject(root);
+  const revisedDirectory = join(root, project.current_candidate!);
+  const revised = planSchema.parse(
+    JSON.parse(await readFile(join(revisedDirectory, 'plan.json'), 'utf8')),
+  );
+  expect(revised.fixtures).toEqual(value.plan.fixtures);
+  expect(revised.references).toEqual(value.plan.references);
+  expect(revised.cases[0]).toEqual(value.plan.cases[0]);
+  expect(revised.cases[1]).toEqual(newCase);
+  expect(revised.obligations[0]).toEqual(value.plan.obligations[0]);
+  for (const fixture of fixtures)
+    expect(await readFile(join(revisedDirectory, fixture.path))).toEqual(
+      Buffer.from(fixture.content),
+    );
+  expect(await readdir(join(root, 'candidates'))).toHaveLength(2);
+  expect((await authoringRecord(root)).incomplete).toBe(false);
+});
+
+it.each([
+  {
+    path: 'fixtures/upload.pdf',
+    content: Buffer.from('%PDF-1.7\n'),
+    message: /supported generated text fixture/,
+  },
+  { path: 'fixtures/input.txt', content: Buffer.from([0xff, 0xfe, 0x41]), message: /valid UTF-8/ },
+])(
+  'rejects unsupported prior input $path before authoring or requesting a key',
+  async (fixture) => {
+    const value = candidate();
+    value.plan.fixtures = [fixture.path];
+    const root = await runCli(value, undefined, { plan: value.plan, fixtures: [fixture] });
+
+    expect(process.exitCode).toBe(1);
+    expect(mocks.generatePlan).not.toHaveBeenCalled();
+    expect(mocks.getProviderKey).not.toHaveBeenCalled();
+    const errors = vi.mocked(console.error).mock.calls.flat().join('\n');
+    expect(errors).toMatch(fixture.message);
+    expect(errors).toContain('--plan');
+    expect(errors).toContain('No provider request was sent');
+    expect(await readdir(join(root, 'candidates'))).toHaveLength(1);
+    expect(await readdir(root)).not.toContain('drafts');
+  },
+);
+
+it('replaces retired normative DOCX references without decoding the old document as a text fixture', async () => {
+  const { default: JSZip } = await import('jszip');
+  const archive = new JSZip();
+  archive.file(
+    'word/document.xml',
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>The Sample ID label is associated with the field.</w:t></w:r></w:p></w:body></w:document>',
+  );
+  const nextDocx = await archive.generateAsync({ type: 'nodebuffer' });
+  const previousUrs = structuredClone(urs);
+  previousUrs.families[0].requirements[0].references = ['references/old.docx'];
+  const nextUrs = structuredClone(previousUrs);
+  nextUrs.document.revision = '2';
+  nextUrs.families[0].requirements[0].references = ['references/new.docx'];
+  const value = candidate();
+  value.plan.references = ['references/old.docx'];
+  const root = await runCli(
+    value,
+    [{ action: 'finish' }, { edits: [] }, { findings: [], summary: 'Reference update reviewed.' }],
+    {
+      plan: value.plan,
+      fixtures: [{ path: 'references/old.docx', content: Buffer.from([0x50, 0x4b, 0xff, 0xfe]) }],
+      urs: previousUrs,
+      nextUrs,
+      projectFiles: { 'references/new.docx': nextDocx },
+    },
+  );
+
+  expect(process.exitCode).toBeUndefined();
+  expect(console.error).not.toHaveBeenCalled();
+  expect(mocks.generatePlan.mock.calls[0][0].existingFixtures).toEqual([]);
+  expect(mocks.fetchImpl).toHaveBeenCalledTimes(3);
+  const project = await loadProject(root);
+  const revisedDirectory = join(root, project.current_candidate!);
+  const revised = planSchema.parse(
+    JSON.parse(await readFile(join(revisedDirectory, 'plan.json'), 'utf8')),
+  );
+  expect(revised.urs_revision).toBe('2');
+  expect(revised.references).toEqual(['references/new.docx']);
+  expect(revised.cases).toEqual(value.plan.cases);
+  expect(await readFile(join(revisedDirectory, 'references/new.docx'))).toEqual(nextDocx);
+  expect(await readdir(join(revisedDirectory, 'references'))).toEqual(['new.docx']);
+  expect((await authoringRecord(root)).incomplete).toBe(false);
 });

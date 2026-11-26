@@ -1,3 +1,4 @@
+import { providerOutputText } from './provider-fixture.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -109,7 +110,7 @@ function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
   return vi.fn(async (_url: unknown, _options?: RequestInit) => {
     const value = values.shift();
     if (value === undefined) throw new Error('Unexpected provider call');
-    const text = JSON.stringify({ payload: JSON.stringify(value) });
+    const text = providerOutputText(_options, value);
     return new Response(
       JSON.stringify(
         provider === 'openai'
@@ -151,7 +152,7 @@ it.each(['openai', 'anthropic'] as const)(
       fetchImpl: requests,
     });
 
-    expect(result.incomplete).toBe(false);
+    expect(result.incomplete, JSON.stringify(result.questions)).toBe(false);
     expect(result.value?.plan.references).toEqual([reference]);
     const body = JSON.parse(requests.mock.calls[1][1]!.body as string);
     const input = JSON.parse(
@@ -195,7 +196,7 @@ it('keeps generated derivation fixtures usable as declared plan references', asy
     context: { passages: [], hashes: [], warnings: [] },
     fetchImpl: requests,
   });
-  expect(result.incomplete).toBe(false);
+  expect(result.incomplete, JSON.stringify(result.questions)).toBe(false);
   expect(result.value?.plan.references).toEqual([reference]);
   expect(result.value?.fixtures).toEqual(generated.fixtures);
 });

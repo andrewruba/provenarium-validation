@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { boundedResponse, redact, redactValue } from './security.js';
+import { compileStructuredOutput } from './structured-output.js';
 
 export type Provider = 'openai' | 'anthropic';
 export type Thoroughness = 'quick' | 'standard' | 'thorough';
@@ -60,7 +61,7 @@ export type ProviderValidationIssue = {
 type ProviderSchemaFailure =
   'envelope_json' | 'envelope_schema' | 'document_json' | 'document_schema';
 type ProviderValidationFailure =
-  'document_structure' | 'protected_expectation' | 'draft_assertion_repair';
+  'document_structure' | 'protected_expectation' | 'draft_assertion_repair' | 'protocol_edits';
 export type ProviderOutputDiagnostic = {
   request: number;
   operation?: string;
@@ -104,8 +105,15 @@ function diagnosticRedact(text: string, secrets: readonly string[]): string {
     /\\*"(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|token|secret|cookie|set-cookie)\\*"\s*:\s*/i.exec(
       clean,
     );
-  return sensitive
-    ? clean.slice(0, sensitive.index + sensitive[0].length) + '"[REDACTED: remainder omitted]"'
+  const typedSensitive =
+    /"key"\s*:\s*"(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|token|secret|cookie|set-cookie)"|"(?:[^"\\]|\\.)*\/(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|token|secret|cookie|set-cookie)"/i.exec(
+      clean,
+    );
+  const cutoff = [sensitive, typedSensitive]
+    .filter((match) => match !== null)
+    .sort((a, b) => a.index - b.index)[0];
+  return cutoff
+    ? clean.slice(0, cutoff.index + cutoff[0].length) + '"[REDACTED: remainder omitted]"'
     : clean;
 }
 function clipDiagnostic(text: string, bytes: number): { text: string; truncated: boolean } {
@@ -126,13 +134,33 @@ function diagnosticSnapshot(
     }
     if (typeof item === 'string') return diagnosticRedact(item, secrets);
     if (Array.isArray(item)) return item.map((child) => walk(child, depth + 1));
-    if (item && typeof item === 'object')
+    if (item && typeof item === 'object') {
+      const object = item as Record<string, unknown>;
+      const sensitiveEntry = typeof object.key === 'string' && SENSITIVE_FIELD.test(object.key);
+      const paths = Array.isArray(object.paths) ? object.paths : undefined;
+      const values =
+        paths && Array.isArray(object.values)
+          ? object.values.map((value, index) => {
+              const segments =
+                typeof paths[index] === 'string'
+                  ? paths[index]
+                      .split('/')
+                      .map((part: string) => part.replaceAll('~1', '/').replaceAll('~0', '~'))
+                  : [];
+              return segments.some((segment: string) => SENSITIVE_FIELD.test(segment))
+                ? '[REDACTED]'
+                : value;
+            })
+          : undefined;
       return Object.fromEntries(
         Object.entries(item).map(([key, child]) => [
           diagnosticRedact(key, secrets),
-          SENSITIVE_FIELD.test(key) ? '[REDACTED]' : walk(child, depth + 1),
+          SENSITIVE_FIELD.test(key) || (key === 'value' && sensitiveEntry)
+            ? '[REDACTED]'
+            : walk(key === 'values' && values ? values : child, depth + 1),
         ]),
       );
+    }
     return item;
   };
   const candidate = walk(value, 0);
@@ -311,19 +339,6 @@ export type ProviderOptions = {
   now?: Date;
   secrets?: readonly string[];
 };
-const transportSchema = {
-  type: 'object',
-  properties: {
-    payload: {
-      type: 'string',
-      description:
-        'The complete requested JSON document encoded as a JSON string, without Markdown.',
-    },
-  },
-  required: ['payload'],
-  additionalProperties: false,
-};
-const transportResult = z.strictObject({ payload: z.string() });
 const MAX_OUTPUT = 24000;
 const MAX_REQUEST = 200000;
 const PROVIDER_FORMATTING_ALLOWANCE = 32768;
@@ -334,14 +349,8 @@ const usageSchema = z.object({
   cache_read_input_tokens: z.number().int().nonnegative().optional(),
 });
 
-function schemaForPrompt(schema: z.ZodType): string {
-  return JSON.stringify(
-    z.toJSONSchema(schema, { unrepresentable: 'any', cycles: 'ref', reused: 'ref' }),
-  );
-}
-
-/** A deliberately small transport grammar avoids provider-specific schema limits.
- * The complete typed document is validated locally after decoding payload. */
+/** Native JSON schemas constrain the document during generation. Local validation
+ * still enforces refinements and the domain's cross-field rules after decoding. */
 export class ProviderClient {
   private options: ProviderOptions;
   readonly model: Model;
@@ -440,10 +449,17 @@ export class ProviderClient {
     const prompt = JSON.stringify(
       redactValue(input, [this.options.key, ...(this.options.secrets ?? [])]),
     );
+    let contract: ReturnType<typeof compileStructuredOutput<T>>;
+    try {
+      contract = compileStructuredOutput(schema, this.options.provider);
+    } catch {
+      throw new ProviderError(
+        'The authoring schema cannot be represented by the supported native structured-output contract. No request was sent.',
+      );
+    }
     const system =
       instructions +
-      '\nReturn a JSON object with a payload string containing the requested document as JSON. The document must satisfy this local schema exactly. Do not invent extra fields.\n' +
-      schemaForPrompt(schema);
+      '\nReturn the requested typed document using the supplied native JSON schema, without Markdown or JSON-encoded document strings. Omit unused optional keys where the schema permits; for required optional-field placeholders, use the null/presence representation described by their schema. The caller applies defaults and validates all local refinements after decoding.';
     const body =
       this.options.provider === 'openai'
         ? {
@@ -459,7 +475,7 @@ export class ProviderClient {
                 type: 'json_schema',
                 name: 'provenarium_document',
                 strict: true,
-                schema: transportSchema,
+                schema: contract.schema,
               },
             },
           }
@@ -469,7 +485,7 @@ export class ProviderClient {
             service_tier: 'standard_only',
             system,
             messages: [{ role: 'user', content: prompt }],
-            output_config: { format: { type: 'json_schema', schema: transportSchema } },
+            output_config: { format: { type: 'json_schema', schema: contract.schema } },
           };
     const encoded = JSON.stringify(body);
     const bytes = Buffer.byteLength(encoded);
@@ -585,20 +601,31 @@ export class ProviderClient {
         .map((b) => b.text ?? '')
         .join('');
     }
-    let envelopeValue: unknown;
+    let wireValue: unknown;
     try {
-      envelopeValue = JSON.parse(text);
+      wireValue = JSON.parse(text);
     } catch {
-      throw this.outputError('envelope_json', text, undefined, true);
+      throw this.outputError('document_json', text, undefined, true);
     }
-    const envelope = transportResult.safeParse(envelopeValue);
-    if (!envelope.success)
-      throw this.outputError('envelope_schema', envelopeValue, envelope.error.issues);
+    const wire = contract.wireSchema.safeParse(wireValue);
+    if (!wire.success) throw this.outputError('document_schema', wireValue, wire.error.issues);
     let candidate: unknown;
     try {
-      candidate = JSON.parse(envelope.data.payload);
-    } catch {
-      throw this.outputError('document_json', envelope.data.payload, undefined, true);
+      candidate = contract.decode(wire.data);
+    } catch (error) {
+      throw this.outputError(
+        'document_schema',
+        wireValue,
+        error instanceof z.ZodError
+          ? error.issues
+          : [
+              {
+                code: 'custom',
+                path: [],
+                message: 'Typed output could not be decoded into the requested document.',
+              },
+            ],
+      );
     }
     let document: z.ZodSafeParseResult<T>;
     try {

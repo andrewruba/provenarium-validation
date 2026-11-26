@@ -1,9 +1,9 @@
+import { providerOutputText } from './provider-fixture.js';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { generatePlan } from '../src/authoring/index.js';
-import { validatePlanStructure } from '../src/compiler.js';
 import { planSchema, ursSchema } from '../src/schema.js';
 
 const browser = vi.hoisted(() => ({ perform: vi.fn(), close: vi.fn() }));
@@ -106,7 +106,7 @@ function transport(provider: Provider, values: unknown[], usage = true) {
     if (value === undefined) throw new Error('Unexpected additional provider request.');
     if (value instanceof Error) throw value;
     if (value instanceof Response) return value;
-    const text = JSON.stringify({ payload: JSON.stringify(value) });
+    const text = providerOutputText(options, value);
     const tokenUsage = usage ? { usage: { input_tokens: 100, output_tokens: 50 } } : {};
     return new Response(
       JSON.stringify(
@@ -182,13 +182,12 @@ it.each(['openai', 'anthropic'] as const)(
   },
 );
 
-it.each(['missing field', 'unknown field', 'null optional field'] as const)(
+it.each(['missing field', 'unknown field'] as const)(
   'recovers from a %s without accepting malformed data as a typed plan',
   async (kind) => {
     const malformed = JSON.parse(JSON.stringify(candidate()));
     if (kind === 'missing field') delete malformed.plan.cases[0].steps[0].instruction;
     if (kind === 'unknown field') malformed.plan.cases[0].steps[0].execute = 'not-executed';
-    if (kind === 'null optional field') malformed.plan.cases[0].actor = null;
     const { result, fetchImpl } = await run([
       { action: 'finish' },
       malformed,
@@ -222,6 +221,17 @@ it('repairs malformed discovery output before executing any browser action', asy
   ]);
 });
 
+it('normalizes native nullable placeholders for omitted optional fields without a repair call', async () => {
+  const nullable = JSON.parse(JSON.stringify(candidate()));
+  nullable.plan.cases[0].actor = null;
+  const { result, fetchImpl } = await run([{ action: 'finish' }, nullable, reviewed]);
+
+  expect(result.incomplete).toBe(false);
+  expect(result.value).toEqual(candidate());
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(result.diagnostics).toBeUndefined();
+});
+
 it('repairs malformed document JSON while retaining the rejected text as diagnostic data', async () => {
   const malformed = new Response(
     JSON.stringify({
@@ -230,7 +240,7 @@ it('repairs malformed document JSON while retaining the rejected text as diagnos
       output: [
         {
           type: 'message',
-          content: [{ type: 'output_text', text: JSON.stringify({ payload: '{"plan":' }) }],
+          content: [{ type: 'output_text', text: '{"plan":' }],
         },
       ],
     }),
@@ -305,11 +315,9 @@ it('repairs a schema-invalid review response under the same command budget', asy
   expect(retry.candidate.plan.id).toBe('PLAN-SCHEMA');
 });
 
-it('does not weaken the last valid expected outcome while repairing a malformed revision', async () => {
-  const malformedRevision = candidate();
-  malformedRevision.plan.cases[0].steps[0].assertions[0].read = 'not-supported' as never;
-  const weakened = candidate();
-  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+it('rejects a review edit that tries to change a protected expectation after schema recovery', async () => {
+  const malformed = { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01' }] };
+  const forbidden = { edits: [{ op: 'repair_assertion', assertion_id: 'A-01', expected: false }] };
   const { result, fetchImpl } = await run([
     { action: 'finish' },
     candidate(),
@@ -319,46 +327,24 @@ it('does not weaken the last valid expected outcome while repairing a malformed 
       ],
       summary: 'Clarify procedure.',
     },
-    malformedRevision,
-    weakened,
-    weakened,
+    malformed,
+    forbidden,
+    forbidden,
   ]);
 
   expect(result.incomplete).toBe(true);
   expect(fetchImpl).toHaveBeenCalledTimes(6);
-  expect(result.questions.join('\n')).toMatch(/expected result/i);
   expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
-  expect(
-    result.diagnostics?.filter((diagnostic) => diagnostic.kind === 'protected_expectation'),
-  ).toHaveLength(2);
+  expect(result.questions.join('\n')).toMatch(/review|protect|assertion/i);
+  expect(result.diagnostics?.some((diagnostic) => diagnostic.kind === 'document_schema')).toBe(
+    true,
+  );
 });
 
-it.each(['removed', 'manual'] as const)(
-  'rejects schema repair that relocates assertions while the original case is %s',
-  async (change) => {
-    const malformedRevision = candidate();
-    malformedRevision.plan.cases[0].steps[0].assertions[0].read = 'not-supported' as never;
-    const repaired = candidate();
-    const original = repaired.plan.cases[0];
-    const relocated = structuredClone(original);
-    relocated.id = 'IQ-02';
-    repaired.plan.cases =
-      change === 'removed'
-        ? [relocated]
-        : [
-            {
-              ...original,
-              manual: true,
-              manual_procedure: 'Inspect the Sample ID entry.',
-              manual_expected: 'Sample ID is visible.',
-              steps: [],
-            },
-            relocated,
-          ];
-    if (change === 'manual') repaired.plan.obligations[0].manual_case_ids.push(original.id);
-    // The assertions and expected values still exist, and the result is structurally valid.
-    // Preservation must therefore compare cases and coverage, not just assertion values.
-    expect(validatePlanStructure(repaired.plan, urs)).toEqual([]);
+it.each(['delete_case', 'replace_case'] as const)(
+  'rejects the unsupported %s operation instead of replacing existing checks',
+  async (op) => {
+    const forbidden = { edits: [{ op, case_id: 'IQ-01', manual: true }] };
     const { result, fetchImpl } = await run([
       { action: 'finish' },
       candidate(),
@@ -368,23 +354,24 @@ it.each(['removed', 'manual'] as const)(
         ],
         summary: 'Clarify procedure.',
       },
-      malformedRevision,
-      repaired,
-      repaired,
+      forbidden,
+      forbidden,
+      forbidden,
     ]);
 
     expect(result.incomplete).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(6);
-    expect(result.questions.join('\n')).toMatch(/removed a case|downgraded/i);
     expect(result.value?.plan.cases).toEqual(candidate().plan.cases);
+    expect(result.diagnostics?.every((diagnostic) => diagnostic.kind === 'document_schema')).toBe(
+      true,
+    );
   },
 );
 
-it('uses the remaining correction to restore a protected expectation after a schema-invalid revision', async () => {
-  const malformedRevision = candidate();
-  malformedRevision.plan.cases[0].steps[0].assertions[0].read = 'not-supported' as never;
-  const weakened = candidate();
-  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+it('uses the remaining correction for a scoped instruction edit after a rejected expectation edit', async () => {
+  const malformed = { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01' }] };
+  const forbidden = { edits: [{ op: 'repair_assertion', assertion_id: 'A-01', expected: false }] };
+  const instruction = 'Open the form and inspect its labeled Sample ID entry.';
   const { result, fetchImpl } = await run([
     { action: 'finish' },
     candidate(),
@@ -394,69 +381,120 @@ it('uses the remaining correction to restore a protected expectation after a sch
       ],
       summary: 'Clarify procedure.',
     },
-    malformedRevision,
-    weakened,
-    candidate(),
+    malformed,
+    forbidden,
+    { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01', instruction }] },
   ]);
 
   expect(result.incomplete).toBe(false);
   expect(fetchImpl).toHaveBeenCalledTimes(6);
-  expect(result.value).toEqual(candidate());
+  expect(result.value?.plan.cases[0].steps[0].instruction).toBe(instruction);
+  expect(result.value?.plan.cases[0].steps[0].assertions).toEqual(
+    candidate().plan.cases[0].steps[0].assertions,
+  );
   expect(result.questions).toEqual([]);
   const correction = inputAt(fetchImpl, 5, 'openai');
-  expect(correction.rejected_changes).toEqual([
-    expect.objectContaining({
-      assertion: 'A-01',
-      before: expect.objectContaining({ expected: true }),
-      proposed: expect.objectContaining({ expected: false }),
-    }),
-  ]);
+  expect(correction.validation_errors.join('\n')).toContain('/edits/0/op');
+  expect(correction.rejected_output.candidate.edits[0].op).toBe('repair_assertion');
   expect(correction.findings).toHaveLength(1);
-  expect(
-    result.diagnostics?.some((diagnostic) => diagnostic.kind === 'protected_expectation'),
-  ).toBe(true);
 });
 
-it('allows schema repair to add automated cases and coverage while retaining existing checks', async () => {
-  const malformedRevision = candidate();
-  malformedRevision.plan.cases[0].steps[0].assertions[0].read = 'not-supported' as never;
-  const repaired = candidate();
-  const additional = structuredClone(repaired.plan.cases[0]);
+it('allows a scoped review edit to add automated cases while retaining existing checks', async () => {
+  const initial = candidate();
+  const additional = structuredClone(initial.plan.cases[0]);
   additional.id = 'IQ-02';
   additional.steps[0].id = 'S-02';
   additional.steps[0].assertions[0].id = 'A-02';
   additional.steps[0].evidence[0].id = 'E-02';
-  repaired.plan.cases.push(additional);
-  repaired.plan.obligations[0].assertion_ids.push('A-02');
-  expect(validatePlanStructure(repaired.plan, urs)).toEqual([]);
   const { result, fetchImpl } = await run([
     { action: 'finish' },
-    candidate(),
+    initial,
     {
       findings: [
         { requirement: 'URS-001', severity: 'suggestion', message: 'Add another relevant check.' },
       ],
       summary: 'Expand coverage.',
     },
-    malformedRevision,
-    repaired,
+    { edits: [{ op: 'add_case', value: additional }] },
   ]);
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(5);
-  expect(result.value).toEqual(repaired);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(result.value?.plan.cases[0]).toEqual(initial.plan.cases[0]);
+  expect(result.value?.plan.cases[1]).toEqual(additional);
+  expect(result.value?.plan.obligations).toEqual(initial.plan.obligations);
+  const reviewRequest = JSON.parse(String(fetchImpl.mock.calls[3][1]?.body));
+  expect(reviewRequest.text.format.schema.properties).toHaveProperty('edits');
+  expect(reviewRequest.text.format.schema.properties).not.toHaveProperty('plan');
+});
+
+it('retains A16 and manual expected text verbatim while a review adds coverage', async () => {
+  const initial = candidate();
+  initial.plan.cases[0].steps[0].assertions[0].id = 'A16';
+  initial.plan.obligations[0].assertion_ids = ['A16'];
+  const manual = {
+    id: 'OQ-04',
+    title: 'Restart persistence',
+    classification: 'OQ' as const,
+    requirements: ['URS-001'],
+    prerequisites: [],
+    manual: true,
+    manual_procedure: 'Restart the application and inspect the saved synthetic record.',
+    manual_expected: 'The record remains SYNTHETIC-1 with value 1.250. Do not re-enter it.',
+    steps: [],
+    citations: [],
+  };
+  initial.plan.cases.push(manual);
+  initial.plan.obligations[0].manual_case_ids.push(manual.id);
+  const additional = structuredClone(initial.plan.cases[0]);
+  additional.id = 'OQ-05';
+  additional.steps[0].id = 'S-05';
+  additional.steps[0].assertions[0].id = 'A-05';
+  additional.steps[0].evidence[0].id = 'E-05';
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    initial,
+    {
+      findings: [
+        {
+          requirement: 'URS-001',
+          severity: 'suggestion',
+          message: 'Add a boundary check without changing reviewed expectations.',
+        },
+      ],
+      summary: 'Expand coverage.',
+    },
+    { edits: [{ op: 'add_case', value: additional }] },
+  ]);
+
+  expect(result.incomplete).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(result.value?.plan.cases.slice(0, 2)).toEqual(initial.plan.cases);
+  expect(result.value?.plan.cases[0].steps[0].assertions[0]).toMatchObject({
+    id: 'A16',
+    expected: true,
+  });
+  expect(
+    result.value?.plan.cases.find((testCase) => testCase.id === 'OQ-04')?.manual_expected,
+  ).toBe(manual.manual_expected);
+  expect(result.value?.plan.obligations).toEqual(initial.plan.obligations);
 });
 
 it('retains the original structure errors while repairing a schema-invalid technical correction', async () => {
   const structuralInvalid = candidate();
   structuralInvalid.plan.obligations[0].source = 'An unbound prose label';
-  const schemaInvalid = candidate();
-  schemaInvalid.plan.cases[0].steps[0].assertions[0].comparison = 'approximately' as never;
+  const schemaInvalid = {
+    edits: [{ op: 'repair_obligation_source', obligation_id: 'OB-01', source: null }],
+  };
   const { result, fetchImpl } = await run([
     { action: 'finish' },
     structuralInvalid,
     schemaInvalid,
-    candidate(),
+    {
+      edits: [
+        { op: 'repair_obligation_source', obligation_id: 'OB-01', source: 'URS-001/statement' },
+      ],
+    },
     reviewed,
   ]);
 
@@ -467,9 +505,7 @@ it('retains the original structure errors while repairing a schema-invalid techn
   expect(finalCorrection.validation_errors.join('\n')).toContain(
     'OB-01: source must point to existing text or a table in its requirement.',
   );
-  expect(finalCorrection.validation_errors.join('\n')).toContain(
-    '/plan/cases/0/steps/0/assertions/0/comparison',
-  );
+  expect(finalCorrection.validation_errors.join('\n')).toContain('/edits/0/source');
 });
 
 it.each(['network', 'refusal', 'incomplete'] as const)(

@@ -9,6 +9,7 @@ import {
   type Provider,
 } from '../src/authoring/provider.js';
 import { actionSchema, assertionSchema } from '../src/schema.js';
+import { compileStructuredOutput } from '../src/authoring/structured-output.js';
 
 const now = new Date('2026-11-25T12:00:00Z');
 const key = 'provider-key-sentinel';
@@ -27,8 +28,8 @@ function completed(provider: Provider, text: string, usage = true): Response {
     }),
   );
 }
-function envelope(document: unknown): string {
-  return JSON.stringify({ payload: JSON.stringify(document) });
+function documentText(document: unknown): string {
+  return JSON.stringify(document);
 }
 function fixture(
   provider: Provider,
@@ -62,23 +63,14 @@ describe('retained invalid provider output', () => {
   it.each(['openai', 'anthropic'] as const)(
     'retains actionable %s paths and allowed values without returning invalid content',
     async (provider) => {
-      const candidate = {
-        plan: {
-          actions: [
-            { op: 'invented' },
-            { op: 'fill', locator: { by: 'label', value: 'Name' }, value: 3 },
-            { op: 'click', locator: { by: 'role', value: 'Save' } },
-          ],
-          assertions: [{ id: 'A-1', comparison: 'equals', expected: 'yes' }],
-        },
-      };
+      const candidate = { plan: { comparison: 'invented', count: 'three' } };
       const schema = z.strictObject({
-        plan: z.strictObject({
-          actions: z.array(actionSchema),
-          assertions: z.array(assertionSchema),
-        }),
+        plan: z.strictObject({ comparison: z.enum(['equals', 'csv_equals']), count: z.number() }),
       });
-      const { client, budget, transport } = fixture(provider, envelope(candidate));
+      const { client, budget, transport } = fixture(
+        provider,
+        documentText(compileStructuredOutput(schema, provider).encode(candidate)),
+      );
       const error = await invalid(client, schema);
       expect(error.diagnostic).toMatchObject({
         request: 1,
@@ -89,29 +81,19 @@ describe('retained invalid provider output', () => {
       expect(error.diagnostic.issues).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            path: '/plan/actions/0/op',
-            code: 'invalid_union',
-            allowed_values: expect.arrayContaining(['fill', 'click']),
+            path: '/plan/comparison',
+            code: 'invalid_value',
+            allowed_values: ['equals', 'csv_equals'],
           }),
           expect.objectContaining({
-            path: '/plan/actions/1/value',
+            path: '/plan/count',
             code: 'invalid_type',
-            expected: 'string',
-          }),
-          expect.objectContaining({
-            path: '/plan/actions/2/locator',
-            code: 'custom',
-            message: 'Role locators require a valid role',
-          }),
-          expect.objectContaining({
-            path: '/plan/assertions/0',
-            code: 'custom',
-            message: 'Assertion needs exactly one locator or variable',
+            expected: 'number',
           }),
         ]),
       );
       expect(client.diagnostics).toEqual([error.diagnostic]);
-      expect(error.message).toContain('/plan/actions/1/value');
+      expect(error.message).toContain('/plan/count');
       expect(JSON.stringify(error.diagnostic)).not.toContain('request-only-sentinel');
       expect(transport).toHaveBeenCalledTimes(1);
       expect(budget.snapshot()).toEqual({
@@ -122,6 +104,31 @@ describe('retained invalid provider output', () => {
       });
     },
   );
+
+  it('retains local refinement failures after the native shape has been validated', async () => {
+    const schema = z.strictObject({ action: actionSchema, assertion: assertionSchema });
+    const candidate = {
+      action: { op: 'click', locator: { by: 'role', value: 'Save' } },
+      assertion: { id: 'A-1', comparison: 'equals', expected: 'yes' },
+    };
+    const wire = compileStructuredOutput(schema, 'openai').encode(candidate);
+    const { client } = fixture('openai', documentText(wire));
+    const error = await invalid(client, schema);
+    expect(error.diagnostic.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: '/action/locator',
+          code: 'custom',
+          message: 'Role locators require a valid role',
+        }),
+        expect.objectContaining({
+          path: '/assertion',
+          code: 'custom',
+          message: 'Assertion needs exactly one locator or variable',
+        }),
+      ]),
+    );
+  });
 
   it('flattens union branch failures and escapes JSON pointer segments', async () => {
     const schema = z.strictObject({
@@ -134,7 +141,7 @@ describe('retained invalid provider output', () => {
     });
     const { client } = fixture(
       'openai',
-      envelope({ 'part/with~escapes': [{ result: { value: false } }] }),
+      documentText({ 'part/with~escapes': [{ result: { value: false } }] }),
     );
     const error = await invalid(client, schema);
     expect(error.diagnostic.issues).toEqual(
@@ -149,7 +156,10 @@ describe('retained invalid provider output', () => {
   });
 
   it('reports the precise unknown field rather than retaining raw Zod errors', async () => {
-    const { client } = fixture('openai', envelope({ answer: 'yes', execute: 'untrusted-command' }));
+    const { client } = fixture(
+      'openai',
+      documentText({ answer: 'yes', execute: 'untrusted-command' }),
+    );
     const error = await invalid(client, answerSchema);
     expect(error.diagnostic.issues).toEqual([
       { path: '/execute', code: 'unrecognized_keys', message: 'Unexpected field; remove it.' },
@@ -159,30 +169,23 @@ describe('retained invalid provider output', () => {
   });
 
   it.each([
-    { text: '{broken', kind: 'envelope_json', path: '', raw: '{broken' },
-    {
-      text: JSON.stringify({ payload: {} }),
-      kind: 'envelope_schema',
-      path: '/payload',
-      raw: undefined,
-    },
-    {
-      text: JSON.stringify({ payload: '{"answer":' }),
-      kind: 'document_json',
-      path: '',
-      raw: '{"answer":',
-    },
-    { text: envelope({ answer: 1 }), kind: 'document_schema', path: '/answer', raw: undefined },
-  ])(
-    'distinguishes $kind from other malformed-output stages',
-    async ({ text, kind, path, raw }) => {
-      const { client } = fixture('anthropic', text);
-      const error = await invalid(client, answerSchema);
-      expect(error.diagnostic.kind).toBe(kind);
-      expect(error.diagnostic.issues[0].path).toBe(path);
-      expect(error.diagnostic.raw).toBe(raw);
-    },
-  );
+    { text: '{broken', kind: 'document_json', path: '', raw: '{broken' },
+    { text: '{"answer":', kind: 'document_json', path: '', raw: '{"answer":' },
+    { text: documentText({ answer: 1 }), kind: 'document_schema', path: '/answer', raw: undefined },
+  ])('distinguishes $kind from other native-output failures', async ({ text, kind, path, raw }) => {
+    const { client } = fixture('anthropic', text);
+    const error = await invalid(client, answerSchema);
+    expect(error.diagnostic.kind).toBe(kind);
+    expect(error.diagnostic.issues[0].path).toBe(path);
+    expect(error.diagnostic.raw).toBe(raw);
+  });
+
+  it('rejects the former opaque payload wrapper', async () => {
+    const { client } = fixture('openai', JSON.stringify({ payload: '{"answer":"yes"}' }));
+    const error = await invalid(client, answerSchema);
+    expect(error.diagnostic.kind).toBe('document_schema');
+    expect(error.diagnostic.issues.some((issue) => issue.path === '/payload')).toBe(true);
+  });
 
   it('redacts known secrets, sensitive nested values, paths, and messages', async () => {
     const applicationSecret = 'APPLICATION"SECRET\\end';
@@ -197,7 +200,7 @@ describe('retained invalid provider output', () => {
         Authorization: 'private-header',
       },
     };
-    const { client } = fixture('openai', envelope(candidate), { secrets: [applicationSecret] });
+    const { client } = fixture('openai', documentText(candidate), { secrets: [applicationSecret] });
     const error = await invalid(client, answerSchema);
     const retained = JSON.stringify({ diagnostic: error.diagnostic, message: error.message });
     for (const forbidden of [
@@ -227,29 +230,54 @@ describe('retained invalid provider output', () => {
     '{"secret":["unknown-private"',
     '{"token":123456789',
   ])('omits the remainder of malformed credential-bearing JSON: %s', async (payload) => {
-    const { client } = fixture('openai', JSON.stringify({ payload }));
+    const { client } = fixture('openai', payload);
     const error = await invalid(client, answerSchema);
     expect(error.diagnostic.kind).toBe('document_json');
     expect(error.diagnostic.raw).toContain('[REDACTED');
     expect(error.diagnostic.raw).not.toMatch(/unknown-private|123456789/);
   });
 
-  it('redacts secrets escaped inside an outer malformed payload envelope', async () => {
+  it('redacts arbitrary-map and compound-JSON secret values in retained native candidates', async () => {
+    const candidate = {
+      answer: 4,
+      map: { entries: [{ key: 'password', value: 'map-private' }] },
+      graph: {
+        paths: ['', '/user', '/user/api_key'],
+        kinds: ['object', 'object', 'string'],
+        values: [null, null, 'graph-private'],
+      },
+    };
+    const { client } = fixture('openai', documentText(candidate));
+    const error = await invalid(client, answerSchema);
+    const retained = JSON.stringify(error.diagnostic);
+    expect(retained).not.toContain('map-private');
+    expect(retained).not.toContain('graph-private');
+    expect(retained).toContain('[REDACTED]');
+  });
+  it.each([
+    '{"entries":[{"key":"password","value":"unknown-private',
+    '{"paths":["","/api_key"],"kinds":["object","string"],"values":[null,"unknown-private',
+  ])('redacts secret-bearing typed data in malformed JSON: %s', async (text) => {
+    const { client } = fixture('anthropic', text);
+    const error = await invalid(client, answerSchema);
+    expect(JSON.stringify(error.diagnostic)).not.toContain('unknown-private');
+  });
+  it('redacts escaped secrets inside malformed native JSON', async () => {
     const applicationSecret = 'APPLICATION"SECRET\\end';
-    const text = envelope({
+    const text = documentText({
       note: applicationSecret,
       nested: { password: 'unknown-private' },
     }).slice(0, -1);
     const { client } = fixture('openai', text, { secrets: [applicationSecret] });
     const error = await invalid(client, answerSchema);
-    expect(error.diagnostic.kind).toBe('envelope_json');
+    expect(error.diagnostic.kind).toBe('document_json');
     expect(JSON.stringify(error.diagnostic)).not.toMatch(/APPLICATION|unknown-private/);
     expect(error.diagnostic.raw).toContain('[REDACTED');
   });
 
   it('bounds the complete serialized diagnostic including escaped payload and many issues', async () => {
     const many = Array.from({ length: 100 }, () => false);
-    const { client } = fixture('openai', envelope({ answer: '"\\\n'.repeat(40000), many }));
+    const { client } = fixture('openai', documentText({ answer: '"\\\n'.repeat(40000), many }));
     const error = await invalid(
       client,
       z.strictObject({ answer: z.number(), many: z.array(z.string()) }),
@@ -262,7 +290,7 @@ describe('retained invalid provider output', () => {
   });
 
   it('bounds a malformed raw payload with heavily escaped text', async () => {
-    const { client } = fixture('anthropic', JSON.stringify({ payload: '"\\\n'.repeat(100000) }));
+    const { client } = fixture('anthropic', '"\\\n'.repeat(100000));
     const error = await invalid(client, answerSchema);
     expect(error.diagnostic.kind).toBe('document_json');
     expect(error.diagnostic.truncated).toBe(true);
@@ -270,7 +298,7 @@ describe('retained invalid provider output', () => {
   });
 
   it('retains full uncertain reservations for completed malformed output without usage', async () => {
-    const { client, budget, transport } = fixture('openai', envelope({ answer: false }), {
+    const { client, budget, transport } = fixture('openai', documentText({ answer: false }), {
       usage: false,
     });
     await invalid(client, answerSchema);
@@ -282,7 +310,7 @@ describe('retained invalid provider output', () => {
   });
 
   it('does not retain an exception thrown during local refinement', async () => {
-    const { client } = fixture('openai', envelope({ answer: 'yes' }));
+    const { client } = fixture('openai', documentText({ answer: 'yes' }));
     const schema = answerSchema.refine(() => {
       throw new Error('unknown-private');
     });
@@ -292,7 +320,7 @@ describe('retained invalid provider output', () => {
   });
 
   it('returns valid typed output without retaining unnecessary document copies', async () => {
-    const { client } = fixture('openai', envelope({ answer: 'yes' }));
+    const { client } = fixture('openai', documentText({ answer: 'yes' }));
     expect(await client.complete(answerSchema, 'Draft', {})).toEqual({ answer: 'yes' });
     expect(client.diagnostics).toEqual([]);
   });
@@ -302,7 +330,7 @@ describe('retained local validation failures', () => {
   it.each(['document_structure', 'protected_expectation', 'draft_assertion_repair'] as const)(
     'retains %s with precise field paths without dispatching or throwing',
     async (kind) => {
-      const { client, budget, transport } = fixture('openai', envelope({ answer: 'yes' }));
+      const { client, budget, transport } = fixture('openai', documentText({ answer: 'yes' }));
       await client.complete(answerSchema, 'Draft', {});
       const spend = budget.snapshot();
       const candidate = {

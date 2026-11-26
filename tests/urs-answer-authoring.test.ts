@@ -1,3 +1,4 @@
+import { providerOutputText } from './provider-fixture.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Budget, proposeUrsResolution, suggestUrsAnswers } from '../src/authoring/index.js';
 import { ursSchema } from '../src/schema.js';
@@ -72,7 +73,7 @@ function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
   return vi.fn(async (_url: unknown, _options?: RequestInit) => {
     const value = values.shift();
     if (value === undefined) throw new Error('Unexpected provider request');
-    const text = JSON.stringify({ payload: JSON.stringify(value) });
+    const text = providerOutputText(_options, value);
     return new Response(
       JSON.stringify(
         provider === 'openai'

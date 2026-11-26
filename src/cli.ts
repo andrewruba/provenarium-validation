@@ -23,7 +23,11 @@ import { repairUrsReferences } from './urs-reference-repair.js';
 import { extractContext } from './context.js';
 import { Discovery, type PageObservation } from './authoring/discovery.js';
 import { validatePlanStructure } from './compiler.js';
-import { collectPlanInputCatalog, validateGeneratedPlanInputs } from './plan-inputs.js';
+import {
+  collectPlanInputCatalog,
+  planInputPathError,
+  validateGeneratedPlanInputs,
+} from './plan-inputs.js';
 import {
   loadProject,
   saveProject,
@@ -604,6 +608,39 @@ discovery(
     const bindings = await discoveryBindings(command, url);
     const prior = project.current_candidate ? await inspectCandidate(directory) : undefined;
     const existing = prior?.plan;
+    const normativePaths = new Set([
+      ...inputCatalog.references.map((reference) => reference.path),
+      ...(prior?.urs.families.flatMap((family) =>
+        family.requirements.flatMap((requirement) => requirement.references),
+      ) ?? []),
+    ]);
+    const existingFixtures = prior
+      ? await Promise.all(
+          [...new Set([...prior.plan.fixtures, ...prior.plan.references])]
+            .filter((name) => !normativePaths.has(name))
+            .map(async (name) => {
+              const guidance =
+                'Use a reviewed offline plan with --plan, or retain this input as a declared URS reference before authoring. No provider request was sent.';
+              if (
+                planInputPathError(name) ||
+                !/^fixtures\/[A-Za-z0-9_./-]+\.(csv|tsv|json|txt|md)$/.test(name)
+              )
+                throw new Error(
+                  `Prior package input ${JSON.stringify(name)} is not a supported generated text fixture. ${guidance}`,
+                );
+              const bytes = await readFile(await safePath(prior.directory, name));
+              let content: string;
+              try {
+                content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+              } catch {
+                throw new Error(
+                  `Prior package input ${JSON.stringify(name)} is not valid UTF-8 text and cannot be preserved by AI authoring. ${guidance}`,
+                );
+              }
+              return { path: name, content };
+            }),
+        )
+      : undefined;
     let feedback = opts.feedback
       ? await readFile(path.resolve(directory, opts.feedback), 'utf8')
       : undefined;
@@ -624,6 +661,7 @@ discovery(
       urs: document,
       url,
       existing,
+      existingFixtures,
       existingUrs: prior?.urs,
       feedback,
       bindings,

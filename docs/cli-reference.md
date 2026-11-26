@@ -258,7 +258,30 @@ Generation preserves the URS. Subsequent generation asks for revision feedback,
 or accepts `--feedback feedback.md`. Expected outcomes remain frozen unless a
 reviewed URS revision changes the corresponding normative requirements.
 
+To answer a question raised only in the IOQ, include its exact ID and your answer
+in that revision feedback, for example `IOQ-Q-01: Use the installed Chromium
+browser.` Then run `provenarium generate --urs urs.yaml --feedback feedback.md`.
+The revision can remove that answered question from the active blockers; the
+original question, exact supporting feedback quote, and recorded resolution stay
+in the authoring record's edit diagnostics. Autonomous review cannot clear these
+questions. An answer that changes intended application behavior still requires
+a reviewed URS revision before changing protected expected results.
+
 ## Protocol generation checks
+
+Authoring requests use provider-native structured outputs with the actual typed
+document schema. Provider-specific field representations are normalized at the
+boundary; local Zod validation still checks constraints and business rules that
+the provider schema cannot express. The document is not encoded as an
+unconstrained JSON string inside a `payload` field.
+
+Protocol review revisions and technical corrections return a list of typed,
+named edits. The CLI applies these atomically to the retained plan. Review edits
+can add coverage or update supported instructions and action bindings, but cannot
+delete or renumber existing checks, rewrite their expected outcomes, or replace
+manual expected text. A genuine expectation conflict is retained as a question
+for deliberate review. Technical edits are limited to the diagnosed repair scope.
+Unsupported operations or conflicting edits reject the entire proposal.
 
 `generate --urs` supplies the authoring model with the supported runtime contract
 and exact source bindings for the supplied requirements. Every initial and

@@ -10,7 +10,7 @@ import {
 
 const now = new Date('2026-11-25T12:00:00Z');
 function response(provider: 'openai' | 'anthropic', value: unknown, usage = true) {
-  const text = JSON.stringify({ payload: JSON.stringify(value) });
+  const text = JSON.stringify(value);
   return new Response(
     JSON.stringify(
       provider === 'openai'
@@ -39,6 +39,11 @@ describe('provider transport and budget', () => {
         expect(provider === 'openai' ? parsed.store : parsed.output_config.format.type).toBe(
           provider === 'openai' ? false : 'json_schema',
         );
+        const native =
+          provider === 'openai' ? parsed.text.format.schema : parsed.output_config.format.schema;
+        expect(native.properties.answer).toMatchObject({ type: 'string', enum: ['valid'] });
+        expect(native.properties).not.toHaveProperty('payload');
+        expect(native.additionalProperties).toBe(false);
         expect(parsed.service_tier).toBe(provider === 'openai' ? 'default' : 'standard_only');
         return response(provider, { answer: 'valid' });
       });
@@ -51,7 +56,7 @@ describe('provider transport and budget', () => {
         fetchImpl: transport as typeof fetch,
       });
       const result = await client.complete(
-        z.strictObject({ answer: z.string() }),
+        z.strictObject({ answer: z.enum(['valid']) }),
         'Reply with the requested document',
         { note: 'provider-key-sentinel' },
       );
@@ -63,6 +68,19 @@ describe('provider transport and budget', () => {
         reserved: 0,
         actual: provider === 'openai' ? 0.0008 : 0.0007,
       });
+    },
+  );
+  it.each(['openai', 'anthropic'] as const)(
+    'rejects unsupported %s schemas before budget reservation or dispatch',
+    async (provider) => {
+      const transport = vi.fn();
+      const budget = new Budget(5);
+      const client = new ProviderClient({ provider, key: 'x', budget, now, fetchImpl: transport });
+      await expect(
+        client.complete(z.strictObject({ value: z.any() }), 'Draft', {}),
+      ).rejects.toThrow(/native structured/);
+      expect(transport).not.toHaveBeenCalled();
+      expect(budget.snapshot()).toEqual({ cap: 5, calls: 0, actual: 0, reserved: 0 });
     },
   );
   it('rejects an unsupported or stale pricing model before any request', () => {
@@ -177,9 +195,7 @@ describe('provider transport and budget', () => {
           JSON.stringify({
             status: 'incomplete',
             usage: { input_tokens: 100, output_tokens: 24000 },
-            output: [
-              { type: 'message', content: [{ type: 'output_text', text: '{"payload":"{}"}' }] },
-            ],
+            output: [{ type: 'message', content: [{ type: 'output_text', text: '{}' }] }],
           }),
         ),
     );
@@ -217,9 +233,7 @@ describe('provider transport and budget', () => {
             output: [
               {
                 type: 'message',
-                content: [
-                  { type: 'output_text', text: JSON.stringify({ payload: '{"answer":"yes"}' }) },
-                ],
+                content: [{ type: 'output_text', text: JSON.stringify({ answer: 'yes' }) }],
               },
             ],
           }),
@@ -252,7 +266,7 @@ describe('provider transport and budget', () => {
               cache_read_input_tokens: 300,
               output_tokens: 20,
             },
-            content: [{ type: 'text', text: JSON.stringify({ payload: '{"answer":"yes"}' }) }],
+            content: [{ type: 'text', text: JSON.stringify({ answer: 'yes' }) }],
           }),
         ),
     );

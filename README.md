@@ -31,6 +31,11 @@ and a new revision receives a separate filename. `generate --urs` produces a
 human-readable Installation and Operational Qualification (IOQ) protocol and
 deterministic Playwright tests.
 
+Authoring sends the document's typed schema to the provider's structured-output
+API. Protocol reviews return named edits, such as adding a test or clarifying a
+step, instead of rewriting the entire plan. The CLI applies those edits locally;
+existing checks, identifiers, and protected expectations are preserved.
+
 Protocol generation checks requirement links, actor declarations, and required
 files before creating a candidate. It corrects unambiguous source notation and
 can request up to two technical corrections under the same spending ceiling.

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Replaced the unconstrained JSON-string payload envelope with provider-native
+  structured output for the actual typed document. Local validation remains the
+  authority for semantic rules and execution readiness.
+- Replaced whole-plan review rewrites with typed, scoped edits applied atomically
+  by the CLI. Existing IDs, checks, coverage, and protected expectations remain
+  unchanged; unsupported edit proposals retain actionable diagnostics.
 - Fixed invalid draft predicates being frozen as accepted expected results during
   protocol correction. Scoped repairs preserve valid and reviewed expectations;
   rejected changes retain assertion IDs and before/proposed values and can use

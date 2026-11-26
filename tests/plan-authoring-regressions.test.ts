@@ -1,3 +1,4 @@
+import { providerOutputText } from './provider-fixture.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -114,9 +115,7 @@ function transport(values: unknown[]) {
         output: [
           {
             type: 'message',
-            content: [
-              { type: 'output_text', text: JSON.stringify({ payload: JSON.stringify(next) }) },
-            ],
+            content: [{ type: 'output_text', text: providerOutputText(_options, next) }],
           },
         ],
       }),
@@ -126,7 +125,9 @@ function transport(values: unknown[]) {
 
 async function run(
   values: unknown[],
-  options: Partial<Pick<Parameters<typeof generatePlan>[0], 'existing' | 'existingUrs'>> = {},
+  options: Partial<
+    Pick<Parameters<typeof generatePlan>[0], 'existing' | 'existingUrs' | 'feedback'>
+  > = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'provenarium-plan-authoring-'));
   roots.push(root);
@@ -188,6 +189,34 @@ function correctedPredicates() {
   return generated;
 }
 
+function sourceEdits() {
+  return {
+    edits: [
+      { op: 'repair_obligation_source', obligation_id: 'OB-01', source: 'URS-001/statement' },
+      { op: 'set_input_declarations', fixtures: [], references: [] },
+    ],
+  };
+}
+function predicateEdits() {
+  const [, csv, text] = correctedPredicates().plan.cases[0].steps[0].assertions;
+  return {
+    edits: [
+      {
+        op: 'repair_assertion',
+        assertion_id: 'A-CSV',
+        comparison: csv.comparison,
+        expected: csv.expected,
+      },
+      {
+        op: 'repair_assertion',
+        assertion_id: 'A-TEXT',
+        comparison: text.comparison,
+        expected: text.expected,
+      },
+    ],
+  };
+}
+
 it('supplies exact source bindings and runtime rules and normalizes an unambiguous local source', async () => {
   const generated = candidate();
   generated.plan.obligations[0].source = 'statement';
@@ -210,7 +239,12 @@ it('repairs invalid source bindings and prose references using validator feedbac
   malformed.plan.obligations[0].source = 'The form requirement above';
   malformed.plan.references = ['URS-SYNTHETIC, Draft 1, including accepted human resolutions.'];
   const corrected = candidate();
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, corrected, reviewed]);
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    malformed,
+    sourceEdits(),
+    reviewed,
+  ]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value?.plan.references).toEqual([]);
@@ -230,7 +264,12 @@ it('retains an incomplete diagnostic after two unsuccessful technical correction
   const malformed = candidate();
   malformed.plan.obligations[0].source = 'Unknown reviewed clause';
   malformed.plan.references = ['Missing external review assignment and attachment.'];
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, malformed, malformed]);
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    malformed,
+    { edits: [] },
+    { edits: [] },
+  ]);
 
   expect(result.incomplete).toBe(true);
   expect(fetchImpl).toHaveBeenCalledTimes(4);
@@ -239,11 +278,11 @@ it('retains an incomplete diagnostic after two unsuccessful technical correction
   expect(result.spend.calls).toBe(4);
 });
 
-it('validates and repairs a semantic revision before returning it as complete', async () => {
+it('rejects invalid new coverage atomically and retries a corrected scoped proposal', async () => {
   const initial = candidate();
-  const malformedRevision = candidate();
-  malformedRevision.plan.obligations[0].source = 'revised statement clause';
-  malformedRevision.plan.references = ['This is a plan execution note, not a filename.'];
+  const added = structuredClone(initial.plan.obligations[0]);
+  added.id = 'OB-02';
+  added.source = 'An unbound additional clause';
   const { result, fetchImpl } = await run([
     { action: 'finish' },
     initial,
@@ -252,32 +291,40 @@ it('validates and repairs a semantic revision before returning it as complete', 
         {
           requirement: 'URS-001',
           severity: 'suggestion',
-          message: 'Clarify the test instruction.',
+          message: 'Add a separate clause mapping.',
         },
       ],
-      summary: 'Improve readability.',
+      summary: 'Improve coverage.',
     },
-    malformedRevision,
-    candidate(),
+    { edits: [{ op: 'add_obligation', value: added }] },
+    {
+      edits: [{ op: 'add_obligation', value: { ...added, source: 'URS-001/details/0' } }],
+    },
   ]);
 
   expect(result.incomplete).toBe(false);
   expect(result.reviewRounds).toBe(1);
-  expect(result.value?.plan.references).toEqual([]);
+  expect(result.value?.plan.obligations[1].source).toBe('URS-001/details/0');
   const correction = JSON.parse(requestBody(fetchImpl, 4).input[0].content[0].text);
-  expect(correction.validation_errors.join('\n')).toContain(malformedRevision.plan.references[0]);
-  expect(result.value?.plan.cases[0].manual).toBe(false);
+  expect(correction.validation_errors.join('\n')).toContain('OB-02');
+  expect(correction.candidate.plan.obligations).toEqual(initial.plan.obligations);
+  expect(result.value?.plan.cases).toEqual(initial.plan.cases);
 });
 
 it('does not weaken an expected outcome to get a technical correction through validation', async () => {
   const malformed = candidate();
   malformed.plan.obligations[0].source = 'Unbound clause';
-  const weakened = candidate();
-  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+  const weakened = {
+    edits: [
+      ...sourceEdits().edits,
+      { op: 'repair_assertion', assertion_id: 'A-01', expected: false },
+    ],
+  };
   const { result } = await run([{ action: 'finish' }, malformed, weakened, weakened]);
 
   expect(result.incomplete).toBe(true);
-  expect(result.questions.join('\n')).toMatch(/expected result|expected outcome|expectation/i);
+  expect(result.questions.join('\n')).toMatch(/expected|protect|repair|A-01/i);
+  expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
 });
 
 it('repairs a runtime-compatibility question instead of treating it as a user requirement decision', async () => {
@@ -289,7 +336,12 @@ it('repairs a runtime-compatibility question instead of treating it as a user re
       question: 'What source-reference syntax does runtime version 1 accept?',
     },
   ];
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate(), reviewed]);
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    malformed,
+    { edits: [{ op: 'remove_technical_question', question_id: 'IOQ-Q-RUNTIME' }] },
+    reviewed,
+  ]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value?.plan.questions).toEqual([]);
@@ -326,19 +378,33 @@ it('does not weaken a manual expected result while repairing a source binding', 
   malformed.plan.obligations[0].assertion_ids = [];
   malformed.plan.obligations[0].manual_case_ids = [manual.id];
   malformed.plan.obligations[0].source = 'Unbound clause';
-  const weakened = structuredClone(malformed);
-  weakened.plan.obligations[0].source = 'URS-001/statement';
-  weakened.plan.cases[0].manual_expected = 'A missing Sample ID label is also acceptable.';
+  const weakened = {
+    edits: [
+      { op: 'repair_obligation_source', obligation_id: 'OB-01', source: 'URS-001/statement' },
+      {
+        op: 'revise_manual_expected',
+        case_id: manual.id,
+        expected: 'A missing Sample ID label is also acceptable.',
+      },
+    ],
+  };
   const { result } = await run([{ action: 'finish' }, malformed, weakened, weakened]);
 
   expect(result.incomplete).toBe(true);
   expect(result.questions.join('\n')).toMatch(/manual|expected/i);
+  expect(result.value?.plan.cases[0].manual_expected).toBe(manual.manual_expected);
+  expect(result.value?.plan.obligations[0].source).toBe('Unbound clause');
 });
 
 it('repairs malformed CSV and text predicates while preserving valid expected results', async () => {
   const malformed = malformedPredicates();
   const corrected = correctedPredicates();
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, corrected, reviewed]);
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    malformed,
+    predicateEdits(),
+    reviewed,
+  ]);
 
   expect(result.incomplete).toBe(false);
   expect(fetchImpl).toHaveBeenCalledTimes(4);
@@ -347,27 +413,26 @@ it('repairs malformed CSV and text predicates while preserving valid expected re
   );
   expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
   const correction = JSON.parse(requestBody(fetchImpl, 2).input[0].content[0].text);
-  expect(correction.repairable_draft_assertions.map((item: { id: string }) => item.id)).toEqual([
-    'A-CSV',
-    'A-TEXT',
-  ]);
+  expect(
+    correction.edit_catalog.repairable_assertions.map((item: { id: string }) => item.id),
+  ).toEqual(['A-CSV', 'A-TEXT']);
   expect(correction.validation_errors.join('\n')).toContain('A-CSV: wildcard pattern');
   expect(correction.validation_errors.join('\n')).toContain('A-TEXT: matches supports literal');
   expect(result.diagnostics).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ kind: 'document_structure' }),
       expect.objectContaining({
-        kind: 'draft_assertion_repair',
+        kind: 'protocol_edits',
         candidate: expect.objectContaining({
           changes: expect.arrayContaining([
             expect.objectContaining({
-              assertion: 'A-CSV',
+              target: 'A-CSV',
               before: expect.objectContaining({ comparison: 'matches' }),
-              proposed: expect.objectContaining({ comparison: 'csv_equals' }),
+              after: expect.objectContaining({ comparison: 'csv_equals' }),
             }),
             expect.objectContaining({
-              assertion: 'A-TEXT',
-              proposed: expect.objectContaining({ comparison: 'contains_any' }),
+              target: 'A-TEXT',
+              after: expect.objectContaining({ comparison: 'contains_any' }),
             }),
           ]),
         }),
@@ -376,15 +441,19 @@ it('repairs malformed CSV and text predicates while preserving valid expected re
   );
 });
 
-it('rejects an unrelated expected-result change and uses the remaining correction on the original draft', async () => {
+it('rejects an unrelated expected-result edit and uses the remaining correction on the original draft', async () => {
   const malformed = malformedPredicates();
-  const weakened = correctedPredicates();
-  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+  const weakened = {
+    edits: [
+      ...predicateEdits().edits,
+      { op: 'repair_assertion', assertion_id: 'A-01', expected: false },
+    ],
+  };
   const { result, fetchImpl } = await run([
     { action: 'finish' },
     malformed,
     weakened,
-    correctedPredicates(),
+    predicateEdits(),
     reviewed,
   ]);
 
@@ -395,41 +464,25 @@ it('rejects an unrelated expected-result change and uses the remaining correctio
     (diagnostic) => diagnostic.kind === 'protected_expectation',
   );
   expect(rejection).toMatchObject({
-    operation: 'technical correction',
+    candidate: { proposal: weakened },
     issues: expect.arrayContaining([
-      expect.objectContaining({
-        path: '/changes/0/proposed',
-        code: 'expected_result_changed',
-      }),
+      expect.objectContaining({ message: expect.stringMatching(/A-01|expected|protect/i) }),
     ]),
-    candidate: {
-      changes: [
-        expect.objectContaining({
-          assertion: 'A-01',
-          path: ['plan', 'cases', 0, 'steps', 0, 'assertions', 0],
-          before: expect.objectContaining({ expected: true }),
-          proposed: expect.objectContaining({ expected: false }),
-        }),
-      ],
-    },
   });
   const secondCorrection = JSON.parse(requestBody(fetchImpl, 3).input[0].content[0].text);
   expect(secondCorrection.candidate).toEqual(malformed);
   expect(secondCorrection.validation_errors.join('\n')).toContain('A-CSV: wildcard pattern');
-  expect(secondCorrection.validation_errors.join('\n')).toContain('A-01: correction changed');
-  expect(secondCorrection.rejected_changes).toEqual([
-    expect.objectContaining({
-      assertion: 'A-01',
-      before: expect.objectContaining({ expected: true }),
-      proposed: expect.objectContaining({ expected: false }),
-    }),
-  ]);
+  expect(secondCorrection.validation_errors.join('\n')).toMatch(/A-01|expected|protect/i);
 });
 
-it('retains the original draft and both rejected changes after two weakening corrections', async () => {
+it('retains the original draft after two rejected weakening edit proposals', async () => {
   const malformed = malformedPredicates();
-  const weakened = correctedPredicates();
-  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+  const weakened = {
+    edits: [
+      ...predicateEdits().edits,
+      { op: 'repair_assertion', assertion_id: 'A-01', expected: false },
+    ],
+  };
   const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, weakened, weakened]);
 
   expect(result.incomplete).toBe(true);
@@ -437,14 +490,13 @@ it('retains the original draft and both rejected changes after two weakening cor
   expect(result.spend.calls).toBe(4);
   expect(result.reviewRounds).toBe(0);
   expect(result.value).toEqual(malformed);
-  const rejected = result.diagnostics?.filter(
-    (diagnostic) => diagnostic.kind === 'protected_expectation',
-  );
-  expect(rejected).toHaveLength(2);
   expect(
-    result.diagnostics?.some((diagnostic) => diagnostic.kind === 'draft_assertion_repair'),
-  ).toBe(false);
-  expect(result.questions.join('\n')).toContain('A-01');
+    result.diagnostics?.filter((diagnostic) => diagnostic.kind === 'protected_expectation'),
+  ).toHaveLength(2);
+  expect(result.diagnostics?.some((diagnostic) => diagnostic.kind === 'protocol_edits')).toBe(
+    false,
+  );
+  expect(result.questions.join('\n')).toMatch(/A-01|expected|protect/i);
   expect(result.questions.join('\n')).not.toContain('Revise the requirement');
 });
 
@@ -460,15 +512,19 @@ it('repairs a missing numeric tolerance without allowing its valid expected valu
     }),
   );
   malformed.plan.obligations[0].assertion_ids.push('A-NUMERIC');
-  const corrected = structuredClone(malformed);
-  corrected.plan.cases[0].steps[0].assertions[1].tolerance = 0.001;
-  const weakened = structuredClone(corrected);
-  weakened.plan.cases[0].steps[0].assertions[1].expected = 9.99;
+  const weakened = {
+    edits: [
+      { op: 'repair_assertion', assertion_id: 'A-NUMERIC', tolerance: 0.001, expected: 9.99 },
+    ],
+  };
+  const correction = {
+    edits: [{ op: 'repair_assertion', assertion_id: 'A-NUMERIC', tolerance: 0.001 }],
+  };
   const { result, fetchImpl } = await run([
     { action: 'finish' },
     malformed,
     weakened,
-    corrected,
+    correction,
     reviewed,
   ]);
 
@@ -482,64 +538,172 @@ it('repairs a missing numeric tolerance without allowing its valid expected valu
   const rejected = result.diagnostics?.find(
     (diagnostic) => diagnostic.kind === 'protected_expectation',
   );
-  expect(rejected?.candidate).toMatchObject({
-    changes: [
-      expect.objectContaining({
-        assertion: 'A-NUMERIC',
-        before: expect.objectContaining({ expected: 1.25 }),
-        proposed: expect.objectContaining({ expected: 9.99 }),
-      }),
-    ],
-  });
+  expect(rejected?.candidate).toMatchObject({ proposal: weakened });
   const firstCorrection = JSON.parse(requestBody(fetchImpl, 2).input[0].content[0].text);
-  expect(firstCorrection.repairable_draft_assertions).toEqual([
+  expect(firstCorrection.edit_catalog.repairable_assertions).toEqual([
     expect.objectContaining({
       id: 'A-NUMERIC',
-      issues: [expect.objectContaining({ field: 'tolerance', code: 'numeric_tolerance' })],
       fields: ['tolerance'],
     }),
   ]);
 });
 
-it('keeps an existing reviewed CSV expectation frozen even when its replacement draft is malformed', async () => {
+it('keeps an existing reviewed CSV expectation frozen when feedback proposes a different expected value', async () => {
   const existing = correctedPredicates();
-  const malformed = malformedPredicates();
-  const weakened = correctedPredicates();
-  weakened.plan.cases[0].steps[0].assertions[1].expected = [
-    ['Sample ID', 'Volume'],
-    ['SYNTHETIC-1', '9.999'],
-  ];
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, weakened, weakened], {
+  const weakened = {
+    edits: [
+      {
+        op: 'revise_assertion',
+        assertion_id: 'A-CSV',
+        expected: [
+          ['Sample ID', 'Volume'],
+          ['SYNTHETIC-1', '9.999'],
+        ],
+      },
+    ],
+  };
+  const { result, fetchImpl } = await run([{ action: 'finish' }, weakened, weakened, weakened], {
     existing: existing.plan,
     existingUrs: urs,
   });
 
   expect(result.incomplete).toBe(true);
   expect(fetchImpl).toHaveBeenCalledTimes(4);
-  expect(result.questions.join('\n')).toContain('A-CSV');
+  expect(result.questions.join('\n')).toMatch(/schema|correction/i);
   expect(result.diagnostics).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        kind: 'protected_expectation',
+        kind: 'document_schema',
+        candidate: expect.objectContaining(weakened),
+      }),
+    ]),
+  );
+  expect(result.value?.plan.cases[0].steps[0].assertions[1].expected).toEqual(
+    existing.plan.cases[0].steps[0].assertions[1].expected,
+  );
+  const schema = requestBody(fetchImpl, 1).text.format.schema;
+  expect(JSON.stringify(schema)).not.toContain('revise_assertion');
+});
+
+it('does not reinterpret an existing invalid predicate as a new draft repair permission', async () => {
+  const existing = malformedPredicates();
+  const { result, fetchImpl } = await run(
+    [{ action: 'finish' }, { edits: [] }, predicateEdits(), predicateEdits()],
+    { existing: existing.plan, existingUrs: urs },
+  );
+
+  expect(result.incomplete).toBe(true);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(result.value?.plan.cases).toEqual(existing.plan.cases);
+  expect(result.value?.plan.obligations).toEqual(existing.plan.obligations);
+  expect(result.reviewRounds).toBe(0);
+  const correction = JSON.parse(requestBody(fetchImpl, 2).input[0].content[0].text);
+  expect(correction.edit_catalog.repairable_assertions).toEqual([]);
+  expect(correction.validation_errors.join('\n')).toContain('A-CSV');
+  expect(
+    result.diagnostics?.filter((diagnostic) => diagnostic.kind === 'protected_expectation'),
+  ).toHaveLength(2);
+  expect(result.diagnostics?.some((diagnostic) => diagnostic.kind === 'protocol_edits')).toBe(
+    false,
+  );
+});
+
+it('resolves an IOQ-only question from explicit feedback while retaining its original text and answer in diagnostics', async () => {
+  const existing = candidate();
+  const question = {
+    id: 'IOQ-Q-01',
+    question: 'Which browser will the qualification preparer use?',
+    requirement: 'URS-001',
+  };
+  existing.plan.questions = [question];
+  const resolution = {
+    op: 'resolve_question',
+    question_id: question.id,
+    supporting_quote: 'Use the installed Chromium browser.',
+    resolution: 'The preparer will use the installed Chromium browser.',
+  };
+  const { result, fetchImpl } = await run(
+    [{ action: 'finish' }, { edits: [resolution] }, reviewed],
+    {
+      existing: existing.plan,
+      existingUrs: urs,
+      feedback: `IOQ-Q-01: ${resolution.supporting_quote}`,
+    },
+  );
+
+  expect(result.incomplete, result.questions.join('\n')).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(result.value?.plan.questions).toEqual([]);
+  expect(result.value?.plan.cases).toEqual(existing.plan.cases);
+  expect(result.value?.plan.obligations).toEqual(existing.plan.obligations);
+  expect(result.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'protocol_edits',
         candidate: expect.objectContaining({
+          proposal: { edits: [resolution] },
           changes: expect.arrayContaining([
             expect.objectContaining({
-              assertion: 'A-CSV',
-              before: expect.objectContaining({
-                comparison: 'csv_equals',
-                expected: [
-                  ['Sample ID', 'Volume'],
-                  ['SYNTHETIC-1', '1.250'],
-                ],
-              }),
+              op: 'resolve_question',
+              before: question,
+              after: {
+                question_id: question.id,
+                resolution: resolution.resolution,
+                supporting_quote: resolution.supporting_quote,
+              },
             }),
           ]),
         }),
       }),
     ]),
   );
-  if (result.value)
-    expect(result.value.plan.cases[0].steps[0].assertions[1].expected).toEqual(
-      existing.plan.cases[0].steps[0].assertions[1].expected,
-    );
+});
+
+it('does not let autonomous semantic review resolve an IOQ question, even when the initial revision received feedback', async () => {
+  const existing = candidate();
+  existing.plan.questions = [
+    { id: 'IOQ-Q-01', question: 'Which browser will the preparer use?', requirement: 'URS-001' },
+  ];
+  const feedback = 'IOQ-Q-01: Use the installed Chromium browser.';
+  const proposal = {
+    edits: [
+      {
+        op: 'resolve_question',
+        question_id: 'IOQ-Q-01',
+        supporting_quote: 'Use the installed Chromium browser.',
+        resolution: 'Use Chromium.',
+      },
+    ],
+  };
+  const { result, fetchImpl } = await run(
+    [
+      { action: 'finish' },
+      { edits: [] },
+      {
+        findings: [
+          {
+            severity: 'suggestion',
+            requirement: 'URS-001',
+            message: 'Resolve the browser question.',
+          },
+        ],
+        summary: 'Question remains.',
+      },
+      proposal,
+      proposal,
+      proposal,
+    ],
+    { existing: existing.plan, existingUrs: urs, feedback },
+  );
+
+  expect(result.incomplete).toBe(true);
+  expect(fetchImpl).toHaveBeenCalledTimes(6);
+  expect(result.value?.plan.questions).toEqual(existing.plan.questions);
+  expect(result.value?.plan.cases).toEqual(existing.plan.cases);
+  expect(JSON.stringify(requestBody(fetchImpl, 3).text.format.schema)).not.toContain(
+    'resolve_question',
+  );
+  expect(
+    result.diagnostics?.filter((diagnostic) => diagnostic.kind === 'document_schema'),
+  ).toHaveLength(3);
 });
