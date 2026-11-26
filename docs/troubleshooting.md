@@ -24,6 +24,39 @@ Use `--answers-only` to collect answers without a provider call, then return to
 `urs resolve` when ready to review requirement changes. Ctrl+C retains answers
 already submitted.
 
+## I do not want to type every answer
+
+Run `provenarium urs resolve urs.yaml` in an interactive terminal. It reads the
+linked context and saved deployed URL, then offers sourced suggestions to accept
+or edit. Where the material does not establish an answer, it offers concrete
+alternatives instead of choosing a policy for you. Already recorded answers are
+reused. `--answers-only` deliberately uses typed input and makes no provider
+request; omit that flag to get AI suggestions.
+
+Suggestion and requirement-proposal requests share the command's spending cap.
+`--yes` does not accept suggested answers. If no supported suggestion is
+available, review the context warnings, enter a specific decision, or skip.
+
+## A CLI-generated URS has malformed references
+
+Older drafts could put test identifiers or descriptive page observations in
+`references`, where checks expect normative file paths. This was a generation
+defect, not a missing answer. New generation separates provenance into
+`citations` and runs structural checks before publishing a working draft.
+
+For an existing file, run:
+
+```sh
+provenarium urs check urs.yaml --fix-references
+```
+
+The command uses linked source material and the saved deployed URL to identify
+supported repairs. Review the proposed changes before confirming. It makes no
+AI request and retains before/after snapshots under
+`.provenarium/reference-repairs/`. It may read linked HTTPS context. Unsupported
+repairs and genuinely missing normative files remain errors; do not delete those
+references merely to obtain a passing check.
+
 ## A resolution proposal was saved but not applied
 
 Fresh proposed requirement changes need review even when authoring was invoked
@@ -39,9 +72,10 @@ files; work on the editable URS in the selected validation project.
 
 ## All questions are resolved, but the URS still fails checks
 
-Read the remaining `urs check` messages. Missing reference files, placeholders,
-duplicate IDs, and other structural issues are separate from question
-resolution. Correct those issues in the working requirements, then check again.
+Read the remaining `urs check` messages. For misplaced provenance in an older
+generated draft, use `--fix-references` as described above. Genuine missing files,
+placeholders, duplicate IDs, and other structural issues are separate from
+question resolution. Correct those issues in the working requirements, then check again.
 Refresh existing HTML/PDF views with `provenarium urs render urs.yaml` after edits.
 
 ## The CLI reports missing Chromium

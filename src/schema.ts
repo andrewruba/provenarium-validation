@@ -35,8 +35,18 @@ export const requirementSchema = z.strictObject({
   risk: z.string().optional(),
   applicable: z.boolean().default(true),
   non_applicability_reason: z.string().optional(),
-  references: z.array(z.string()).default([]),
-  citations: z.array(citationSchema).default([]),
+  references: z
+    .array(z.string())
+    .default([])
+    .describe(
+      'Normative input files relative to the validation project, or explicit HTTPS/context inputs requiring retained package copies. Never source descriptions, Markdown links, or test-case IDs.',
+    ),
+  citations: z
+    .array(citationSchema)
+    .default([])
+    .describe(
+      'Source provenance using supplied source IDs and exact locations. Application observations and mentioned test IDs belong here, not in references.',
+    ),
 });
 export const ursSchema = z.strictObject({
   schema_version: z.literal(1),

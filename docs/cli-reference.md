@@ -47,6 +47,13 @@ exists, it informs the draft and the new revision gets a separate filename
 automatically. An untouched blank template can be filled by AI while the
 original file is preserved. Follow the printed filename in subsequent commands.
 
+Before publishing the working YAML, the CLI separates source provenance from
+normative file references and runs the same structural checks used by `urs check`.
+Specific unresolved human decisions may remain in a draft. Malformed references,
+duplicate IDs, inconsistent tables, and other structural defects prevent the
+working draft from being published; the attempted output and diagnostics remain
+in the authoring record for investigation.
+
 To write the requirements yourself, use this route instead:
 
 ```sh
@@ -66,9 +73,26 @@ provenarium urs render urs.yaml
 provenarium urs check urs.yaml --review
 ```
 
-`check` is offline unless `--review` is explicitly selected. Structural checks
-help identify missing information; the author still reviews what the
+Plain `check` performs local validation without provider calls. `--review` adds
+paid AI review. `--fix-references` can read linked context, including HTTPS
+sources, to propose evidence-backed repairs without a provider call. Structural
+checks help identify missing information; the author still reviews what the
 requirements say.
+
+For an older draft whose generated references contain observation descriptions
+or test identifiers instead of filenames:
+
+```sh
+provenarium urs check urs.yaml --fix-references
+```
+
+The command shows the reference-to-citation changes and asks before applying
+them. Use `--yes` only to apply those repairs without an interactive prompt.
+Repairs require supporting linked context or the saved deployed URL and preserve
+before/after snapshots under `.provenarium/reference-repairs/`. A real missing
+normative file is still an error; this command does not discard evidence
+requirements to make checks pass. Rerun `check` after resolving any remaining
+questions or missing inputs.
 
 Once the URS is reviewed, create the IOQ protocol and tests:
 
@@ -83,10 +107,19 @@ provenarium urs resolve urs.yaml
 ```
 
 The filename defaults to `urs.yaml`. In an interactive terminal, the command
-shows each unanswered question and its related requirement. Enter your decision,
-press Enter to skip, or press Ctrl+C to stop while retaining answers already
-submitted. Questions with recorded answers are skipped. To revise one of those
-answers, use `--question Q-CSV-01`; repeat `--question` for additional IDs.
+reads the selected linked context and inspects the saved deployed URL without
+form interactions. After one provider/spending preview, it requests one batch
+of answer suggestions. Each question shows a suggested answer, its supporting
+source, and a short explanation. Accept it, edit it, choose a concrete
+alternative, or skip the question. Ctrl+C stops while retaining answers already
+submitted.
+
+Suggestions distinguish documented intended behavior from current implementation
+behavior. A missing product decision gets alternatives rather than an invented
+default. Accepting a suggestion records your intended decision; it does not yet
+apply requirement changes. Questions with recorded answers are skipped and those
+answers are reused. To revisit an answer, use `--question Q-CSV-01`; repeat
+`--question` for additional IDs.
 
 You can also edit answers directly beside the questions:
 
@@ -103,11 +136,13 @@ Blank or null answers remain unanswered. Recording an answer does not yet change
 the requirement or remove its readiness blocker. Run `urs resolve` to review
 how the answer should be incorporated.
 
-With pending answers, the command uses the selected provider to make one targeted
-proposal. You can select `--provider`, `--model`, `--source`, and `--max-spend`;
-the command previews the provider, selected material, and spending ceiling.
-It uses the saved/default spending ceiling unless `--max-spend` overrides it;
-there is no thoroughness selection or repeated review loop for resolution.
+After answers are recorded, the command makes one targeted requirement-change
+proposal. You can select `--provider`, `--model`, `--source`, and `--max-spend`.
+The suggestion batch and proposal share one command spending ceiling and one
+provider preview; there is no separate budget per question. If all answers are
+already recorded, only the proposal request is needed. The saved/default ceiling
+applies unless `--max-spend` overrides it; there is no thoroughness selection or
+repeated review loop for resolution.
 The CLI displays the exact questions and answers, complete before/after
 requirement text, reasons for each change, and the proposed document revision.
 Accept only changes that express your intended decisions. A requirement that
@@ -120,14 +155,19 @@ blocking readiness. Changing the answer, question, or linked requirement ID
 requires another resolution review. Do not delete answered questions or manually
 set resolution metadata to bypass that review.
 
-To collect answers without a provider request or requirement edits:
+To type answers without suggestions, a provider request, or requirement edits:
 
 ```sh
 provenarium urs resolve urs.yaml --answers-only
 ```
 
-Reviews are retained as `.diff.txt` and `.proposal.json` files under
-`.provenarium/resolutions/`. The CLI prints their paths. To return to a saved
+This offline mode shows the question and related requirement, accepts a typed
+answer, and lets Enter skip a question. Previously submitted answers are saved
+when you stop.
+
+Suggestion batches are retained as `.suggestions.json`; requirement reviews are
+retained as `.diff.txt` and `.proposal.json` under `.provenarium/resolutions/`.
+The CLI prints their paths. To return to a saved
 proposal without another AI request, use its printed path:
 
 ```sh
@@ -136,9 +176,9 @@ provenarium urs resolve urs.yaml --apply .provenarium/resolutions/REVIEW_ID.prop
 
 The proposal must match the current source file; changing the YAML after proposal
 creation requires a fresh proposal. `--yes` on a new resolution request accepts
-authoring consent but still requires interactive confirmation before fresh
-requirement changes are applied. Without an interactive terminal, the proposal
-is retained for later review. After reviewing a saved proposal, `--apply ...
+authoring consent; it never accepts suggested answers or fresh requirement
+changes. For scripted use, record answers in YAML first. Without an interactive
+terminal, the proposal is retained for later review. After reviewing a saved proposal, `--apply ...
 --yes` explicitly applies that saved artifact without a prompt. The offline
 `--apply` and `--answers-only` modes do not accept authoring options.
 

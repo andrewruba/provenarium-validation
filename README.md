@@ -31,11 +31,19 @@ and a new revision receives a separate filename. `generate --urs` produces a
 human-readable Installation and Operational Qualification (IOQ) protocol and
 deterministic Playwright tests.
 
-You can answer questions in the CLI or edit the `answer` field beside each
-question in YAML. Run `urs resolve` to incorporate those answers into the
-requirements: it shows the questions, answers, and proposed changes before asking
-you to apply them. Answered questions stay in the document for traceability.
-Use `urs resolve --answers-only` to record answers without an AI request.
+`urs resolve` suggests answers from the linked context and deployed application.
+For each question, review the suggestion and its source, then accept, edit, choose
+an alternative, or skip. You can also edit the `answer` field beside each question
+in YAML. The command shows proposed requirement changes before asking you to apply
+them. Questions and accepted answers stay in the document for traceability.
+Suggestion and requirement-proposal requests share one spending ceiling.
+Use `urs resolve --answers-only` to type answers without an AI request.
+
+Generated drafts are checked for structural defects before being written as a
+working URS. Source observations belong in citations; file references must name
+real supporting files. For older drafts with misplaced provenance, run
+`urs check urs.yaml --fix-references` to review evidence-backed reference repairs
+without a provider call. Genuine missing files remain readiness blockers.
 
 You can supply the inputs directly instead of using prompts:
 

@@ -1,4 +1,4 @@
-import { confirm, text } from '@clack/prompts';
+import { confirm, select, text } from '@clack/prompts';
 import { randomUUID } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,6 +10,7 @@ import { atomicWrite, exists, parseYaml, safePath, sha256, writeNew } from './fi
 import { ursSchema, type Urs } from './schema.js';
 import {
   pendingAnsweredQuestions,
+  checkUrsStructure,
   questionStatus,
   requirements,
   unresolvedQuestions,
@@ -22,6 +23,7 @@ import {
   type UrsResolutionProposal,
 } from './urs-resolution.js';
 import { projectCommand } from './urs-setup.js';
+import type { UrsAnswerSuggestions } from './urs-answers.js';
 
 const savedProposalSchema = z.strictObject({
   schema_version: z.literal(1),
@@ -43,12 +45,18 @@ export interface ResolveUrsRuntime {
   isTTY?: boolean;
   text?: (options: { message: string; initialValue?: string }) => Promise<string | symbol>;
   confirm?: (options: { message: string; initialValue?: boolean }) => Promise<boolean | symbol>;
+  select?: (options: {
+    message: string;
+    initialValue?: string;
+    options: { value: string; label: string; hint?: string }[];
+  }) => Promise<string | symbol>;
   log?: (message: string) => void;
+  suggest?: (urs: Urs, questionIds: string[]) => Promise<AuthoringResult<UrsAnswerSuggestions>>;
   propose: (urs: Urs) => Promise<AuthoringResult<UrsResolutionProposal>>;
 }
 
 /** Keep unrelated YAML comments and layout when recording answers or applying reviewed edits. */
-function updateYaml(raw: string, before: Urs, after: Urs): string {
+export function updateYaml(raw: string, before: Urs, after: Urs): string {
   const document = parseDocument(raw);
   if (!isDeepStrictEqual(before.document, after.document))
     document.setIn(['document'], after.document);
@@ -72,7 +80,7 @@ function updateYaml(raw: string, before: Urs, after: Urs): string {
   return document.toString({ lineWidth: 100 });
 }
 
-async function editableFile(root: string, input: string): Promise<string> {
+export async function editableFile(root: string, input: string): Promise<string> {
   const relative = path.relative(root, path.resolve(root, input));
   const file = await safePath(root, relative);
   if (['packages', 'candidates', '.provenarium'].includes(relative.split(path.sep)[0]))
@@ -111,6 +119,7 @@ export async function resolveUrsFile(
   const interactive = runtime.isTTY ?? !!process.stdin.isTTY;
   const ask = runtime.text ?? text;
   const accept = runtime.confirm ?? confirm;
+  const choose = runtime.select ?? select;
   let raw = await readFile(file, 'utf8');
   let document = ursSchema.parse(parseYaml(raw));
   const artifact = async (name: string) => safePath(root, `.provenarium/resolutions/${name}`);
@@ -160,6 +169,11 @@ export async function resolveUrsFile(
     }
     await assertCurrent();
     const next = applyResolutionProposal(document, proposal);
+    const structuralErrors = await checkUrsStructure(next, root);
+    if (structuralErrors.length)
+      throw new Error(
+        `The proposed requirements failed structural validation; no changes were applied.\n${structuralErrors.join('\n')}`,
+      );
     const backup = await save(next, 'requirements');
     const after = backup.replace(/\.before\.yaml$/, '.after.yaml');
     await writeNew(after, raw);
@@ -188,6 +202,13 @@ export async function resolveUrsFile(
     throw new Error(
       '--question needs an interactive terminal. Edit answer fields in YAML for scripted use.',
     );
+  if (!options.answersOnly) {
+    const structuralErrors = await checkUrsStructure(document, root);
+    if (structuralErrors.length)
+      throw new Error(
+        `This working URS has structural issues that must be corrected before AI resolution. For generated source-reference formatting issues, run ${projectCommand(root, ['urs', 'check', path.relative(root, file), '--fix-references'])}.\n${structuralErrors.join('\n')}`,
+      );
+  }
   // Add visible answer slots to older drafts without changing their questions or requirements.
   const withSlots = structuredClone(document);
   for (const question of withSlots.open_questions) question.answer ??= null;
@@ -201,16 +222,91 @@ export async function resolveUrsFile(
           : questionStatus(document, question) === 'unanswered',
       )
       .map((question) => question.id);
+    let suggestions: UrsAnswerSuggestions['suggestions'] = [];
+    if (ids.length && !options.answersOnly && runtime.suggest) {
+      const result = await runtime.suggest(document, ids);
+      await assertCurrent();
+      if (result.value && !result.incomplete) {
+        suggestions = result.value.suggestions;
+        const suggestionFile = await artifact(`${randomUUID()}.suggestions.json`);
+        await writeNew(
+          suggestionFile,
+          JSON.stringify(
+            {
+              source: file,
+              source_sha256: sha256(raw),
+              created_at: new Date().toISOString(),
+              ...result.value,
+            },
+            null,
+            2,
+          ) + '\n',
+        );
+        log(`Suggested answers saved for review: ${suggestionFile}`);
+      } else {
+        log(
+          'Suggested answers are unavailable. You can enter your own answers or skip; no suggestions have been accepted.',
+        );
+      }
+    }
     for (const id of ids) {
       const question = document.open_questions.find((item) => item.id === id)!;
       const requirement = requirements(document).find((item) => item.id === question.requirement);
       log(
         `${id}: ${question.question}\n${requirement ? `Related requirement:\n${stringify(requirement)}` : `Document context:\n${stringify(document.document)}`}`,
       );
-      const answer = await ask({
-        message: 'Your answer (Enter to skip; Ctrl+C to save and stop)',
-        initialValue: question.answer ?? undefined,
-      });
+      const suggestion = suggestions.find((item) => item.question_id === id);
+      let answer: string | symbol;
+      if (suggestion) {
+        if (question.answer?.trim()) log(`Current answer: ${question.answer}`);
+        const basis = {
+          documented: 'Supported by documented requirements',
+          implementation: 'Observed implementation; confirm this is intended',
+          decision: 'Product decision needed',
+        }[suggestion.basis];
+        log(`${basis}\n${suggestion.explanation}`);
+        if (suggestion.answer) log(`Suggested answer: ${suggestion.answer}`);
+        if (suggestion.citations.length)
+          log(
+            `Sources:\n${suggestion.citations.map((citation) => `  ${citation.source}: ${citation.location}`).join('\n')}`,
+          );
+        const choices = [
+          ...(suggestion.answer ? [{ value: 'accept', label: 'Accept suggested answer' }] : []),
+          { value: 'edit', label: suggestion.answer ? 'Edit answer' : 'Write an answer' },
+          ...suggestion.choices.map((choice, index) => ({
+            value: `choice:${index}`,
+            label: choice,
+          })),
+          {
+            value: 'skip',
+            label: question.answer?.trim() ? 'Keep current answer' : 'Skip for now',
+          },
+        ];
+        const selectedAnswer = await choose({
+          message: `Answer ${id}`,
+          initialValue: suggestion.answer && !question.answer?.trim() ? 'accept' : 'skip',
+          options: choices,
+        });
+        if (typeof selectedAnswer === 'symbol') answer = selectedAnswer;
+        else if (selectedAnswer === 'skip') continue;
+        else if (selectedAnswer === 'accept' && suggestion.answer) answer = suggestion.answer;
+        else if (
+          selectedAnswer.startsWith('choice:') &&
+          suggestion.choices[Number(selectedAnswer.slice(7))]
+        )
+          answer = suggestion.choices[Number(selectedAnswer.slice(7))];
+        else if (selectedAnswer === 'edit')
+          answer = await ask({
+            message: 'Edit your answer (Enter on an empty answer to skip)',
+            initialValue: question.answer?.trim() || suggestion.answer || undefined,
+          });
+        else throw new Error('Unknown suggested-answer selection.');
+      } else {
+        answer = await ask({
+          message: 'Your answer (Enter to skip; Ctrl+C to save and stop)',
+          initialValue: question.answer ?? undefined,
+        });
+      }
       if (typeof answer === 'symbol') {
         log(`Stopped. Answers already entered are saved in ${file}.`);
         summary();

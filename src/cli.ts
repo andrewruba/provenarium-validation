@@ -16,9 +16,12 @@ import {
   type Bindings,
 } from './schema.js';
 import { atomicWrite, exists, readJson, safePath, writeJson, writeNew } from './files.js';
-import { loadUrs, checkUrs, templateText, unresolvedQuestions } from './urs.js';
+import { loadUrs, checkUrs, checkUrsStructure, templateText, unresolvedQuestions } from './urs.js';
 import { prepareUrsInputs, projectCommand } from './urs-setup.js';
 import { resolveUrsFile } from './urs-resolve-cli.js';
+import { repairUrsReferences } from './urs-reference-repair.js';
+import { extractContext } from './context.js';
+import { Discovery, type PageObservation } from './authoring/discovery.js';
 import {
   loadProject,
   saveProject,
@@ -35,9 +38,11 @@ import {
   draftUrs,
   reviewUrs,
   proposeUrsResolution,
+  suggestUrsAnswers,
   generatePlan,
   DEFAULT_MODELS,
   PRESETS,
+  Budget,
   type AuthoringOptions,
   type AuthoringResult,
 } from './authoring/index.js';
@@ -94,7 +99,7 @@ function paid(
 }
 async function authoring(
   command: Command,
-  options: { resolution?: boolean } = {},
+  options: { resolution?: boolean; resolutionSuggestions?: boolean } = {},
 ): Promise<AuthoringOptions> {
   const opts = command.opts(),
     directory = root(command),
@@ -154,7 +159,7 @@ async function authoring(
     throw new Error('Unknown selected context source. Use provenarium context list.');
   console.log(
     options.resolution
-      ? `Answer resolution: ${provider} / ${model}; one proposal request; maximum $${cap.toFixed(2)} USD.`
+      ? `Answer resolution: ${provider} / ${model}; ${options.resolutionSuggestions ? 'up to two requests: suggested answers and requirement changes' : 'one proposal request'}; maximum $${cap.toFixed(2)} USD total for this command.`
       : `Authoring: ${provider} / ${model}; ${tier}; maximum $${cap.toFixed(2)} USD for this command.`,
   );
   console.log(
@@ -165,6 +170,8 @@ async function authoring(
       ? sources.map((s) => `  ${s.id}: ${s.path ?? s.url}`).join('\n')
       : '  No linked context sources selected.',
   );
+  if (options.resolutionSuggestions && project.target_url)
+    console.log(`  Read-only application observation: ${project.target_url}`);
   if (!opts.yes) {
     terminal();
     if (
@@ -251,8 +258,56 @@ paid(
     .command('check')
     .description('Check requirements before generating the protocol and tests')
     .argument('<file>')
+    .option(
+      '--fix-references',
+      'Review and repair generated source-reference formatting without AI',
+    )
     .option('--review', 'Ask AI for semantic suggestions; never rewrite the URS'),
 ).action(async (file, opts, command) => {
+  if (opts.fixReferences) {
+    if (
+      opts.review ||
+      opts.provider ||
+      opts.model ||
+      opts.thoroughness ||
+      opts.maxSpend ||
+      opts.source
+    )
+      throw new Error(
+        '--fix-references does not use AI and cannot be combined with authoring options.',
+      );
+    const directory = root(command);
+    const project = await loadProject(directory);
+    const material = await extractContext(directory, project.context, undefined, {
+      signal: abort.signal,
+    });
+    for (const warning of material.warnings) console.log(warning);
+    let observation: PageObservation | undefined;
+    if (project.target_url) {
+      const browser = new Discovery({
+        root: directory,
+        url: project.target_url,
+        allowInteractions: false,
+        signal: abort.signal,
+      });
+      try {
+        observation = await browser.open();
+      } catch {
+        console.log(
+          'Application observation unavailable. Only references supported by the linked context can be repaired.',
+        );
+      } finally {
+        await browser.close();
+      }
+    }
+    await repairUrsReferences({
+      root: directory,
+      file,
+      context: material,
+      observation,
+      yes: opts.yes,
+    });
+  }
   const document = await loadUrs(path.resolve(root(command), file));
   const errors = await checkUrs(document, root(command));
   console.log(
@@ -268,7 +323,7 @@ paid(
     opts.model ||
     opts.thoroughness ||
     opts.maxSpend ||
-    opts.yes ||
+    (opts.yes && !opts.fixReferences) ||
     opts.source
   )
     throw new Error('Authoring options require urs check --review.');
@@ -303,6 +358,16 @@ paid(
   )
     throw new Error('--answers-only and --apply are offline and do not accept authoring options.');
   const directory = root(command);
+  const project = await loadProject(directory);
+  let authoringOptions: Promise<AuthoringOptions> | undefined;
+  const resolutionOptions = (suggestions: boolean) =>
+    (authoringOptions ??= authoring(command, {
+      resolution: true,
+      resolutionSuggestions: suggestions,
+    }).then((options) => ({
+      ...options,
+      budget: new Budget(options.maxSpend ?? PRESETS[options.thoroughness ?? 'standard'].cap),
+    })));
   await resolveUrsFile(
     {
       root: directory,
@@ -313,9 +378,19 @@ paid(
       questions: opts.question,
     },
     {
+      suggest: async (document, questionIds) => {
+        const result = await suggestUrsAnswers({
+          ...(await resolutionOptions(true)),
+          urs: document,
+          questionIds,
+          url: project.target_url,
+        });
+        await retainResult(directory, result);
+        return result;
+      },
       propose: async (document) => {
         const result = await proposeUrsResolution({
-          ...(await authoring(command, { resolution: true })),
+          ...(await resolutionOptions(false)),
           urs: document,
         });
         await retainResult(directory, result);
@@ -397,6 +472,14 @@ async function generateRequirements(
   });
   await retainResult(directory, result);
   if (result.value) {
+    const structuralErrors = await checkUrsStructure(result.value, directory);
+    if (structuralErrors.length) {
+      process.exitCode = 1;
+      console.log(
+        `The generated response failed structural validation and was retained only in the authoring record. No requirements file was published.\n${structuralErrors.map((error) => `- ${error}`).join('\n')}`,
+      );
+      return;
+    }
     if (existing) file = file.replace(/\.ya?ml$/i, '') + `.revision-${randomUUID()}.yaml`;
     await writeNew(file, stringify(result.value));
     await renderUrs(result.value, file.replace(/\.ya?ml$/i, ''), opts.pdf);

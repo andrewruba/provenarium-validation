@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added context-based answer suggestions to interactive `urs resolve`, with
+  accept, edit, concrete alternatives, and skip choices. Suggestions identify
+  their evidence and distinguish documented requirements from implementation
+  behavior. Suggestions and requirement proposals share one command budget;
+  `--answers-only` remains an offline typed-answer workflow.
+- Fixed generated URS references that confused source provenance with normative
+  filenames. Drafts now normalize supported provenance and pass shared structural
+  checks before publication. Added `urs check --fix-references` for reviewed,
+  evidence-backed repairs to older drafts, with retained snapshots and no AI call.
+  Genuine missing normative files remain blockers.
 - Added `provenarium urs resolve` and editable answer fields beside URS questions.
   The CLI saves answers as they are submitted, supports skipping and revisiting
   questions, and can capture answers offline with `--answers-only`.

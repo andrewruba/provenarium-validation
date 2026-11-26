@@ -9,9 +9,13 @@ import { ursSchema } from '../src/schema.js';
 
 const mocks = vi.hoisted(() => ({
   draftUrs: vi.fn(),
+  suggestUrsAnswers: vi.fn(),
   proposeUrsResolution: vi.fn(),
   getProviderKey: vi.fn(),
   renderUrs: vi.fn(),
+  discoveryOptions: vi.fn(),
+  openDiscovery: vi.fn(),
+  closeDiscovery: vi.fn(),
   text: vi.fn(),
   select: vi.fn(),
   confirm: vi.fn(),
@@ -33,11 +37,22 @@ vi.mock('../src/credentials.js', () => ({
 vi.mock('../src/authoring/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/authoring/index.js')>()),
   draftUrs: mocks.draftUrs,
+  suggestUrsAnswers: mocks.suggestUrsAnswers,
   proposeUrsResolution: mocks.proposeUrsResolution,
 }));
 vi.mock('../src/reports.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/reports.js')>()),
   renderUrs: mocks.renderUrs,
+}));
+vi.mock('../src/authoring/discovery.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/authoring/discovery.js')>()),
+  Discovery: class {
+    constructor(options: unknown) {
+      mocks.discoveryOptions(options);
+    }
+    open = mocks.openDiscovery;
+    close = mocks.closeDiscovery;
+  },
 }));
 
 const draft = ursSchema.parse({
@@ -81,6 +96,13 @@ beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
   mocks.getProviderKey.mockResolvedValue('test-provider-key');
+  mocks.openDiscovery.mockImplementation(() => {
+    throw new Error('Unexpected browser observation');
+  });
+  mocks.closeDiscovery.mockResolvedValue(undefined);
+  mocks.suggestUrsAnswers.mockImplementation(() => {
+    throw new Error('Unexpected answer suggestion request');
+  });
   mocks.proposeUrsResolution.mockImplementation(() => {
     throw new Error('Unexpected resolution authoring request');
   });
@@ -327,6 +349,7 @@ it('dispatches answers-only resolution without authoring or credential access', 
 
   expect(mocks.text).toHaveBeenCalledOnce();
   expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.suggestUrsAnswers).not.toHaveBeenCalled();
   expect(mocks.getProviderKey).not.toHaveBeenCalled();
   expect(mocks.select).not.toHaveBeenCalled();
   expect(mocks.confirm).not.toHaveBeenCalled();
@@ -373,6 +396,7 @@ it('stages manual answers for review and applies the saved proposal offline on a
   ]);
 
   expect(mocks.proposeUrsResolution).toHaveBeenCalledOnce();
+  expect(mocks.suggestUrsAnswers).not.toHaveBeenCalled();
   expect(mocks.proposeUrsResolution.mock.calls[0][0]).toMatchObject({
     urs: document,
     provider: 'openai',
@@ -405,6 +429,7 @@ it('stages manual answers for review and applies the saved proposal offline on a
   ]);
 
   expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.suggestUrsAnswers).not.toHaveBeenCalled();
   expect(mocks.getProviderKey).not.toHaveBeenCalled();
   expect(mocks.confirm).not.toHaveBeenCalled();
   const applied = await loadUrs(join(root, 'urs.yaml'));
@@ -440,4 +465,305 @@ it('rejects authoring flags on offline saved-proposal application before accessi
   );
   expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
   expect(mocks.getProviderKey).not.toHaveBeenCalled();
+});
+
+it('previews once, suggests from linked context, and shares one spending cap with the requirement proposal', async () => {
+  const { root } = await resolutionFixture(null);
+  const project = await loadProject(root);
+  project.target_url = 'https://example.com/deployed-dilution';
+  project.context = [{ id: 'design', path: 'design.md' }];
+  await saveProject(root, project);
+  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+  mocks.confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  mocks.select.mockResolvedValueOnce('accept');
+  mocks.suggestUrsAnswers.mockImplementationOnce(async (options) => {
+    const reservation = options.budget.reserve(0.5);
+    options.budget.settle(reservation, 0.25);
+    return {
+      value: {
+        suggestions: [
+          {
+            question_id: 'Q-CSV',
+            answer: 'Download a header-only CSV.',
+            basis: 'documented',
+            explanation: 'The design specifies the empty-export behavior.',
+            citations: [{ source: 'design', location: 'design.md' }],
+            choices: [],
+          },
+        ],
+      },
+      incomplete: false,
+      questions: [],
+      spend: options.budget.snapshot(),
+      reviewRounds: 0,
+    };
+  });
+  mocks.proposeUrsResolution.mockImplementationOnce(async (options) => {
+    expect(options.budget.snapshot()).toMatchObject({ actual: 0.25, calls: 1, cap: 5 });
+    const reservation = options.budget.reserve(0.5);
+    options.budget.settle(reservation, 0.3);
+    return {
+      value: {
+        requirements: [
+          {
+            question_ids: ['Q-CSV'],
+            value: {
+              ...options.urs.families[0].requirements[0],
+              details: ['An empty register shall download a header-only CSV.'],
+            },
+            reason: 'Apply the accepted empty-export behavior.',
+          },
+        ],
+        unresolved: [],
+      },
+      incomplete: false,
+      questions: [],
+      spend: options.budget.snapshot(),
+      reviewRounds: 0,
+    };
+  });
+
+  await runCli(root, ['urs', 'resolve', 'urs.yaml', '--provider', 'openai', '--max-spend', '5']);
+
+  expect(mocks.suggestUrsAnswers).toHaveBeenCalledOnce();
+  const suggestions = mocks.suggestUrsAnswers.mock.calls[0][0];
+  expect(suggestions).toMatchObject({
+    root,
+    questionIds: ['Q-CSV'],
+    sources: [{ id: 'design', path: 'design.md' }],
+    url: project.target_url,
+    maxSpend: 5,
+  });
+  expect(mocks.proposeUrsResolution).toHaveBeenCalledOnce();
+  const proposal = mocks.proposeUrsResolution.mock.calls[0][0];
+  expect(proposal.budget).toBe(suggestions.budget);
+  expect(proposal.budget.snapshot()).toMatchObject({ actual: 0.55, calls: 2, cap: 5 });
+  expect(proposal.urs.open_questions[0].answer).toBe('Download a header-only CSV.');
+  expect(mocks.getProviderKey).toHaveBeenCalledExactlyOnceWith('openai');
+  expect(mocks.confirm).toHaveBeenCalledTimes(2);
+  expect(mocks.confirm.mock.calls[0][0].message).toMatch(/provider.*spending ceiling/);
+  expect(mocks.confirm.mock.calls[1][0].message).toMatch(/Apply.*requirement changes/);
+  expect(mocks.confirm.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.suggestUrsAnswers.mock.invocationCallOrder[0],
+  );
+  expect(mocks.select).toHaveBeenCalledOnce();
+  expect(mocks.text).not.toHaveBeenCalled();
+  const saved = await loadUrs(join(root, 'urs.yaml'));
+  expect(saved.open_questions[0].answer).toBe('Download a header-only CSV.');
+  expect(saved.open_questions[0]).not.toHaveProperty('resolution');
+  expect(saved.families).toEqual(draft.families);
+});
+
+it('does not start authoring for unattended unanswered questions', async () => {
+  const { root } = await resolutionFixture(null);
+
+  await runCli(root, ['urs', 'resolve', 'urs.yaml', '--provider', 'openai', '--yes']);
+
+  expect(mocks.suggestUrsAnswers).not.toHaveBeenCalled();
+  expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
+  expect(mocks.select).not.toHaveBeenCalled();
+  expect((await loadUrs(join(root, 'urs.yaml'))).open_questions[0].answer).toBeNull();
+});
+
+it.each(['missing reference', 'duplicate requirement'])(
+  'retains a structurally invalid model response without publishing a broken URS: %s',
+  async (problem) => {
+    const root = await fixture();
+    const invalid = structuredClone(draft);
+    if (problem === 'missing reference')
+      invalid.families[0].requirements[0].references = ['references/not-produced.csv'];
+    else
+      invalid.families[0].requirements.push(structuredClone(invalid.families[0].requirements[0]));
+    mocks.draftUrs.mockResolvedValueOnce({
+      value: invalid,
+      incomplete: false,
+      questions: [],
+      spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+      reviewRounds: 0,
+    });
+    process.argv = [
+      process.execPath,
+      'provenarium',
+      '--project',
+      root,
+      'urs',
+      'generate',
+      '--context',
+      'design.md',
+      '--provider',
+      'openai',
+      '--yes',
+      '--no-pdf',
+    ];
+
+    await import('../src/cli.js');
+
+    expect(process.exitCode).toBe(1);
+    expect(console.error).not.toHaveBeenCalled();
+    expect(mocks.renderUrs).not.toHaveBeenCalled();
+    await expect(readFile(join(root, 'urs.yaml'), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    const records = await readdir(join(root, 'drafts'));
+    expect(records).toHaveLength(1);
+    const retained = JSON.parse(await readFile(join(root, 'drafts', records[0]), 'utf8'));
+    expect(retained.value).toEqual(invalid);
+    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+      'No requirements file was published',
+    );
+  },
+);
+
+it('publishes a structurally valid draft with unanswered human decisions', async () => {
+  const root = await fixture();
+  const withQuestion = structuredClone(draft);
+  withQuestion.open_questions = [
+    {
+      id: 'Q-CSV',
+      question: 'Should an empty register download a header-only CSV?',
+      requirement: 'URS-RESULT-001',
+      answer: null,
+    },
+  ];
+  mocks.draftUrs.mockResolvedValueOnce({
+    value: withQuestion,
+    incomplete: false,
+    questions: ['Q-CSV: Should an empty register download a header-only CSV?'],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  });
+
+  await runCli(root, [
+    'urs',
+    'generate',
+    '--context',
+    'design.md',
+    '--provider',
+    'openai',
+    '--yes',
+    '--no-pdf',
+  ]);
+
+  expect(await loadUrs(join(root, 'urs.yaml'))).toEqual(withQuestion);
+  expect(mocks.renderUrs).toHaveBeenCalledExactlyOnceWith(withQuestion, join(root, 'urs'), false);
+  expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain('urs resolve urs.yaml');
+});
+
+it('repairs generated source references from real linked context without authoring and still reports unanswered questions', async () => {
+  const { root, document } = await resolutionFixture(null);
+  const url = 'https://example.com/deployed-dilution';
+  await writeFile(join(root, 'design.md'), 'OQ-CSV-EXPORT: Verify the documented CSV export.');
+  const project = await loadProject(root);
+  project.context = [{ id: 'design', path: 'design.md' }];
+  project.target_url = url;
+  await saveProject(root, project);
+  document.families[0].requirements[0].references = [
+    'OQ-CSV-EXPORT',
+    `Hosted observation: ${url} — Download CSV`,
+  ];
+  const original = `# Keep this review note.\n${stringify(document)}`;
+  await writeFile(join(root, 'urs.yaml'), original);
+  mocks.openDiscovery.mockResolvedValueOnce({ url, text: 'Download CSV', controls: [] });
+  process.argv = [
+    process.execPath,
+    'provenarium',
+    '--project',
+    root,
+    'urs',
+    'check',
+    'urs.yaml',
+    '--fix-references',
+    '--yes',
+  ];
+
+  await import('../src/cli.js');
+
+  expect(process.exitCode).toBe(1);
+  expect(console.error).not.toHaveBeenCalled();
+  expect(mocks.draftUrs).not.toHaveBeenCalled();
+  expect(mocks.suggestUrsAnswers).not.toHaveBeenCalled();
+  expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
+  expect(mocks.confirm).not.toHaveBeenCalled();
+  expect(mocks.discoveryOptions).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ root, url, allowInteractions: false }),
+  );
+  expect(mocks.closeDiscovery).toHaveBeenCalledOnce();
+  const repaired = await loadUrs(join(root, 'urs.yaml'));
+  expect(repaired.document).toEqual(document.document);
+  expect(repaired.open_questions).toEqual(document.open_questions);
+  expect(repaired.families[0].requirements[0]).toEqual({
+    ...document.families[0].requirements[0],
+    references: [],
+    citations: [
+      { source: 'design', location: 'design.md' },
+      { source: '@application', location: url },
+    ],
+  });
+  expect(await readFile(join(root, 'urs.yaml'), 'utf8')).toContain('# Keep this review note.');
+  const directory = join(root, '.provenarium', 'reference-repairs');
+  const before = (await readdir(directory)).find((name) => name.endsWith('.before.yaml'))!;
+  expect(await readFile(join(directory, before), 'utf8')).toBe(original);
+  const output = vi.mocked(console.log).mock.calls.flat().join('\n');
+  expect(output).toContain('Q-CSV: Should exporting an empty register');
+  expect(output).not.toContain('missing reference');
+  expect(output).not.toContain('unsafe or unreadable reference');
+});
+
+it('keeps the original draft when reference repair is declined', async () => {
+  const { root, document } = await resolutionFixture(null);
+  await writeFile(join(root, 'design.md'), 'OQ-CSV-EXPORT: Verify the documented CSV export.');
+  const project = await loadProject(root);
+  project.context = [{ id: 'design', path: 'design.md' }];
+  await saveProject(root, project);
+  document.families[0].requirements[0].references = ['OQ-CSV-EXPORT'];
+  const original = stringify(document);
+  await writeFile(join(root, 'urs.yaml'), original);
+  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+  mocks.confirm.mockResolvedValueOnce(false);
+  process.argv = [
+    process.execPath,
+    'provenarium',
+    '--project',
+    root,
+    'urs',
+    'check',
+    'urs.yaml',
+    '--fix-references',
+  ];
+
+  await import('../src/cli.js');
+
+  expect(process.exitCode).toBe(1);
+  expect(console.error).not.toHaveBeenCalled();
+  expect(mocks.confirm).toHaveBeenCalledOnce();
+  expect(mocks.confirm.mock.calls[0][0].message).toMatch(/reference-format repairs/);
+  expect(await readFile(join(root, 'urs.yaml'), 'utf8')).toBe(original);
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
+  expect(mocks.openDiscovery).not.toHaveBeenCalled();
+});
+
+it('rejects authoring options for reference repair before browser or credential access', async () => {
+  const { root } = await resolutionFixture(null);
+  process.argv = [
+    process.execPath,
+    'provenarium',
+    '--project',
+    root,
+    'urs',
+    'check',
+    'urs.yaml',
+    '--fix-references',
+    '--review',
+  ];
+
+  await import('../src/cli.js');
+
+  expect(process.exitCode).toBe(1);
+  expect(console.error).toHaveBeenCalledExactlyOnceWith(
+    'Error: --fix-references does not use AI and cannot be combined with authoring options.',
+  );
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
+  expect(mocks.openDiscovery).not.toHaveBeenCalled();
 });

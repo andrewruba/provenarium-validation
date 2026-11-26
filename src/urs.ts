@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises';
 import { ursSchema, type Urs } from './schema.js';
-import { exists, readYaml, safePath, sha256 } from './files.js';
+import { readYaml, sha256 } from './files.js';
+import { checkUrsReference } from './urs-references.js';
 
 export const blankUrs: Urs = ursSchema.parse({
   schema_version: 1,
@@ -62,7 +62,8 @@ export function pendingAnsweredQuestions(urs: Urs): UrsQuestion[] {
 export function unresolvedQuestions(urs: Urs): UrsQuestion[] {
   return urs.open_questions.filter((question) => questionStatus(urs, question) !== 'resolved');
 }
-export async function checkUrs(urs: Urs, root?: string): Promise<string[]> {
+/** Validate the document shape and inputs independently of human decisions still pending. */
+export async function checkUrsStructure(urs: Urs, root?: string): Promise<string[]> {
   const errors: string[] = [];
   const ids = new Set<string>();
   if (!urs.document.title.trim()) errors.push('Document title is empty.');
@@ -85,16 +86,10 @@ export async function checkUrs(urs: Urs, root?: string): Promise<string[]> {
         errors.push(`${req.id}: unresolved placeholder.`);
       if (req.table?.rows.some((r) => r.length !== req.table!.columns.length))
         errors.push(`${req.id}: table row width differs from headers.`);
-      for (const reference of req.references)
-        if (root && !/^(https:\/\/|context:)/.test(reference)) {
-          try {
-            const target = await safePath(root, reference);
-            if (!(await exists(target))) errors.push(`${req.id}: missing reference ${reference}`);
-            else await readFile(target);
-          } catch {
-            errors.push(`${req.id}: unsafe or unreadable reference ${reference}`);
-          }
-        }
+      for (const reference of req.references) {
+        const error = await checkUrsReference(req.id, reference, root);
+        if (error) errors.push(error);
+      }
     }
   }
   for (const question of urs.open_questions) {
@@ -109,6 +104,12 @@ export async function checkUrs(urs: Urs, root?: string): Promise<string[]> {
       if (new Set(question.resolution.targets).size !== question.resolution.targets.length)
         errors.push(`${question.id}: duplicate resolution targets.`);
     }
+  }
+  return errors;
+}
+export async function checkUrs(urs: Urs, root?: string): Promise<string[]> {
+  const errors = await checkUrsStructure(urs, root);
+  for (const question of urs.open_questions) {
     const status = questionStatus(urs, question);
     if (status === 'unanswered')
       errors.push(

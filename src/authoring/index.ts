@@ -25,12 +25,26 @@ import { Discovery, discoveryActionSchema, type PageObservation } from './discov
 import { redact, safeUrl } from './security.js';
 import { rehearsePlan, type Rehearsal } from './rehearsal.js';
 import { validatePlan } from '../compiler.js';
-import { blankUrs, pendingAnsweredQuestions, questionStatus, unresolvedQuestions } from '../urs.js';
+import {
+  blankUrs,
+  checkUrsStructure,
+  pendingAnsweredQuestions,
+  questionStatus,
+  unresolvedQuestions,
+} from '../urs.js';
+import { normalizeGeneratedUrsReferences, URS_REFERENCE_INSTRUCTIONS } from '../urs-references.js';
 import {
   resolutionProposalSchema,
   validateResolutionProposal,
+  applyResolutionProposal,
   type UrsResolutionProposal,
 } from '../urs-resolution.js';
+import {
+  answerSuggestionQuestions,
+  ursAnswerSuggestionsSchema,
+  validateUrsAnswerSuggestions,
+  type UrsAnswerSuggestions,
+} from '../urs-answers.js';
 export {
   Budget,
   BudgetError,
@@ -55,6 +69,8 @@ export type AuthoringOptions = {
   context?: ContextBundle;
   onProgress?: (message: string) => void;
   fetchImpl?: typeof fetch;
+  /** Share the command's ceiling across answer suggestions and requirement proposals. */
+  budget?: Budget;
 };
 export type AuthoringResult<T> = {
   value?: T;
@@ -91,7 +107,7 @@ const REVIEWS = [
 function runtime(options: AuthoringOptions, bindings?: Bindings) {
   const tier = options.thoroughness ?? 'standard';
   if (!(tier in PRESETS)) throw new Error('Unsupported thoroughness preset.');
-  const budget = new Budget(options.maxSpend ?? PRESETS[tier].cap);
+  const budget = options.budget ?? new Budget(options.maxSpend ?? PRESETS[tier].cap);
   const secrets = Object.values(bindings ?? {}).flatMap((binding) =>
     [binding.password, binding.token].filter((value): value is string => Boolean(value)),
   );
@@ -138,6 +154,11 @@ function finish<T>(
 }
 function requirementList(urs: Urs) {
   return urs.families.flatMap((f) => f.requirements);
+}
+async function requireValidAuthoredStructure(urs: Urs, root: string): Promise<void> {
+  const errors = await checkUrsStructure(urs, root);
+  if (errors.length)
+    throw new Error(`Generated requirements failed structural validation:\n${errors.join('\n')}`);
 }
 function unansweredDraftQuestions(proposed: Urs): Urs {
   return {
@@ -220,6 +241,8 @@ export async function draftUrs(
       BASE +
         '\n' +
         URS_GROUNDING +
+        '\n' +
+        URS_REFERENCE_INSTRUCTIONS +
         '\nDraft a human-editable URS. Include fields/types/units/defaults/limits, invalid input, conditional behavior, permissions, meaningful output columns, calculations with independent expected-value sources, persistence, and export requirements only where justified. Empty unknown values become open questions. Source citations use supplied source IDs and locations. The detail preference controls elaboration, not the required testing standard. Existing human requirements are preserved; propose additions separately.',
       {
         brief: options.brief,
@@ -229,13 +252,23 @@ export async function draftUrs(
         observation,
       },
     );
-    value = unansweredDraftQuestions(value);
+    const normalized = await normalizeGeneratedUrsReferences(value, {
+      root: options.root,
+      context: material,
+      observation,
+    });
+    value = unansweredDraftQuestions(normalized.urs);
+    if (normalized.changes.length)
+      questions.push(
+        `Corrected ${normalized.changes.length} source-provenance entries into citations before publishing the draft.`,
+      );
     if (existing) value = preserveExisting(existing, value);
+    await requireValidAuthoredStructure(value, options.root);
     for (let i = 0; i < PRESETS[tier].reviews; i++) {
       options.onProgress?.(`Reviewing requirements (${i + 1}/${PRESETS[tier].reviews}).`);
       const review = await client.complete(
         reviewSchema,
-        BASE + '\n' + URS_GROUNDING + '\n' + REVIEWS[i],
+        BASE + '\n' + URS_GROUNDING + '\n' + URS_REFERENCE_INSTRUCTIONS + '\n' + REVIEWS[i],
         { urs: value, brief: options.brief, context: material, observation },
       );
       rounds++;
@@ -245,6 +278,8 @@ export async function draftUrs(
         BASE +
           '\n' +
           URS_GROUNDING +
+          '\n' +
+          URS_REFERENCE_INSTRUCTIONS +
           '\nRevise this unaccepted draft to address the findings. Keep unknowns explicit and preserve IDs. Never invent acceptance values. Existing human-authored requirements cannot be changed.',
         {
           urs: value,
@@ -255,14 +290,75 @@ export async function draftUrs(
           observation,
         },
       );
-      const sanitized = unansweredDraftQuestions(revised);
+      const normalizedRevision = await normalizeGeneratedUrsReferences(revised, {
+        root: options.root,
+        context: material,
+        observation,
+      });
+      const sanitized = unansweredDraftQuestions(normalizedRevision.urs);
       value = existing ? preserveExisting(existing, sanitized) : sanitized;
+      await requireValidAuthoredStructure(value, options.root);
     }
     questions.push(...unresolvedQuestions(value!).map((q) => unresolvedQuestionMessage(value!, q)));
     return finish(value, questions, budget, rounds);
   } catch (error) {
     questions.push(reason(error, options.key));
     return finish(value, questions, budget, rounds, true);
+  }
+}
+
+export async function suggestUrsAnswers(
+  options: AuthoringOptions & { urs: Urs; questionIds?: string[]; url?: string },
+): Promise<AuthoringResult<UrsAnswerSuggestions>> {
+  const selected = answerSuggestionQuestions(options.urs, options.questionIds);
+  if (!selected.length)
+    return finish(
+      { suggestions: [] },
+      [],
+      options.budget ??
+        new Budget(options.maxSpend ?? PRESETS[options.thoroughness ?? 'standard'].cap),
+      0,
+    );
+  const { budget, client } = runtime(options);
+  const questions: string[] = [];
+  try {
+    const material = await context(options);
+    questions.push(...material.warnings);
+    let observation: PageObservation | undefined;
+    if (options.url) {
+      const browser = new Discovery({
+        root: options.root,
+        url: options.url,
+        allowInteractions: false,
+        signal: options.signal,
+      });
+      try {
+        observation = await browser.open();
+      } catch (error) {
+        questions.push(
+          'Optional application inspection unavailable: ' + reason(error, options.key),
+        );
+      } finally {
+        await browser.close();
+      }
+    }
+    options.onProgress?.('Suggesting answers from the requirements and selected context.');
+    const value = await client.complete(
+      ursAnswerSuggestionsSchema,
+      BASE +
+        '\nHelp the human answer the selected URS questions without a blank-page interview. Return exactly one suggestion for each selected question ID. Read all supplied context before asking for a decision. A suggestion is not an accepted answer: never modify the URS, mark a question resolved, or claim approval. Prefer concrete complete answers supported by documented intended behavior (basis documented). When only source code or page observations support an answer, use basis implementation and explain that it describes the implementation and needs confirmation as intended behavior. Clearly identify mismatches between the supplied source and deployed application, and do not assume one implementation establishes the other. Use exact supplied citation source/location pairs. The URS can be cited with source @urs and location document, requirement:<existing ID>, or question:<existing ID>; cite deployed observations with source @application and location equal to observation.url. Current URS wording marked proposed, conditional, or unresolved does not establish an accepted answer. For missing or conflicting product decisions, use basis decision, answer null, and provide two to four concise concrete alternative complete answers when those choices can be stated without inventing limits, scientific values, access rules, or other unsupported policies. Explain the actual decision in plain language. Do not silently choose an unsupported default. Preserve previously accepted decisions; if a selected answered question is being revisited, explain any conflict with its existing answer. Do not ask the user to repeat facts already supplied. Keep each explanation brief and useful for accepting or editing the proposed answer.',
+      { urs: options.urs, selected_questions: selected, context: material, observation },
+    );
+    validateUrsAnswerSuggestions(
+      options.urs,
+      value,
+      { context: material, observation },
+      options.questionIds,
+    );
+    return finish(value, questions, budget, 0);
+  } catch (error) {
+    questions.push(reason(error, options.key));
+    return finish<UrsAnswerSuggestions>(undefined, questions, budget, 0, true);
   }
 }
 
@@ -274,7 +370,8 @@ export async function proposeUrsResolution(
     return finish(
       { requirements: [], unresolved: [] },
       [],
-      new Budget(options.maxSpend ?? PRESETS[options.thoroughness ?? 'standard'].cap),
+      options.budget ??
+        new Budget(options.maxSpend ?? PRESETS[options.thoroughness ?? 'standard'].cap),
       0,
     );
   const { budget, client } = runtime(options);
@@ -286,6 +383,8 @@ export async function proposeUrsResolution(
     const proposal = await client.complete(
       resolutionProposalSchema,
       BASE +
+        '\n' +
+        URS_REFERENCE_INSTRUCTIONS +
         '\nPropose targeted edits to incorporate the supplied human answers into the URS. Do not redraft the document. Treat recorded answers as human decisions and preserve previously accepted answers and unrelated requirements. Replace stale conditional or alternative wording that the answer settles; explain every changed requirement and identify the pending question IDs it addresses. Include the original linked requirement for each resolved question, even when it already expresses the answer and needs no text change. Related existing requirements may also be updated where the same decision requires consistency, with an explanation. Only use existing requirement IDs; do not add or remove requirements. Document-wide answers may update document metadata but never document ID or revision. Never change question text, answers, or resolution metadata. Do not invent acceptance limits, policies, or missing answers. If an answer is ambiguous, conflicts with another accepted decision, or cannot be safely incorporated, put that question in unresolved with a specific reason instead of guessing. Cover every pending answer with proposed requirement/document changes or an unresolved entry. The human will review these proposed changes before they are applied.',
       {
         urs: options.urs,
@@ -299,6 +398,22 @@ export async function proposeUrsResolution(
       },
     );
     validateResolutionProposal(options.urs, proposal);
+    const normalized = await normalizeGeneratedUrsReferences(
+      applyResolutionProposal(options.urs, proposal),
+      {
+        root: options.root,
+        context: material,
+      },
+    );
+    const normalizedRequirements = new Map(
+      requirementList(normalized.urs).map((item) => [item.id, item]),
+    );
+    for (const change of proposal.requirements)
+      change.value = normalizedRequirements.get(change.value.id)!;
+    await requireValidAuthoredStructure(
+      applyResolutionProposal(options.urs, proposal),
+      options.root,
+    );
     questions.push(...proposal.unresolved.map((q) => `${q.question_id}: ${q.reason}`));
     return finish(proposal, questions, budget, 0);
   } catch (error) {

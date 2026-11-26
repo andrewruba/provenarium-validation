@@ -7,6 +7,8 @@ import { ursSchema, type Urs } from '../src/schema.js';
 import { loadUrs, pendingAnsweredQuestions, questionStatus } from '../src/urs.js';
 import { applyResolutionProposal, type UrsResolutionProposal } from '../src/urs-resolution.js';
 import { resolveUrsFile } from '../src/urs-resolve-cli.js';
+import type { UrsAnswerSuggestions } from '../src/urs-answers.js';
+import type { AuthoringResult } from '../src/authoring/index.js';
 
 const roots: string[] = [];
 const answer = 'Download a header-only CSV with no data rows.';
@@ -86,6 +88,45 @@ function runtime(isTTY = true) {
       incomplete: false,
       questions: [],
       spend: { cap: 15, actual: 0, reserved: 0, calls: 0 },
+      reviewRounds: 0,
+    })),
+  };
+}
+
+function suggestionRuntime(isTTY = true) {
+  return {
+    ...runtime(isTTY),
+    select: vi.fn<(...args: unknown[]) => Promise<string | symbol>>().mockResolvedValue('skip'),
+    suggest: vi.fn<
+      (urs: Urs, questionIds: string[]) => Promise<AuthoringResult<UrsAnswerSuggestions>>
+    >(async (_urs, questionIds) => ({
+      value: {
+        suggestions: questionIds.map((question_id) =>
+          question_id === 'Q-CSV'
+            ? {
+                question_id,
+                answer,
+                basis: 'documented' as const,
+                explanation: 'The design specifies a header-only file when the register is empty.',
+                citations: [{ source: 'design', location: 'design.md' }],
+                choices: [],
+              }
+            : {
+                question_id,
+                answer: null,
+                basis: 'decision' as const,
+                explanation: 'The context does not decide whether clearing needs confirmation.',
+                citations: [],
+                choices: [
+                  'Require confirmation before clearing.',
+                  'Clear immediately without confirmation.',
+                ],
+              },
+        ),
+      } satisfies UrsAnswerSuggestions,
+      incomplete: false,
+      questions: [],
+      spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
       reviewRounds: 0,
     })),
   };
@@ -385,3 +426,192 @@ it.each([false, true])(
     expect(ui.propose).not.toHaveBeenCalled();
   },
 );
+
+it('offers sourced answers for acceptance and retains the separate requirement review', async () => {
+  const f = await fixture();
+  const ui = suggestionRuntime();
+  ui.select.mockResolvedValueOnce('accept').mockResolvedValueOnce('skip');
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.suggest).toHaveBeenCalledOnce();
+  expect(ui.suggest.mock.calls[0][1]).toEqual(['Q-CSV', 'Q-CLEAR']);
+  expect(ui.text).not.toHaveBeenCalled();
+  expect(ui.logs.join('\n')).toContain(answer);
+  expect(ui.logs.join('\n')).toContain('design.md');
+  expect(ui.logs.join('\n')).toContain('header-only file when the register is empty');
+  expect(ui.propose).toHaveBeenCalledOnce();
+  expect(ui.propose.mock.calls[0][0].open_questions[0].answer).toBe(answer);
+  expect(ui.confirm).toHaveBeenCalledOnce();
+  const saved = await loadUrs(f.file);
+  expect(saved.open_questions[0].answer).toBe(answer);
+  expect(saved.open_questions[1].answer).toBeNull();
+  expect(saved.families).toEqual(f.urs.families);
+  expect(questionStatus(saved, saved.open_questions[0])).toBe('answered');
+});
+
+it('prefills an editable suggestion and sends only the user-edited answer for proposal', async () => {
+  const f = await fixture();
+  const ui = suggestionRuntime();
+  const edited = 'Do not download a file; explain that there are no saved preparations.';
+  ui.select.mockResolvedValueOnce('edit').mockResolvedValueOnce('skip');
+  ui.text.mockResolvedValueOnce(edited);
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.text).toHaveBeenCalledOnce();
+  expect(ui.text.mock.calls[0][0]).toMatchObject({ initialValue: answer });
+  expect(ui.propose.mock.calls[0][0].open_questions[0].answer).toBe(edited);
+  expect((await loadUrs(f.file)).open_questions[0].answer).toBe(edited);
+});
+
+it('lets a reviewer choose a concrete alternative where context cannot establish a default', async () => {
+  const f = await fixture();
+  const ui = suggestionRuntime();
+  ui.select.mockResolvedValueOnce('skip').mockResolvedValueOnce('choice:0');
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.text).not.toHaveBeenCalled();
+  const choices = ui.select.mock.calls[1][0] as {
+    options: { value: string; label: string }[];
+  };
+  expect(choices.options.map((option) => option.value)).not.toContain('accept');
+  expect(choices.options).toContainEqual(
+    expect.objectContaining({ value: 'choice:0', label: 'Require confirmation before clearing.' }),
+  );
+  const saved = await loadUrs(f.file);
+  expect(saved.open_questions[0].answer).toBeNull();
+  expect(saved.open_questions[1].answer).toBe('Require confirmation before clearing.');
+  expect(ui.propose.mock.calls[0][0].open_questions[1].answer).toBe(
+    'Require confirmation before clearing.',
+  );
+});
+
+it('leaves all suggested answers unaccepted when the reviewer skips them', async () => {
+  const f = await fixture();
+  const ui = suggestionRuntime();
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.suggest).toHaveBeenCalledOnce();
+  expect(ui.propose).not.toHaveBeenCalled();
+  expect(ui.confirm).not.toHaveBeenCalled();
+  const saved = await loadUrs(f.file);
+  expect(saved.open_questions.map((question) => question.answer)).toEqual([null, null]);
+  expect(saved.families).toEqual(f.urs.families);
+});
+
+it('saves accepted answers before cancellation and suggests only the remaining questions on resume', async () => {
+  const f = await fixture();
+  const first = suggestionRuntime();
+  first.select.mockResolvedValueOnce('accept').mockResolvedValueOnce(Symbol('cancel'));
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, first);
+
+  expect(first.propose).not.toHaveBeenCalled();
+  expect((await loadUrs(f.file)).open_questions[0].answer).toBe(answer);
+  const resumed = suggestionRuntime();
+  resumed.select.mockResolvedValueOnce('choice:1');
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, resumed);
+  expect(resumed.suggest.mock.calls[0][1]).toEqual(['Q-CLEAR']);
+  expect((await loadUrs(f.file)).open_questions.map((question) => question.answer)).toEqual([
+    answer,
+    'Clear immediately without confirmation.',
+  ]);
+});
+
+it('falls back to manual answers visibly when suggestions cannot be produced', async () => {
+  const f = await fixture();
+  const ui = suggestionRuntime();
+  ui.suggest.mockResolvedValueOnce({
+    incomplete: true,
+    questions: ['The provider request did not complete.'],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  });
+  ui.text.mockResolvedValueOnce(answer).mockResolvedValueOnce('');
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.select).not.toHaveBeenCalled();
+  expect(ui.text).toHaveBeenCalledTimes(2);
+  expect(ui.logs.join('\n')).toMatch(/suggested answers.*unavailable|manual/i);
+  expect(ui.propose.mock.calls[0][0].open_questions[0].answer).toBe(answer);
+  expect((await loadUrs(f.file)).open_questions[1].answer).toBeNull();
+});
+
+it.each([{ answersOnly: true }, { yes: true }])(
+  'does not request or accept model answers in offline or unattended mode: %j',
+  async (options) => {
+    const f = await fixture();
+    const ui = suggestionRuntime();
+
+    await resolveUrsFile({ root: f.root, file: 'urs.yaml', ...options }, ui);
+
+    expect(ui.suggest).not.toHaveBeenCalled();
+    expect(ui.select).not.toHaveBeenCalled();
+    expect(ui.propose).not.toHaveBeenCalled();
+    expect((await loadUrs(f.file)).open_questions.map((question) => question.answer)).toEqual([
+      null,
+      null,
+    ]);
+  },
+);
+
+it('preserves concurrent edits made while answer suggestions are being generated', async () => {
+  const f = await fixture();
+  const ui = suggestionRuntime();
+  let concurrent = '';
+  const suggest = ui.suggest.getMockImplementation()!;
+  ui.suggest.mockImplementationOnce(async (urs, ids) => {
+    concurrent = `${await readFile(f.file, 'utf8')}\n# Edited during suggestion generation\n`;
+    await writeFile(f.file, concurrent);
+    return suggest(urs, ids);
+  });
+
+  await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui)).rejects.toThrow(
+    /changed|stale|match/i,
+  );
+
+  expect(ui.select).not.toHaveBeenCalled();
+  expect(ui.propose).not.toHaveBeenCalled();
+  expect(await readFile(f.file, 'utf8')).toBe(concurrent);
+});
+
+it('rejects malformed working requirements before requesting suggestions or proposals', async () => {
+  const f = await fixture();
+  f.urs.families[0].requirements[0].references = ['OQ-MISSING'];
+  const original = stringify(f.urs);
+  await writeFile(f.file, original);
+  const ui = suggestionRuntime();
+
+  await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui)).rejects.toThrow(
+    /structural issues.*before AI resolution/s,
+  );
+
+  expect(ui.suggest).not.toHaveBeenCalled();
+  expect(ui.propose).not.toHaveBeenCalled();
+  expect(ui.select).not.toHaveBeenCalled();
+  expect(await readFile(f.file, 'utf8')).toBe(original);
+});
+
+it('cannot use saved --apply to introduce an invalid reference into the working requirements', async () => {
+  const f = await fixture(true);
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml', yes: true }, runtime(false));
+  const apply = await savedProposal(f.root);
+  const artifact = JSON.parse(await readFile(apply, 'utf8'));
+  artifact.proposal.requirements[0].value.references = ['../outside-project.csv'];
+  await writeFile(apply, JSON.stringify(artifact));
+  const original = await readFile(f.file, 'utf8');
+  const ui = suggestionRuntime(false);
+
+  await expect(
+    resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, ui),
+  ).rejects.toThrow(/failed structural validation/);
+
+  expect(ui.suggest).not.toHaveBeenCalled();
+  expect(ui.propose).not.toHaveBeenCalled();
+  expect(await readFile(f.file, 'utf8')).toBe(original);
+  expect((await loadUrs(f.file)).open_questions[0]).not.toHaveProperty('resolution');
+});
