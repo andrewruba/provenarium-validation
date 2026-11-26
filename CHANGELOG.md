@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Replaced the default question-by-question requirements interview with one
+  consolidated recommendation and requirement-change review. Explicit delegation
+  now produces labeled proposed defaults; concrete saved decisions are preserved.
+  Acceptance applies answers and reviewed requirement changes together, with
+  staged reviews retained for later offline application.
+- Included actual local HTML source and bounded JavaScript companions in
+  authoring context, with exact source locations, hashes, and extraction warnings.
 - Made answer-resolution outcomes exclusive per question in the provider schema,
   with two bounded technical corrections shared across the command and retained
   diagnostics. A missing clarification can no longer mark an answer both resolved

@@ -7,6 +7,7 @@ import { applyResolutionProposal, type UrsResolutionProposal } from '../src/urs-
 import { pendingAnsweredQuestions, questionStatus } from '../src/urs.js';
 import {
   answerSuggestionQuestions,
+  isDelegatedAnswer,
   validateUrsAnswerSuggestions,
   type UrsAnswerSuggestions,
 } from '../src/urs-answers.js';
@@ -131,18 +132,19 @@ describe('context-based answer suggestions', () => {
       );
       expect(input).toEqual({ urs, selected_questions: urs.open_questions, context });
       expect(provider === 'openai' ? request.instructions : request.system).toContain(
-        'A suggestion is not an accepted answer',
+        'not automatic approval',
       );
     },
   );
 
-  it('offers explicit alternatives when the context cannot decide the policy', async () => {
+  it('proposes a concrete default when the context does not establish the policy', async () => {
     const value = suggestions();
     value.suggestions[0] = {
       question_id: 'Q-CSV',
-      answer: null,
+      answer: 'Download a header-only CSV.',
       basis: 'decision',
-      explanation: 'The supplied material does not specify empty exports.',
+      explanation:
+        'Proposed default: a header-only file keeps the export layout consistent for an empty register. The supplied material does not establish this policy.',
       citations: [],
       choices: [
         'Download a header-only CSV.',
@@ -159,6 +161,8 @@ describe('context-based answer suggestions', () => {
     });
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(value);
+    expect(result.value?.suggestions[0].basis).toBe('decision');
+    expect(document().open_questions[0].answer).toBeNull();
   });
 
   it('defaults to unanswered questions and permits explicit revisiting without changing recorded answers', async () => {
@@ -185,6 +189,54 @@ describe('context-based answer suggestions', () => {
     });
     expect(revisited.value).toEqual(suggestions());
     expect(urs.open_questions[0].answer).toBe('Show a no-records message.');
+  });
+
+  it.each(['choose something reasonable', 'you decide', 'use reasonable defaults'])(
+    'turns explicit delegation "%s" into a proposed recommendation without accepting it',
+    async (delegation) => {
+      const urs = document();
+      urs.open_questions[0].answer = delegation;
+      urs.open_questions.push({
+        id: 'Q-ORDER',
+        requirement: 'URS-CSV',
+        question: 'Which record order is required?',
+        answer: 'Use the current register order.',
+      });
+      const before = structuredClone(urs);
+      const proposed = suggestions();
+      proposed.suggestions[0].basis = 'decision';
+      proposed.suggestions[0].citations = [];
+      proposed.suggestions[0].explanation =
+        'Proposed default for review, not established behavior.';
+      const requests = transport('openai', [proposed]);
+      const result = await suggestUrsAnswers({
+        root: '/tmp',
+        provider: 'openai',
+        key: 'test-key',
+        urs,
+        context,
+        fetchImpl: requests,
+      });
+      expect(result.incomplete).toBe(false);
+      expect(result.value).toEqual(proposed);
+      expect(urs).toEqual(before);
+      expect(isDelegatedAnswer(delegation)).toBe(true);
+      const request = JSON.parse(String(requests.mock.calls[0][1]?.body));
+      const input = JSON.parse(request.input[0].content[0].text);
+      expect(input.selected_questions.map((question: { id: string }) => question.id)).toEqual([
+        'Q-CSV',
+      ]);
+      expect(input.urs.open_questions[1].answer).toBe('Use the current register order.');
+    },
+  );
+
+  it('does not reinterpret concrete policies containing delegation words as permission to replace them', () => {
+    for (const answer of [
+      'Do not choose something reasonable; reject nonfinite values.',
+      'Use reasonable defaults only for display labels; reject empty numeric fields.',
+      'The user decides whether to clear records; require confirmation.',
+    ])
+      expect(isDelegatedAnswer(answer)).toBe(false);
   });
 
   it('includes a read-only application observation and validates its citation', async () => {
@@ -227,6 +279,45 @@ describe('context-based answer suggestions', () => {
     expect(result.value).toEqual(suggestions());
     expect(result.questions.join()).toContain('Optional application inspection unavailable');
     expect(browser.close).toHaveBeenCalledOnce();
+  });
+
+  it('sends the linked HTML implementation and its actual JavaScript companion to recommendation authoring', async () => {
+    const value = suggestions();
+    value.suggestions[0].basis = 'implementation';
+    value.suggestions[0].explanation =
+      'Proposed starting point from the implementation; confirm the desired export policy.';
+    value.suggestions[0].citations = [
+      { source: 'application', location: 'examples/dilution-pages/app.js' },
+    ];
+    const requests = transport('openai', [value]);
+    const result = await suggestUrsAnswers({
+      root: process.cwd(),
+      provider: 'openai',
+      key: 'test-key',
+      urs: document(),
+      sources: [{ id: 'application', path: 'examples/dilution-pages/app.html' }],
+      fetchImpl: requests,
+    });
+    expect(result.incomplete).toBe(false);
+    expect(result.value).toEqual(value);
+    expect(browser.open).not.toHaveBeenCalled();
+    const request = JSON.parse(String(requests.mock.calls[0][1]?.body));
+    const input = JSON.parse(request.input[0].content[0].text);
+    const implementation = input.context.passages.find(
+      (passage: { location: string }) => passage.location === 'examples/dilution-pages/app.js',
+    );
+    expect(implementation).toMatchObject({ source: 'application' });
+    expect(implementation.text).toContain('localStorage');
+    expect(implementation.text).toContain('toFixed(3)');
+    expect(implementation.text).toContain('new Blob');
+    expect(input.context.hashes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'application',
+          location: 'examples/dilution-pages/app.js',
+        }),
+      ]),
+    );
   });
 
   it('shares one command budget with the subsequent requirement proposal', async () => {
@@ -316,12 +407,6 @@ describe('suggestion scope and evidence validation', () => {
       'invented location',
       (value: UrsAnswerSuggestions) => {
         value.suggestions[0].citations[0].location = 'missing.md';
-      },
-    ],
-    [
-      'unsupported default',
-      (value: UrsAnswerSuggestions) => {
-        value.suggestions[0].basis = 'decision';
       },
     ],
     [

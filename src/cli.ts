@@ -25,7 +25,7 @@ import {
   pendingAnsweredQuestions,
 } from './urs.js';
 import { prepareUrsInputs, projectCommand } from './urs-setup.js';
-import { resolveUrsFile } from './urs-resolve-cli.js';
+import { resolveUrsFile, type ResolveUrsRuntime } from './urs-resolve-cli.js';
 import { repairUrsReferences } from './urs-reference-repair.js';
 import { extractContext } from './context.js';
 import { Discovery, type PageObservation } from './authoring/discovery.js';
@@ -115,6 +115,7 @@ async function authoring(
   options: {
     resolution?: boolean;
     resolutionSuggestions?: boolean;
+    requirementsDraft?: boolean;
     referenceFiles?: string[];
   } = {},
 ): Promise<AuthoringOptions> {
@@ -176,7 +177,7 @@ async function authoring(
     throw new Error('Unknown selected context source. Use provenarium context list.');
   console.log(
     options.resolution
-      ? `Answer resolution: ${provider} / ${model}; up to ${options.resolutionSuggestions ? 'five' : 'four'} requests including ${options.resolutionSuggestions ? 'suggested answers, ' : ''}requirement changes, two technical corrections, and one clarification round; maximum $${cap.toFixed(2)} USD total for this command.`
+      ? `Requirements review: ${provider} / ${model}; recommendations and requirement changes; maximum $${cap.toFixed(2)} USD total for this command.`
       : `Authoring: ${provider} / ${model}; ${tier}; maximum $${cap.toFixed(2)} USD for this command.`,
   );
   console.log(
@@ -187,6 +188,14 @@ async function authoring(
       ? sources.map((s) => `  ${s.id}: ${s.path ?? s.url}`).join('\n')
       : '  No linked context sources selected.',
   );
+  if (sources.some((source) => source.path))
+    console.log(
+      'Local HTML context includes its source and bounded JavaScript companions within the selected source folder.',
+    );
+  if (options.requirementsDraft)
+    console.log(
+      'This ceiling covers requirements drafting and the recommendation review, including edited review updates.',
+    );
   if (options.resolutionSuggestions && project.target_url)
     console.log(`  Read-only application observation: ${project.target_url}`);
   if (options.referenceFiles?.length)
@@ -260,6 +269,50 @@ function discovery(command: Command): Command {
       '--interactive-discovery',
       'Allow declared browser interactions using synthetic test data',
     );
+}
+
+async function sharedRequirementsAuthoring(options: AuthoringOptions): Promise<AuthoringOptions> {
+  return {
+    ...options,
+    budget:
+      options.budget ??
+      new Budget(options.maxSpend ?? PRESETS[options.thoroughness ?? 'standard'].cap),
+    context:
+      options.context ??
+      (await extractContext(options.root, options.sources ?? [], options.selectedSources, {
+        signal: options.signal,
+      })),
+  };
+}
+
+function requirementsReviewRuntime(
+  directory: string,
+  url: string | undefined,
+  getOptions: (suggestions: boolean) => Promise<AuthoringOptions>,
+): ResolveUrsRuntime {
+  const resolutionRepairs = { used: 0 };
+  return {
+    suggest: async (document, questionIds) => {
+      const result = await suggestUrsAnswers({
+        ...(await getOptions(true)),
+        urs: document,
+        questionIds,
+        url,
+      });
+      await retainResult(directory, result);
+      return result;
+    },
+    propose: async (document, recommendations) => {
+      const result = await proposeUrsResolution({
+        ...(await getOptions(false)),
+        urs: document,
+        recommendations,
+        resolutionRepairs,
+      });
+      await retainResult(directory, result);
+      return result;
+    },
+  };
 }
 
 const urs = program
@@ -377,6 +430,7 @@ paid(
     .argument('[file]', 'Working requirements YAML file', 'urs.yaml')
     .option('--answers-only', 'Record answers without an AI request or requirement changes')
     .option('--apply <proposal>', 'Review a saved proposal without another AI request')
+    .option('--resume <review>', 'Continue retained unapproved edits and prepare a new review')
     .option(
       '--question <id>',
       'Enter or revise a specific answer; repeat to select more',
@@ -396,45 +450,23 @@ paid(
   const directory = root(command);
   const project = await loadProject(directory);
   let authoringOptions: Promise<AuthoringOptions> | undefined;
-  const resolutionRepairs = { used: 0 };
   const resolutionOptions = (suggestions: boolean) =>
     (authoringOptions ??= authoring(command, {
       resolution: true,
       resolutionSuggestions: suggestions,
-    }).then((options) => ({
-      ...options,
-      budget: new Budget(options.maxSpend ?? PRESETS[options.thoroughness ?? 'standard'].cap),
-    })));
+    }).then(sharedRequirementsAuthoring));
   await resolveUrsFile(
     {
       root: directory,
       file,
       answersOnly: opts.answersOnly,
       apply: opts.apply,
+      resume: opts.resume,
+      url: project.target_url,
       yes: opts.yes,
       questions: opts.question,
     },
-    {
-      suggest: async (document, questionIds) => {
-        const result = await suggestUrsAnswers({
-          ...(await resolutionOptions(true)),
-          urs: document,
-          questionIds,
-          url: project.target_url,
-        });
-        await retainResult(directory, result);
-        return result;
-      },
-      propose: async (document) => {
-        const result = await proposeUrsResolution({
-          ...(await resolutionOptions(false)),
-          urs: document,
-          resolutionRepairs,
-        });
-        await retainResult(directory, result);
-        return result;
-      },
-    },
+    requirementsReviewRuntime(directory, project.target_url, resolutionOptions),
   );
 });
 urs
@@ -482,6 +514,7 @@ async function generateRequirements(
     url?: string;
     interactiveDiscovery?: boolean;
     discoveryActor?: string;
+    yes?: boolean;
   },
   command: Command,
 ) {
@@ -498,8 +531,11 @@ async function generateRequirements(
     interactive: !!process.stdin.isTTY,
   });
   const bindings = await discoveryBindings(command, url);
+  const shared = await sharedRequirementsAuthoring(
+    await authoring(command, { requirementsDraft: true }),
+  );
   const result = await draftUrs({
-    ...(await authoring(command)),
+    ...shared,
     brief,
     existing,
     detail: opts.detail,
@@ -520,14 +556,25 @@ async function generateRequirements(
     }
     if (existing) file = file.replace(/\.ya?ml$/i, '') + `.revision-${randomUUID()}.yaml`;
     await writeNew(file, stringify(result.value));
-    await renderUrs(result.value, file.replace(/\.ya?ml$/i, ''), opts.pdf);
-    console.log(
-      `Requirements draft: ${file}${existing ? ' (original preserved)' : ''}\nReview and edit this YAML before generating the protocol and tests.\nThen check it: ${projectCommand(directory, ['urs', 'check', path.relative(directory, file)])}`,
-    );
-    if (unresolvedQuestions(result.value).length)
-      console.log(
-        `Answer and review the questions: ${projectCommand(directory, ['urs', 'resolve', path.relative(directory, file)])}`,
+    console.log(`Requirements draft: ${file}${existing ? ' (original preserved)' : ''}`);
+    if (!result.incomplete && unresolvedQuestions(result.value).length) {
+      await resolveUrsFile(
+        { root: directory, file: path.relative(directory, file), yes: opts.yes, url },
+        requirementsReviewRuntime(directory, url, async () => shared),
       );
+    } else if (result.incomplete) {
+      console.log(
+        `The incomplete draft is saved for review: ${projectCommand(directory, ['urs', 'resolve', path.relative(directory, file)])}`,
+      );
+    } else {
+      console.log(
+        `${result.value.families.reduce((count, family) => count + family.requirements.length, 0)} requirements drafted from supplied material; no additional decisions are pending.`,
+      );
+      console.log(
+        `Review the draft, then generate the protocol and tests: ${projectCommand(directory, ['generate', '--urs', path.relative(directory, file), ...(url ? ['--url', url] : [])])}`,
+      );
+    }
+    await renderUrs(await loadUrs(file), file.replace(/\.ya?ml$/i, ''), opts.pdf);
   }
 }
 

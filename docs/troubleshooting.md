@@ -19,10 +19,10 @@ proposed requirement changes, then accept the correct changes. Keep the answered
 question in the file. Applied answers stop blocking readiness; editing the
 answer, question, or linked requirement ID makes them pending again.
 
-Selecting answers inside `urs resolve` continues directly to that requirement
-review. If one answer needs another detail, the CLI can apply the other reviewed
-answers, ask a specific follow-up with the saved answer filled in, and show one
-more proposal under the same spending cap. It does not ask every question again.
+`urs resolve` prepares recommendations and requirement changes together, then
+shows one accept/edit review. A specific unresolved item can remain pending while
+you accept independent ready changes. It does not automatically ask every
+question again.
 
 An older failure saying a question "cannot be both resolved and unresolved" is a
 generator contradiction, not evidence that your selected answer was lost. New
@@ -31,6 +31,8 @@ invalid proposal within the command's bounded repair allowance. Your saved
 answers are reused when you rerun `urs resolve`; `check` cannot apply them. After
 a proposal failure the CLI now directs you back to requirement review, while a
 declined review points to its saved `--apply` command without another AI request.
+When all questions are resolved, continue with the printed `generate --urs`
+command. A separate `urs check` step is optional.
 
 Use `urs resolve --question Q-CSV-01` to revise an existing answer in the terminal.
 Use `--answers-only` to collect answers without a provider call, then return to
@@ -39,16 +41,19 @@ already submitted.
 
 ## I do not want to type every answer
 
-Run `provenarium urs resolve urs.yaml` in an interactive terminal. It reads the
-linked context and saved deployed URL, then offers sourced suggestions to accept
-or edit. Where the material does not establish an answer, it offers concrete
-alternatives instead of choosing a policy for you. Already recorded answers are
-reused. `--answers-only` deliberately uses typed input and makes no provider
-request; omit that flag to get AI suggestions.
+Run `provenarium urs resolve urs.yaml`. It reads the linked source and saved
+deployed URL, then prepares concrete recommendations for one accept/edit review.
+Recommendations identify documented behavior, implementation observations, and
+proposed defaults. “Choose something reasonable” asks for a proposed default;
+it is not repeatedly returned as an unanswered questionnaire. Concrete recorded
+answers are preserved. Local HTML source includes bounded JavaScript companions,
+so relevant parsing, storage, and export behavior is available to authoring.
 
-Suggestion and requirement-proposal requests share the command's spending cap.
-`--yes` does not accept suggested answers. If no supported suggestion is
-available, review the context warnings, enter a specific decision, or skip.
+Recommendation and requirement-proposal requests share the command's spending
+cap. `--yes` prepares and saves the review but does not accept unseen changes.
+If consequential information is still missing, its specific blocker stays in the
+review for you to edit or defer. `--answers-only` uses typed input and makes no
+provider request.
 
 ## A CLI-generated URS has malformed references
 
@@ -77,6 +82,11 @@ with `--yes`. Review the printed `.diff.txt` file and use
 `provenarium urs resolve urs.yaml --apply <proposal-file>` to reopen the saved
 proposal without a new AI call. After prior review, `--apply <proposal-file>
 --yes` applies that saved artifact explicitly.
+
+If a request failed while updating an edited review, follow the printed
+`--resume <draft-file>` command instead. It restores the retained answers and
+edits, then prepares a new proposal with a new command spending ceiling. The
+working YAML is unchanged until you accept a completed review.
 
 If the URS changed since the proposal was created, the saved proposal is stale.
 Run `urs resolve` again to generate a proposal against the current file. The

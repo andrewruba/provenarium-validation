@@ -8,15 +8,13 @@ workflows, centered on user requirements, readable protocols, and test evidence.
 Start with your source code or design documents and the deployed application
 URL. `provenarium urs` collects those inputs, shows the authoring cost and data
 preview, and drafts a User Requirements Specification (URS): what the application
-must do for its users. There is no preliminary interview. Review the draft and
-resolve any specific missing decisions recorded as open questions.
+must do for its users. It prepares concrete recommendations and their requirement
+changes, then presents one accept/edit review. Recommendations distinguish
+documented behavior, observed implementation, and proposed defaults.
 
 ```sh
 provenarium urs
-# Answer questions and review the proposed requirement changes:
-provenarium urs resolve urs.yaml
-# Review the resulting requirements, then check them:
-provenarium urs check urs.yaml
+# Accept the prepared recommendations or edit selected items in the review.
 
 # Turn the reviewed requirements into a protocol and tests:
 provenarium generate --urs urs.yaml --url https://app.example.com
@@ -50,13 +48,16 @@ text alternatives use literal strings, without generated regular expressions.
 Uncorrected tool-format errors remain in an incomplete authoring record;
 genuine product decisions and missing required evidence still need review.
 
-`urs resolve` suggests answers from the linked context and deployed application.
-For each question, review the suggestion and its source, then accept, edit, choose
-an alternative, or skip. You can also edit the `answer` field beside each question
-in YAML. The command shows proposed requirement changes before asking you to apply
-them. Questions and accepted answers stay in the document for traceability.
-Suggestion and requirement-proposal requests share one spending ceiling.
-Use `urs resolve --answers-only` to type answers without an AI request.
+For an existing draft, `urs resolve urs.yaml` opens the same consolidated review.
+It honors requests such as “choose something reasonable” by preparing proposed
+defaults for approval, while preserving concrete answers already supplied.
+The review offers acceptance, selected edits, the complete before/after changes,
+or saving for later. One acceptance records the reviewed answers and requirement
+changes together. Questions and accepted answers remain for traceability.
+Once the review is complete, continue with the printed `generate --urs` command.
+All authoring requests in the command share one spending ceiling.
+Use `urs resolve --answers-only` to type answers without an AI request, or edit
+the `answer` fields directly and return to `urs resolve` for review.
 
 Generated drafts are checked for structural defects before being written as a
 working URS. Source observations belong in citations; file references must name

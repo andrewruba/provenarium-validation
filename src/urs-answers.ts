@@ -21,7 +21,21 @@ export type UrsAnswerEvidence = {
   observation?: { url: string };
 };
 
-/** Already recorded answers are revisited only when their IDs are explicitly selected. */
+/** Treat explicit delegation as a request for a recommendation, not a final policy.
+ * Match short, complete delegation phrases so substantive saved answers stay intact. */
+export function isDelegatedAnswer(answer: string | null | undefined): boolean {
+  if (!answer) return false;
+  const normalized = answer
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.!]+$/, '');
+  return /^(?:please )?(?:(?:choose|pick|select|use|recommend|suggest) (?:(?:something|anything) reasonable|(?:a |the )?(?:reasonable|sensible|recommended|appropriate|standard) (?:default|defaults|option|options|answer|answers|approach|policy|policies)|(?:the )?defaults)|you (?:decide|choose|pick)|(?:use|apply) (?:your )?(?:best )?(?:judgment|judgement))$/.test(
+    normalized,
+  );
+}
+
+/** Concrete saved decisions stay intact; unanswered and delegated decisions need recommendations. */
 export function answerSuggestionQuestions(urs: Urs, questionIds?: string[]) {
   const questions = new Map(urs.open_questions.map((question) => [question.id, question]));
   if (questions.size !== urs.open_questions.length)
@@ -35,7 +49,11 @@ export function answerSuggestionQuestions(urs: Urs, questionIds?: string[]) {
       return question;
     });
   }
-  return urs.open_questions.filter((question) => questionStatus(urs, question) === 'unanswered');
+  return urs.open_questions.filter(
+    (question) =>
+      questionStatus(urs, question) === 'unanswered' ||
+      (questionStatus(urs, question) !== 'resolved' && isDelegatedAnswer(question.answer)),
+  );
 }
 
 /** Evidence names must be supplied material, never citations invented by the model. */
@@ -66,9 +84,9 @@ export function validateUrsAnswerSuggestions(
     if (seen.has(suggestion.question_id))
       throw new Error(`More than one suggestion addresses ${suggestion.question_id}.`);
     seen.add(suggestion.question_id);
-    if (suggestion.basis === 'decision' && suggestion.answer !== null)
+    if (suggestion.answer && isDelegatedAnswer(suggestion.answer))
       throw new Error(
-        `Question ${suggestion.question_id} needs a human decision, not a default answer.`,
+        `Recommendation for ${suggestion.question_id} must state a concrete policy, not repeat a delegation request.`,
       );
     if (suggestion.basis !== 'decision' && (!suggestion.answer || !suggestion.citations.length))
       throw new Error(`Suggested answer for ${suggestion.question_id} needs supporting evidence.`);

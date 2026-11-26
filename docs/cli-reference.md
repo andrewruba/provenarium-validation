@@ -14,25 +14,28 @@ provenarium urs
 
 Supply context locations and the deployed application URL. The CLI reads the
 source code or documents, inspects the application, and drafts requirements after
-the provider and spending preview. It does not ask a general intended-use
-interview. Specific unresolved decisions are recorded in the draft's
-`open_questions`, so review starts from concrete requirements and gaps.
+the provider and spending preview. It prepares recommendations for the draft's
+open decisions and their requirement changes, then opens one accept/edit review.
+There is no general intended-use interview or separate question-by-question
+acceptance step.
 
 To supply the inputs directly:
 
 ```sh
 provenarium urs generate --context ../application --context ./design.docx \
   --url https://app.example.com
-# Answer questions and review requirement changes:
-provenarium urs resolve urs.yaml
-# Review the resulting URS before continuing:
-provenarium urs check urs.yaml
+# Review the prepared recommendations in this command, then continue to generate.
 ```
 
 Repeat `--context` for each source folder, document, or HTTPS page. No source IDs
 are required; links are saved for later authoring. Previously linked sources are
 also available. `--brief brief.md` optionally adds written guidance, such as a
 particular use case or scope restriction; a brief is not required.
+
+Local HTML context includes its source and bounded local JavaScript companions,
+so parsing, storage, and export behavior can inform recommendations. The CLI
+does not execute that source or use implementation output as independent test
+evidence. Remote HTML context is read as page text.
 
 `urs generate` writes a draft URS; it does not create qualification tests.
 The model is instructed to use supplied evidence first and retain only specific
@@ -106,19 +109,23 @@ provenarium generate --urs urs.yaml --url https://app.example.com
 provenarium urs resolve urs.yaml
 ```
 
-The filename defaults to `urs.yaml`. In an interactive terminal, the command
-reads the selected linked context and inspects the saved deployed URL without
-form interactions. After one provider/spending preview, it requests one batch
-of answer suggestions. Each question shows a suggested answer, its supporting
-source, and a short explanation. Accept it, edit it, choose a concrete
-alternative, or skip the question. Ctrl+C stops while retaining answers already
-submitted.
+The filename defaults to `urs.yaml`. The command reads the selected linked context
+and inspects the saved deployed URL without form interactions. It prepares
+concrete recommendations and the resulting requirement changes before showing a
+compact review. Each recommendation shows its basis: documented behavior,
+observed implementation, or a proposed default requiring your acceptance.
 
-Suggestions distinguish documented intended behavior from current implementation
-behavior. A missing product decision gets alternatives rather than an invented
-default. Accepting a suggestion records your intended decision; it does not yet
-apply requirement changes. Questions with recorded answers are skipped and those
-answers are reused. To revisit an answer, use `--question Q-CSV-01`; repeat
+The review offers **Accept recommendations and changes**, **Edit selected items**,
+**View full changes**, and **Save for later**. The complete before/after diff is
+also saved as a file. Acceptance applies the reviewed answers and requirement
+changes together. Edits are made only to the items you select, then the revised
+proposal returns to the same review. Canceling or saving for later leaves the
+working YAML unchanged.
+
+Explicit delegation such as “choose something reasonable” or “you decide” asks
+for a concrete proposed default; it is not treated as a completed product
+decision. Concrete saved answers and already resolved decisions are preserved.
+Use `--question Q-CSV-01` to include a particular answer in the review; repeat
 `--question` for additional IDs.
 
 You can also edit answers directly beside the questions:
@@ -134,31 +141,37 @@ open_questions:
 New drafts include `answer: null`; older files without the field still work.
 Blank or null answers remain unanswered. Recording an answer does not yet change
 the requirement or remove its readiness blocker. Within `urs resolve`, the same
-command continues from saved answers to review of their requirement changes.
+review covers the staged recommendations and their requirement changes.
 When answers were edited directly in YAML or saved with `--answers-only`, run
 `urs resolve` to start that review.
 
 After answers are recorded, the command makes a targeted requirement-change
 proposal. You can select `--provider`, `--model`, `--source`, and `--max-spend`.
-Suggestions, proposal generation, technical corrections, and one possible
-clarification follow-up share one command spending ceiling and one provider
-preview; there is no separate budget per question. If all answers are already
-recorded, no suggestion request is needed. The saved/default ceiling applies
+Recommendations, proposal generation, technical corrections, and edited reviews
+share one command spending ceiling and one provider preview; there is no separate
+budget per question. You can regenerate the review after selected edits at most
+twice in one command. Including technical corrections, a resolution command can
+make at most six requests, or five when no recommendations are needed.
+If all answers are already recorded as concrete decisions,
+no recommendation request is needed. The saved/default ceiling applies
 unless `--max-spend` overrides it; there is no thoroughness selection.
-The CLI displays the exact questions and answers, complete before/after
-requirement text, reasons for each change, and the proposed document revision.
+The compact review displays proposed answers, their basis, changed requirements,
+and the proposed document revision. The complete before/after requirement text is
+available through **View full changes** and the saved diff.
 Accept only changes that express your intended decisions. A requirement that
 already expresses an answer is shown for acknowledgment without a text change.
 Malformed proposals receive at most two technical correction requests within
 the shared command limit. HTTP failures and refusals are not retried.
 
-If an answer still lacks a necessary decision, review the ready requirement
-changes first. The CLI then asks only for the specific missing clarification,
-with the saved answer already filled in, and offers one follow-up requirement
-review in the same command. Unchanged answers do not trigger another request.
-Remaining clarifications receive a targeted `urs resolve --question` command.
+If a recommendation still needs consequential information that cannot be
+inferred or proposed responsibly, that specific blocker remains visible in the
+review. You can edit it or leave it pending while accepting the ready changes;
+the CLI does not automatically start another questionnaire. Unchanged answers do
+not trigger another request.
 The summary distinguishes saved answers awaiting requirement review from
-resolved questions and points to `urs check` only after all questions are resolved.
+resolved questions. Once the review is complete, it prints the next
+`generate --urs` command with the saved application URL. `urs check` remains
+available as a separate validation command.
 
 After acceptance, the working URS is updated, its revision advances, and questions
 remain beside their answers and application records. Applied answers stop
@@ -172,14 +185,15 @@ To type answers without suggestions, a provider request, or requirement edits:
 provenarium urs resolve urs.yaml --answers-only
 ```
 
-This offline mode shows the question and related requirement, accepts a typed
-answer, and lets Enter skip a question. Previously submitted answers are saved
-when you stop.
+This offline mode shows each question with its saved answer, accepts a typed
+answer, and lets Enter keep the current value. Previously submitted answers are
+saved when you stop.
 
-Suggestion batches are retained as `.suggestions.json`; requirement reviews are
-retained as `.diff.txt` and `.proposal.json` under `.provenarium/resolutions/`.
-The CLI prints their paths. To return to a saved
-proposal without another AI request, use its printed path:
+Recommendations, their basis, and staged answers are retained with the review
+proposal. Complete changes are retained as `.diff.txt` and `.proposal.json` under
+`.provenarium/resolutions/`.
+The CLI prints their paths. To return to a saved proposal without another AI
+request, use its printed path:
 
 ```sh
 provenarium urs resolve urs.yaml --apply .provenarium/resolutions/REVIEW_ID.proposal.json
@@ -188,10 +202,18 @@ provenarium urs resolve urs.yaml --apply .provenarium/resolutions/REVIEW_ID.prop
 The proposal must match the current source file; changing the YAML after proposal
 creation requires a fresh proposal. `--yes` on a new resolution request accepts
 authoring consent; it never accepts suggested answers or fresh requirement
-changes. For scripted use, record answers in YAML first. Without an interactive
-terminal, the proposal is retained for later review. After reviewing a saved proposal, `--apply ...
---yes` explicitly applies that saved artifact without a prompt. The offline
+changes. Unanswered or delegated decisions can still receive recommendations
+without an interactive terminal; the completed proposal is retained for later
+review. After reviewing a saved proposal, `--apply ... --yes` explicitly applies
+that saved artifact without a prompt. The offline
 `--apply` and `--answers-only` modes do not accept authoring options.
+
+If preparing an edited review fails, the CLI keeps the staged answers and prints
+a `--resume <draft-file>` command. That command restores the retained edits and
+prepares their requirement changes under a new provider preview and spending
+ceiling; it does not ask for the same answers again. The working YAML must still
+match the retained draft. Use the printed resume command for an unfinished
+review, or `--apply` for a completed proposal that is ready for offline review.
 
 Before/after copies of applied requirement changes are retained under
 `.provenarium/resolutions/`, along with earlier copies made when recording
@@ -200,7 +222,7 @@ the identity of the person who approved a decision. The command edits only a
 working URS inside the selected `--project` directory, not generated candidates,
 approved packages, or history files.
 
-Finish by checking the complete URS and refreshing its document views:
+For a separate validation check or to refresh existing document views:
 
 ```sh
 provenarium urs check urs.yaml
