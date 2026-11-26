@@ -340,6 +340,64 @@ async function resolutionFixture(answer: string | null) {
   return { root, document };
 }
 
+it('explains saved answers awaiting review and prints the actual resolve command without changing the URS', async () => {
+  const root = await fixture();
+  const document = structuredClone(draft);
+  document.open_questions = [
+    {
+      id: 'Q-CSV',
+      requirement: 'URS-RESULT-001',
+      question: 'What should an empty export contain?',
+      answer: 'Download column headings without data rows.',
+    },
+    {
+      id: 'Q-ORDER',
+      requirement: 'URS-RESULT-001',
+      question: 'In what order should records appear in the export?',
+      answer: 'Use the displayed register order.',
+    },
+  ];
+  const file = join(root, 'requirements.yaml');
+  const original = `# Human answers are retained.\n${stringify(document)}`;
+  await writeFile(file, original);
+  process.argv = [
+    process.execPath,
+    'provenarium',
+    '--project',
+    root,
+    'urs',
+    'check',
+    'requirements.yaml',
+  ];
+
+  await import('../src/cli.js');
+
+  expect(process.exitCode).toBe(1);
+  expect(console.error).not.toHaveBeenCalled();
+  const output = vi.mocked(console.log).mock.calls.flat().join('\n');
+  expect(output).toContain(
+    '2 answers are saved. Their requirement changes still need review; check does not apply changes.',
+  );
+  const resume = vi
+    .mocked(console.log)
+    .mock.calls.flat()
+    .find((line) => String(line).startsWith('Resume requirement review:'));
+  expect(resume).toBe(
+    `Resume requirement review: provenarium --project '${root}' urs resolve requirements.yaml`,
+  );
+  expect(String(resume)).not.toContain('<file>');
+  expect(output).toContain('Q-CSV: answer recorded');
+  expect(output).toContain('Q-ORDER: answer recorded');
+  expect(output.indexOf('Resume requirement review:')).toBeLessThan(output.indexOf('- Q-CSV:'));
+  expect(mocks.draftUrs).not.toHaveBeenCalled();
+  expect(mocks.suggestUrsAnswers).not.toHaveBeenCalled();
+  expect(mocks.proposeUrsResolution).not.toHaveBeenCalled();
+  expect(mocks.getProviderKey).not.toHaveBeenCalled();
+  expect(mocks.openDiscovery).not.toHaveBeenCalled();
+  expect(await readFile(file, 'utf8')).toBe(original);
+  expect((await readdir(root)).sort()).toEqual(['design.md', 'requirements.yaml']);
+});
+
 it('dispatches answers-only resolution without authoring or credential access', async () => {
   const { root, document } = await resolutionFixture(null);
   Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });

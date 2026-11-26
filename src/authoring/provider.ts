@@ -61,7 +61,11 @@ export type ProviderValidationIssue = {
 type ProviderSchemaFailure =
   'envelope_json' | 'envelope_schema' | 'document_json' | 'document_schema';
 type ProviderValidationFailure =
-  'document_structure' | 'protected_expectation' | 'draft_assertion_repair' | 'protocol_edits';
+  | 'document_structure'
+  | 'protected_expectation'
+  | 'draft_assertion_repair'
+  | 'protocol_edits'
+  | 'urs_resolution';
 export type ProviderOutputDiagnostic = {
   request: number;
   operation?: string;

@@ -19,6 +19,19 @@ proposed requirement changes, then accept the correct changes. Keep the answered
 question in the file. Applied answers stop blocking readiness; editing the
 answer, question, or linked requirement ID makes them pending again.
 
+Selecting answers inside `urs resolve` continues directly to that requirement
+review. If one answer needs another detail, the CLI can apply the other reviewed
+answers, ask a specific follow-up with the saved answer filled in, and show one
+more proposal under the same spending cap. It does not ask every question again.
+
+An older failure saying a question "cannot be both resolved and unresolved" is a
+generator contradiction, not evidence that your selected answer was lost. New
+proposal requests give every pending question one outcome and can correct an
+invalid proposal within the command's bounded repair allowance. Your saved
+answers are reused when you rerun `urs resolve`; `check` cannot apply them. After
+a proposal failure the CLI now directs you back to requirement review, while a
+declined review points to its saved `--apply` command without another AI request.
+
 Use `urs resolve --question Q-CSV-01` to revise an existing answer in the terminal.
 Use `--answers-only` to collect answers without a provider call, then return to
 `urs resolve` when ready to review requirement changes. Ctrl+C retains answers

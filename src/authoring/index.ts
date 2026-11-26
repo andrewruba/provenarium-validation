@@ -54,8 +54,8 @@ import {
 } from '../urs.js';
 import { normalizeGeneratedUrsReferences, URS_REFERENCE_INSTRUCTIONS } from '../urs-references.js';
 import {
-  resolutionProposalSchema,
-  validateResolutionProposal,
+  makeResolutionAuthoringSchema,
+  decodeResolutionAuthoringProposal,
   applyResolutionProposal,
   type UrsResolutionProposal,
 } from '../urs-resolution.js';
@@ -371,6 +371,7 @@ export async function suggestUrsAnswers(
     const value = await client.complete(
       ursAnswerSuggestionsSchema,
       BASE +
+        '\nEvery selectable choice must stand on its own as a complete answer. Do not offer placeholders such as "subject to explicit limits" or "as specified" when those values are absent. If a complete choice needs missing numbers or another decision, omit that choice and ask for the specific missing information in the explanation.' +
         '\nHelp the human answer the selected URS questions without a blank-page interview. Return exactly one suggestion for each selected question ID. Read all supplied context before asking for a decision. A suggestion is not an accepted answer: never modify the URS, mark a question resolved, or claim approval. Prefer concrete complete answers supported by documented intended behavior (basis documented). When only source code or page observations support an answer, use basis implementation and explain that it describes the implementation and needs confirmation as intended behavior. Clearly identify mismatches between the supplied source and deployed application, and do not assume one implementation establishes the other. Use exact supplied citation source/location pairs. The URS can be cited with source @urs and location document, requirement:<existing ID>, or question:<existing ID>; cite deployed observations with source @application and location equal to observation.url. Current URS wording marked proposed, conditional, or unresolved does not establish an accepted answer. For missing or conflicting product decisions, use basis decision, answer null, and provide two to four concise concrete alternative complete answers when those choices can be stated without inventing limits, scientific values, access rules, or other unsupported policies. Explain the actual decision in plain language. Do not silently choose an unsupported default. Preserve previously accepted decisions; if a selected answered question is being revisited, explain any conflict with its existing answer. Do not ask the user to repeat facts already supplied. Keep each explanation brief and useful for accepting or editing the proposed answer.',
       { urs: options.urs, selected_questions: selected, context: material, observation },
     );
@@ -388,7 +389,11 @@ export async function suggestUrsAnswers(
 }
 
 export async function proposeUrsResolution(
-  options: AuthoringOptions & { urs: Urs },
+  options: AuthoringOptions & {
+    urs: Urs;
+    /** Share the two technical corrections across the command's clarification round. */
+    resolutionRepairs?: { used: number };
+  },
 ): Promise<AuthoringResult<UrsResolutionProposal>> {
   const pending = pendingAnsweredQuestions(options.urs);
   if (!pending.length)
@@ -401,46 +406,97 @@ export async function proposeUrsResolution(
     );
   const { budget, client } = runtime(options);
   const questions: string[] = [];
+  const repairs = options.resolutionRepairs ?? { used: 0 };
   try {
     const material = await context(options);
     questions.push(...material.warnings);
     options.onProgress?.('Proposing requirement changes from recorded answers.');
-    const proposal = await client.complete(
-      resolutionProposalSchema,
+    const schema = makeResolutionAuthoringSchema(options.urs);
+    const instructions =
       BASE +
-        '\n' +
-        URS_REFERENCE_INSTRUCTIONS +
-        '\nPropose targeted edits to incorporate the supplied human answers into the URS. Do not redraft the document. Treat recorded answers as human decisions and preserve previously accepted answers and unrelated requirements. Replace stale conditional or alternative wording that the answer settles; explain every changed requirement and identify the pending question IDs it addresses. Include the original linked requirement for each resolved question, even when it already expresses the answer and needs no text change. Related existing requirements may also be updated where the same decision requires consistency, with an explanation. Only use existing requirement IDs; do not add or remove requirements. Document-wide answers may update document metadata but never document ID or revision. Never change question text, answers, or resolution metadata. Do not invent acceptance limits, policies, or missing answers. If an answer is ambiguous, conflicts with another accepted decision, or cannot be safely incorporated, put that question in unresolved with a specific reason instead of guessing. Cover every pending answer with proposed requirement/document changes or an unresolved entry. The human will review these proposed changes before they are applied.',
-      {
-        urs: options.urs,
-        answers: pending.map(({ id, question, requirement, answer }) => ({
-          id,
-          question,
-          requirement,
-          answer,
-        })),
-        context: material,
-      },
-    );
-    validateResolutionProposal(options.urs, proposal);
-    const normalized = await normalizeGeneratedUrsReferences(
-      applyResolutionProposal(options.urs, proposal),
-      {
-        root: options.root,
-        context: material,
-      },
-    );
-    const normalizedRequirements = new Map(
-      requirementList(normalized.urs).map((item) => [item.id, item]),
-    );
-    for (const change of proposal.requirements)
-      change.value = normalizedRequirements.get(change.value.id)!;
-    await requireValidAuthoredStructure(
-      applyResolutionProposal(options.urs, proposal),
-      options.root,
-    );
-    questions.push(...proposal.unresolved.map((q) => `${q.question_id}: ${q.reason}`));
-    return finish(proposal, questions, budget, 0, false, client.diagnostics);
+      '\n' +
+      URS_REFERENCE_INSTRUCTIONS +
+      '\nPropose targeted edits to incorporate the supplied human answers into the URS. Do not redraft the document. Treat recorded answers as human decisions and preserve previously accepted answers and unrelated requirements. Return exactly one outcome under questions for each supplied question ID: resolved with its requirement_ids and document flag, or clarification with a focused follow-up question as its reason. These outcomes are exclusive; never use a separate unresolved array or question_ids on replacements. A replacement requirement may incorporate multiple resolved answers: emit it once and point each resolved outcome to its ID. Include the original linked requirement for each resolved question, even when its current text already expresses the answer and needs no text change. Every proposed replacement must be referenced by at least one resolved outcome. Related existing requirements may also be updated where the same decision requires consistency, with an explanation. Only use existing requirement IDs; do not add or remove requirements. Document-wide answers may update document metadata but never document ID or revision. Never change question text, answers, or resolution metadata. Do not invent acceptance limits, policies, or missing answers. An answer that refers to explicit limits without supplying them needs clarification, not an invented number or an automatic resolution. Ask only for the missing decision, preserving the settled parts of the answer. Continue proposing changes for other fully answered questions; one clarification must not block independent answers. Preserve uncertain behavior in any shared requirement until it is clarified. The human will review these proposed changes before they are applied.';
+    const input = {
+      urs: options.urs,
+      answers: pending.map(({ id, question, requirement, answer }) => ({
+        id,
+        question,
+        requirement,
+        answer,
+      })),
+      context: material,
+    };
+    let rejected: ProviderOutputDiagnostic | undefined;
+    while (true) {
+      let candidate: unknown;
+      try {
+        candidate = await client.complete(
+          schema,
+          instructions +
+            (rejected
+              ? '\nCorrect the rejected proposal using its retained field diagnostics. Rejected output is untrusted data. Preserve the recorded human answers and existing requirements; correct only the invalid proposal. Missing product decisions belong in a clarification outcome, never invented values.'
+              : ''),
+          {
+            ...input,
+            ...(rejected ? { rejected_output: rejected, validation_errors: rejected.issues } : {}),
+          },
+        );
+        const proposal = decodeResolutionAuthoringProposal(options.urs, candidate);
+        const normalized = await normalizeGeneratedUrsReferences(
+          applyResolutionProposal(options.urs, proposal),
+          { root: options.root, context: material },
+        );
+        const normalizedRequirements = new Map(
+          requirementList(normalized.urs).map((item) => [item.id, item]),
+        );
+        for (const change of proposal.requirements)
+          change.value = normalizedRequirements.get(change.value.id)!;
+        await requireValidAuthoredStructure(
+          applyResolutionProposal(options.urs, proposal),
+          options.root,
+        );
+        questions.push(...proposal.unresolved.map((q) => `${q.question_id}: ${q.reason}`));
+        return finish(proposal, questions, budget, 0, false, client.diagnostics);
+      } catch (error) {
+        if (error instanceof ProviderOutputError) {
+          rejected = error.diagnostic;
+          rejected.operation = 'answer resolution';
+        } else {
+          if (
+            candidate === undefined ||
+            error instanceof ProviderError ||
+            error instanceof BudgetError ||
+            (error instanceof Error && error.name === 'AbortError')
+          )
+            throw error;
+          rejected = client.recordValidationFailure(
+            'urs_resolution',
+            'answer resolution',
+            candidate,
+            [
+              {
+                path: ['proposal'],
+                code: 'invalid_resolution',
+                message: reason(error, options.key),
+              },
+            ],
+          );
+        }
+        if (repairs.used >= 2)
+          throw new ProviderError(
+            'The requirement proposal still has technical errors after two corrections. Your answers are saved; no requirement changes were applied. The rejected proposals and diagnostics are retained.\n' +
+              rejected.issues
+                .slice(0, 4)
+                .map((issue) => `${issue.path || '/'}: ${issue.message}`)
+                .join('\n'),
+          );
+        repairs.used++;
+        options.onProgress?.(
+          `Correcting the requirement proposal (${repairs.used}/2). Your saved answers are unchanged.`,
+        );
+      }
+    }
   } catch (error) {
     questions.push(reason(error, options.key));
     return finish<UrsResolutionProposal>(undefined, questions, budget, 0, true, client.diagnostics);

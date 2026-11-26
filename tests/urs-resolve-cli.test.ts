@@ -218,6 +218,211 @@ it('keeps answers and the original requirements when proposed changes are declin
   expect(saved.open_questions[0].answer).toBe(answer);
   expect(questionStatus(saved, saved.open_questions[0])).toBe('answered');
   expect(await savedProposal(f.root)).toBeTruthy();
+  expect(ui.logs.at(-1)).toContain('without another AI call:');
+  expect(ui.logs.join('\n')).not.toContain('Check requirements:');
+});
+
+it('resumes failed proposal authoring with saved answers instead of directing the user to check', async () => {
+  const f = await fixture(true);
+  const ui = runtime();
+  ui.propose.mockResolvedValueOnce({
+    value: undefined as unknown as UrsResolutionProposal,
+    incomplete: true,
+    questions: ['Question Q-CSV cannot be both resolved and unresolved.'],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  });
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  const saved = await loadUrs(f.file);
+  expect(saved.open_questions[0].answer).toBe(answer);
+  expect(saved.families).toEqual(f.urs.families);
+  expect(ui.logs.join('\n')).toContain('1 answers saved, requirement review pending');
+  expect(ui.logs.at(-1)).toMatch(/Resume requirement review.*urs resolve/);
+  expect(ui.logs.join('\n')).not.toContain('Check requirements:');
+  expect(ui.confirm).not.toHaveBeenCalled();
+});
+
+function needsClearClarification(urs: Urs): UrsResolutionProposal {
+  const value = proposal(urs);
+  value.requirements = value.requirements.filter((change) => change.value.id === 'URS-CSV');
+  value.unresolved = [
+    { question_id: 'Q-CLEAR', reason: 'Choose immediate clearing or a confirmation step.' },
+  ];
+  return value;
+}
+
+it('reviews ready answers, asks only the specific missing detail, and reviews the clarification in the same command', async () => {
+  const f = await fixture(true);
+  f.urs.open_questions[1].answer = 'Use the appropriate clearing workflow.';
+  await writeFile(f.file, stringify(f.urs));
+  const ui = suggestionRuntime();
+  ui.propose.mockImplementationOnce(async (urs) => ({
+    value: needsClearClarification(urs),
+    incomplete: false,
+    questions: [],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  }));
+  ui.confirm.mockResolvedValue(true);
+  ui.text.mockResolvedValueOnce('Require confirmation before clearing.');
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.suggest).not.toHaveBeenCalled();
+  expect(ui.select).not.toHaveBeenCalled();
+  expect(ui.text).toHaveBeenCalledOnce();
+  expect(ui.text.mock.calls[0][0]).toMatchObject({
+    message: expect.stringContaining('Q-CLEAR'),
+    initialValue: 'Use the appropriate clearing workflow.',
+  });
+  expect(ui.propose).toHaveBeenCalledTimes(2);
+  const followup = ui.propose.mock.calls[1][0];
+  expect(pendingAnsweredQuestions(followup).map((question) => question.id)).toEqual(['Q-CLEAR']);
+  expect(followup.open_questions[0].answer).toBe(answer);
+  expect(followup.open_questions[1].answer).toBe('Require confirmation before clearing.');
+  expect(ui.confirm).toHaveBeenCalledTimes(2);
+  const saved = await loadUrs(f.file);
+  expect(saved.open_questions.map((question) => questionStatus(saved, question))).toEqual([
+    'resolved',
+    'resolved',
+  ]);
+  expect(saved.open_questions[0].answer).toBe(answer);
+  expect(ui.logs.at(-1)).toContain('Check requirements:');
+});
+
+it('bounds clarification to one follow-up proposal and prints a targeted continuation', async () => {
+  const f = await fixture(true);
+  f.urs.open_questions = [f.urs.open_questions[1]];
+  f.urs.open_questions[0].answer = 'Use the appropriate clearing workflow.';
+  await writeFile(f.file, stringify(f.urs));
+  const ui = runtime();
+  ui.propose.mockImplementation(async (urs) => ({
+    value: needsClearClarification(urs),
+    incomplete: false,
+    questions: [],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  }));
+  ui.text.mockResolvedValueOnce('Use confirmation when appropriate.');
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.propose).toHaveBeenCalledTimes(2);
+  expect(ui.text).toHaveBeenCalledOnce();
+  expect(ui.confirm).not.toHaveBeenCalled();
+  expect((await loadUrs(f.file)).open_questions[0].answer).toBe(
+    'Use confirmation when appropriate.',
+  );
+  expect(ui.logs.at(-1)).toMatch(/urs resolve .*--question Q-CLEAR/);
+  expect(ui.logs.join('\n')).not.toContain('Check requirements:');
+});
+
+it('keeps reviewed changes when clarification is cancelled and does not request another proposal', async () => {
+  const f = await fixture(true);
+  f.urs.open_questions[1].answer = 'Use the appropriate clearing workflow.';
+  await writeFile(f.file, stringify(f.urs));
+  const ui = runtime();
+  ui.propose.mockImplementationOnce(async (urs) => ({
+    value: needsClearClarification(urs),
+    incomplete: false,
+    questions: [],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  }));
+  ui.confirm.mockResolvedValueOnce(true);
+  ui.text.mockResolvedValueOnce(Symbol('cancel'));
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  const saved = await loadUrs(f.file);
+  expect(saved.open_questions.map((question) => questionStatus(saved, question))).toEqual([
+    'resolved',
+    'answered',
+  ]);
+  expect(saved.open_questions[1].answer).toBe(f.urs.open_questions[1].answer);
+  expect(ui.propose).toHaveBeenCalledOnce();
+  expect(ui.logs.at(-1)).toMatch(/urs resolve .*--question Q-CLEAR/);
+  expect(ui.logs.join('\n')).not.toContain('Check requirements:');
+});
+
+it.each([false, Symbol('cancel')])(
+  'preserves the saved review when the user declines or cancels before clarification (%s)',
+  async (confirmation) => {
+    const f = await fixture(true);
+    f.urs.open_questions[1].answer = 'Use the appropriate clearing workflow.';
+    await writeFile(f.file, stringify(f.urs));
+    const ui = runtime();
+    ui.propose.mockImplementationOnce(async (urs) => ({
+      value: needsClearClarification(urs),
+      incomplete: false,
+      questions: [],
+      spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+      reviewRounds: 0,
+    }));
+    ui.confirm.mockResolvedValueOnce(confirmation);
+
+    await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+    expect(ui.text).not.toHaveBeenCalled();
+    expect(ui.propose).toHaveBeenCalledOnce();
+    expect(await savedProposal(f.root)).toBeTruthy();
+    const saved = await loadUrs(f.file);
+    expect(saved.families).toEqual(f.urs.families);
+    expect(saved.open_questions.map((question) => questionStatus(saved, question))).toEqual([
+      'answered',
+      'answered',
+    ]);
+    expect(ui.logs.at(-1)).toMatch(/without another AI call:.*--apply/);
+    expect(ui.logs.join('\n')).not.toContain('Check requirements:');
+  },
+);
+
+it('keeps partial saved-proposal application offline and directs only unresolved questions back to resolve', async () => {
+  const f = await fixture(true);
+  f.urs.open_questions[1].answer = 'Use the appropriate clearing workflow.';
+  await writeFile(f.file, stringify(f.urs));
+  const first = runtime(false);
+  first.propose.mockImplementationOnce(async (urs) => ({
+    value: needsClearClarification(urs),
+    incomplete: false,
+    questions: [],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  }));
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml', yes: true }, first);
+  const apply = await savedProposal(f.root);
+  const offline = runtime(false);
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, offline);
+
+  expect(offline.propose).not.toHaveBeenCalled();
+  expect(offline.text).not.toHaveBeenCalled();
+  expect(offline.logs.at(-1)).toMatch(/urs resolve .*--question Q-CLEAR/);
+  expect(offline.logs.join('\n')).not.toContain('Check requirements:');
+});
+
+it('does not spend on a follow-up proposal if the saved answer is unchanged', async () => {
+  const f = await fixture(true);
+  f.urs.open_questions = [f.urs.open_questions[1]];
+  f.urs.open_questions[0].answer = 'Use the appropriate clearing workflow.';
+  await writeFile(f.file, stringify(f.urs));
+  const ui = runtime();
+  ui.propose.mockImplementationOnce(async (urs) => ({
+    value: needsClearClarification(urs),
+    incomplete: false,
+    questions: [],
+    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
+    reviewRounds: 0,
+  }));
+  ui.text.mockResolvedValueOnce(f.urs.open_questions[0].answer);
+
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
+
+  expect(ui.propose).toHaveBeenCalledOnce();
+  expect(ui.text).toHaveBeenCalledOnce();
+  expect(ui.logs.at(-1)).toMatch(/urs resolve .*--question Q-CLEAR/);
 });
 
 it('applies reviewed answers while preserving answers that still need clarification', async () => {

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Made answer-resolution outcomes exclusive per question in the provider schema,
+  with two bounded technical corrections shared across the command and retained
+  diagnostics. A missing clarification can no longer mark an answer both resolved
+  and unresolved or prevent independent answers from reaching review.
+- Kept answer selection, requirement review, and focused clarification in the same
+  CLI flow. Pending answers now point to the appropriate review/resume command;
+  `urs check` is suggested after resolution is complete.
 - Retained and displayed bounded, redacted provider HTTP error details and request
   IDs, so rejected API requests identify the failing parameter instead of only
   reporting a status code. HTTP failures remain excluded from automatic retries.

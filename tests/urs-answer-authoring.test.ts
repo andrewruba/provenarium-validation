@@ -1,7 +1,10 @@
 import { providerOutputText } from './provider-fixture.js';
+import { resolutionProviderValue } from './resolution-fixture.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Budget, proposeUrsResolution, suggestUrsAnswers } from '../src/authoring/index.js';
-import { ursSchema } from '../src/schema.js';
+import { ursSchema, type Urs } from '../src/schema.js';
+import { applyResolutionProposal, type UrsResolutionProposal } from '../src/urs-resolution.js';
+import { pendingAnsweredQuestions, questionStatus } from '../src/urs.js';
 import {
   answerSuggestionQuestions,
   validateUrsAnswerSuggestions,
@@ -239,7 +242,7 @@ describe('context-based answer suggestions', () => {
       ],
       unresolved: [],
     };
-    const requests = transport('openai', [suggestions(), proposal]);
+    const requests = transport('openai', [suggestions(), resolutionProviderValue(proposal)]);
     const options = {
       root: '/tmp',
       provider: 'openai' as const,
@@ -378,4 +381,199 @@ describe('suggestion scope and evidence validation', () => {
     expect(requests).not.toHaveBeenCalled();
     expect(() => answerSuggestionQuestions(document(), ['Q-CSV', 'Q-CSV'])).toThrow('duplicate');
   });
+});
+
+function answeredDocument() {
+  const urs = document();
+  urs.open_questions[0].answer = 'Download a header-only CSV with no data rows.';
+  return urs;
+}
+function reviewedProposal(urs: Urs): UrsResolutionProposal {
+  return {
+    requirements: [
+      {
+        question_ids: [urs.open_questions[0].id],
+        value: {
+          ...structuredClone(urs.families[0].requirements[0]),
+          statement: 'Download a header-only CSV when the register is empty.',
+        },
+        reason: 'Incorporate the recorded empty-export decision.',
+      },
+    ],
+    unresolved: [],
+  };
+}
+const resolutionOptions = {
+  root: '/tmp',
+  provider: 'openai' as const,
+  key: 'test-key',
+  context,
+};
+
+describe('bounded answer-resolution correction', () => {
+  it.each(['openai', 'anthropic'] as const)(
+    'corrects a contradictory question outcome before presenting a review with %s',
+    async (provider) => {
+      const urs = answeredDocument();
+      urs.open_questions[0].id = 'DB-Q-01';
+      const original = structuredClone(urs);
+      const proposal = reviewedProposal(urs);
+      const contradictory = {
+        ...proposal,
+        unresolved: [
+          { question_id: 'DB-Q-01', reason: 'AMBIGUOUS-RESOLUTION: supply the missing decision.' },
+        ],
+      };
+      const requests = transport(provider, [contradictory, resolutionProviderValue(proposal)]);
+      const result = await proposeUrsResolution({
+        ...resolutionOptions,
+        provider,
+        urs,
+        fetchImpl: requests,
+      });
+      expect(result.incomplete).toBe(false);
+      expect(result.value).toEqual(proposal);
+      expect(requests).toHaveBeenCalledTimes(2);
+      expect(result.diagnostics?.some((item) => item.kind === 'document_schema')).toBe(true);
+      expect(JSON.stringify(result.diagnostics)).toContain('AMBIGUOUS-RESOLUTION');
+      expect(String(requests.mock.calls[1][1]?.body)).toContain('AMBIGUOUS-RESOLUTION');
+      expect(urs).toEqual(original);
+      expect(questionStatus(urs, urs.open_questions[0])).toBe('answered');
+    },
+  );
+
+  it('repairs a semantic target mismatch and retains the rejected proposal for diagnosis', async () => {
+    const urs = answeredDocument();
+    urs.families[0].requirements.push({ ...urs.families[0].requirements[0], id: 'URS-OTHER' });
+    const original = structuredClone(urs);
+    const proposal = reviewedProposal(urs);
+    const wrong = resolutionProviderValue(proposal);
+    wrong.questions['Q-CSV'] = {
+      status: 'resolved',
+      requirement_ids: ['URS-CSV', 'URS-OTHER'],
+      document: false,
+    };
+    const requests = transport('openai', [wrong, resolutionProviderValue(proposal)]);
+    const result = await proposeUrsResolution({ ...resolutionOptions, urs, fetchImpl: requests });
+    expect(result.incomplete).toBe(false);
+    expect(result.value).toEqual(proposal);
+    expect(requests).toHaveBeenCalledTimes(2);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'urs_resolution' })]),
+    );
+    expect(JSON.stringify(result.diagnostics)).toContain('URS-OTHER');
+    expect(String(requests.mock.calls[1][1]?.body)).toContain('proposed replacement');
+    expect(urs).toEqual(original);
+  });
+
+  it('stops after two corrections while retaining all answers and unresolved diagnostics', async () => {
+    const urs = answeredDocument();
+    const original = structuredClone(urs);
+    const wrong = resolutionProviderValue(reviewedProposal(urs));
+    wrong.requirements = [];
+    const requests = transport('openai', [wrong, wrong, wrong]);
+    const result = await proposeUrsResolution({ ...resolutionOptions, urs, fetchImpl: requests });
+    expect(result.incomplete).toBe(true);
+    expect(result.value).toBeUndefined();
+    expect(requests).toHaveBeenCalledTimes(3);
+    expect(result.questions.join(' ')).toMatch(
+      /correction.*limit|could not correct|after two corrections/i,
+    );
+    expect(result.diagnostics?.filter((item) => item.kind === 'urs_resolution')).toHaveLength(3);
+    expect(urs).toEqual(original);
+  });
+
+  it('shares the correction ceiling across proposal rounds in the same command', async () => {
+    const urs = answeredDocument();
+    const proposal = reviewedProposal(urs);
+    const wrong = resolutionProviderValue(proposal);
+    wrong.requirements = [];
+    const requests = transport('openai', [wrong, resolutionProviderValue(proposal), wrong]);
+    const resolutionRepairs = { used: 1 };
+    const budget = new Budget(15);
+    const options = { ...resolutionOptions, urs, fetchImpl: requests, resolutionRepairs, budget };
+    const first = await proposeUrsResolution(options);
+    expect(first.incomplete).toBe(false);
+    expect(resolutionRepairs.used).toBe(2);
+    const second = await proposeUrsResolution(options);
+    expect(second.incomplete).toBe(true);
+    expect(requests).toHaveBeenCalledTimes(3);
+    expect(second.spend.calls).toBe(3);
+    expect(resolutionRepairs.used).toBe(2);
+  });
+
+  it('offers eight independent answers for review while asking only for the missing decision', async () => {
+    const urs = answeredDocument();
+    urs.open_questions = Array.from({ length: 9 }, (_, index) => ({
+      id: `DB-Q-${String(index + 1).padStart(2, '0')}`,
+      requirement: 'URS-CSV',
+      question: `Which export behavior applies to case ${index + 1}?`,
+      answer:
+        index === 0 ? 'Use explicit limits.' : 'Download a header-only CSV with no data rows.',
+    }));
+    const original = structuredClone(urs);
+    const proposal = reviewedProposal(urs);
+    proposal.requirements[0].question_ids = urs.open_questions
+      .slice(1)
+      .map((question) => question.id);
+    proposal.unresolved = [
+      {
+        question_id: 'DB-Q-01',
+        reason: 'What exact minimum and maximum values should be accepted?',
+      },
+    ];
+    const requests = transport('openai', [resolutionProviderValue(proposal)]);
+    const result = await proposeUrsResolution({ ...resolutionOptions, urs, fetchImpl: requests });
+    expect(result.incomplete).toBe(false);
+    expect(result.value).toEqual(proposal);
+    expect(result.questions).toContain(
+      'DB-Q-01: What exact minimum and maximum values should be accepted?',
+    );
+    expect(requests).toHaveBeenCalledOnce();
+    expect(urs).toEqual(original);
+    const reviewed = applyResolutionProposal(urs, result.value);
+    expect(
+      reviewed.open_questions.filter(
+        (question) => questionStatus(reviewed, question) === 'resolved',
+      ),
+    ).toHaveLength(8);
+    expect(pendingAnsweredQuestions(reviewed).map((question) => question.id)).toEqual(['DB-Q-01']);
+    expect(reviewed.open_questions.map((question) => question.answer)).toEqual(
+      original.open_questions.map((question) => question.answer),
+    );
+  });
+
+  it.each(['http', 'refusal', 'incomplete'] as const)(
+    'does not use document corrections for a provider %s failure',
+    async (failure) => {
+      const urs = answeredDocument();
+      const original = structuredClone(urs);
+      const requests = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify(
+              failure === 'http'
+                ? { error: { type: 'invalid_request_error', message: 'Schema rejected.' } }
+                : {
+                    status: failure === 'incomplete' ? 'incomplete' : 'completed',
+                    output: [{ type: 'refusal' }],
+                  },
+            ),
+            { status: failure === 'http' ? 400 : 200 },
+          ),
+      );
+      const resolutionRepairs = { used: 0 };
+      const result = await proposeUrsResolution({
+        ...resolutionOptions,
+        urs,
+        resolutionRepairs,
+        fetchImpl: requests,
+      });
+      expect(result.incomplete).toBe(true);
+      expect(result.value).toBeUndefined();
+      expect(requests).toHaveBeenCalledOnce();
+      expect(resolutionRepairs.used).toBe(0);
+      expect(urs).toEqual(original);
+    },
+  );
 });

@@ -133,21 +133,32 @@ open_questions:
 
 New drafts include `answer: null`; older files without the field still work.
 Blank or null answers remain unanswered. Recording an answer does not yet change
-the requirement or remove its readiness blocker. Run `urs resolve` to review
-how the answer should be incorporated.
+the requirement or remove its readiness blocker. Within `urs resolve`, the same
+command continues from saved answers to review of their requirement changes.
+When answers were edited directly in YAML or saved with `--answers-only`, run
+`urs resolve` to start that review.
 
-After answers are recorded, the command makes one targeted requirement-change
+After answers are recorded, the command makes a targeted requirement-change
 proposal. You can select `--provider`, `--model`, `--source`, and `--max-spend`.
-The suggestion batch and proposal share one command spending ceiling and one
-provider preview; there is no separate budget per question. If all answers are
-already recorded, only the proposal request is needed. The saved/default ceiling
-applies unless `--max-spend` overrides it; there is no thoroughness selection or
-repeated review loop for resolution.
+Suggestions, proposal generation, technical corrections, and one possible
+clarification follow-up share one command spending ceiling and one provider
+preview; there is no separate budget per question. If all answers are already
+recorded, no suggestion request is needed. The saved/default ceiling applies
+unless `--max-spend` overrides it; there is no thoroughness selection.
 The CLI displays the exact questions and answers, complete before/after
 requirement text, reasons for each change, and the proposed document revision.
 Accept only changes that express your intended decisions. A requirement that
 already expresses an answer is shown for acknowledgment without a text change.
-Ambiguous answers remain pending with a specific explanation.
+Malformed proposals receive at most two technical correction requests within
+the shared command limit. HTTP failures and refusals are not retried.
+
+If an answer still lacks a necessary decision, review the ready requirement
+changes first. The CLI then asks only for the specific missing clarification,
+with the saved answer already filled in, and offers one follow-up requirement
+review in the same command. Unchanged answers do not trigger another request.
+Remaining clarifications receive a targeted `urs resolve --question` command.
+The summary distinguishes saved answers awaiting requirement review from
+resolved questions and points to `urs check` only after all questions are resolved.
 
 After acceptance, the working URS is updated, its revision advances, and questions
 remain beside their answers and application records. Applied answers stop

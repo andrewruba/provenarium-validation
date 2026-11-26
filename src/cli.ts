@@ -16,7 +16,14 @@ import {
   type Bindings,
 } from './schema.js';
 import { atomicWrite, exists, readJson, safePath, sha256, writeJson, writeNew } from './files.js';
-import { loadUrs, checkUrs, checkUrsStructure, templateText, unresolvedQuestions } from './urs.js';
+import {
+  loadUrs,
+  checkUrs,
+  checkUrsStructure,
+  templateText,
+  unresolvedQuestions,
+  pendingAnsweredQuestions,
+} from './urs.js';
 import { prepareUrsInputs, projectCommand } from './urs-setup.js';
 import { resolveUrsFile } from './urs-resolve-cli.js';
 import { repairUrsReferences } from './urs-reference-repair.js';
@@ -169,7 +176,7 @@ async function authoring(
     throw new Error('Unknown selected context source. Use provenarium context list.');
   console.log(
     options.resolution
-      ? `Answer resolution: ${provider} / ${model}; ${options.resolutionSuggestions ? 'up to two requests: suggested answers and requirement changes' : 'one proposal request'}; maximum $${cap.toFixed(2)} USD total for this command.`
+      ? `Answer resolution: ${provider} / ${model}; up to ${options.resolutionSuggestions ? 'five' : 'four'} requests including ${options.resolutionSuggestions ? 'suggested answers, ' : ''}requirement changes, two technical corrections, and one clarification round; maximum $${cap.toFixed(2)} USD total for this command.`
       : `Authoring: ${provider} / ${model}; ${tier}; maximum $${cap.toFixed(2)} USD for this command.`,
   );
   console.log(
@@ -330,6 +337,15 @@ paid(
   }
   const document = await loadUrs(path.resolve(root(command), file));
   const errors = await checkUrs(document, root(command));
+  const pendingAnswers = pendingAnsweredQuestions(document).length;
+  if (pendingAnswers) {
+    console.log(
+      `${pendingAnswers} ${pendingAnswers === 1 ? 'answer is' : 'answers are'} saved. Their requirement changes still need review; check does not apply changes.`,
+    );
+    console.log(
+      `Resume requirement review: ${projectCommand(root(command), ['urs', 'resolve', file])}`,
+    );
+  }
   console.log(
     errors.length ? errors.map((e) => `- ${e}`).join('\n') : 'URS structural checks passed.',
   );
@@ -380,6 +396,7 @@ paid(
   const directory = root(command);
   const project = await loadProject(directory);
   let authoringOptions: Promise<AuthoringOptions> | undefined;
+  const resolutionRepairs = { used: 0 };
   const resolutionOptions = (suggestions: boolean) =>
     (authoringOptions ??= authoring(command, {
       resolution: true,
@@ -412,6 +429,7 @@ paid(
         const result = await proposeUrsResolution({
           ...(await resolutionOptions(false)),
           urs: document,
+          resolutionRepairs,
         });
         await retainResult(directory, result);
         return result;

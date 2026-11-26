@@ -14,7 +14,7 @@ import {
   planReviewEditsSchema,
   makePlanEditsSchema,
 } from '../src/authoring/plan-edits.js';
-import { resolutionProposalSchema } from '../src/urs-resolution.js';
+import { makeResolutionAuthoringSchema, resolutionProposalSchema } from '../src/urs-resolution.js';
 import { ursAnswerSuggestionsSchema } from '../src/urs-answers.js';
 
 const providers = ['openai', 'anthropic'] as const;
@@ -69,6 +69,71 @@ describe.each(providers)('%s native schema contracts', (provider) => {
       expect(JSON.stringify(native)).not.toContain('"oneOf"');
       if (provider === 'openai') expectBareReferences(native);
     }
+  });
+  it('enforces one exclusive outcome per saved answer for nine-question resolution proposals', () => {
+    const urs = ursSchema.parse({
+      schema_version: 1,
+      document: {
+        id: 'URS-DB',
+        revision: '1',
+        title: 'Dilution Bench',
+        intended_use: 'Prepare dilutions.',
+      },
+      families: [
+        {
+          id: 'F-INPUT',
+          title: 'Inputs',
+          requirements: [
+            {
+              id: 'DB-INPUT-01',
+              title: 'Numeric inputs',
+              statement: 'Accept the reviewed input values.',
+            },
+          ],
+        },
+      ],
+      open_questions: Array.from({ length: 9 }, (_, index) => ({
+        id: `DB-Q-${String(index + 1).padStart(2, '0')}`,
+        requirement: 'DB-INPUT-01',
+        question: `Which input decision applies to case ${index + 1}?`,
+        answer: index ? 'Use decimal notation.' : 'Use explicit limits.',
+      })),
+    });
+    const schema = makeResolutionAuthoringSchema(urs);
+    const value = {
+      requirements: [
+        { value: urs.families[0].requirements[0], reason: 'Apply the supported decisions.' },
+      ],
+      questions: Object.fromEntries(
+        urs.open_questions.map((question, index) => [
+          question.id,
+          index
+            ? { status: 'resolved', requirement_ids: ['DB-INPUT-01'], document: false }
+            : { status: 'clarification', reason: 'Which minimum and maximum values are intended?' },
+        ]),
+      ),
+    };
+    const result = roundtrip(schema, value, provider);
+    expect(result.decoded).toEqual(value);
+    expect(() => assertProviderSchemaLimits(result.compiled.schema, provider)).not.toThrow();
+    if (provider === 'openai') expectBareReferences(result.compiled.schema);
+    expect(result.compiled.schema.properties.questions.required).toEqual(
+      urs.open_questions.map((question) => question.id),
+    );
+    const mixed = structuredClone(result.encoded) as any;
+    mixed.questions['DB-Q-01'] = {
+      status: 'clarification',
+      reason: 'Supply limits.',
+      requirement_ids: ['DB-INPUT-01'],
+      document: false,
+    };
+    expect(result.compiled.wireSchema.safeParse(mixed).success).toBe(false);
+    const omitted = structuredClone(result.encoded) as any;
+    delete omitted.questions['DB-Q-01'];
+    expect(result.compiled.wireSchema.safeParse(omitted).success).toBe(false);
+    const invented = structuredClone(result.encoded) as any;
+    invented.questions['DB-Q-99'] = { status: 'clarification', reason: 'Invented question.' };
+    expect(result.compiled.wireSchema.safeParse(invented).success).toBe(false);
   });
   it('preserves URS reference and citation guidance while normalizing described OpenAI references', () => {
     const urs = ursSchema.parse({

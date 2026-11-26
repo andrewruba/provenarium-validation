@@ -1,4 +1,5 @@
 import { providerOutputText } from './provider-fixture.js';
+import { resolutionProviderValue } from './resolution-fixture.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -273,7 +274,7 @@ describe('resolution proposals preserve reference validity', () => {
       key: 'test-key',
       urs,
       context,
-      fetchImpl: transport('openai', [proposal(['OQ-ZERO-VOLUME'])]),
+      fetchImpl: transport('openai', [resolutionProviderValue(proposal(['OQ-ZERO-VOLUME']))]),
     });
     expect(result.incomplete).toBe(false);
     expect(result.value!.requirements[0].value).toMatchObject({
@@ -298,7 +299,12 @@ describe('resolution proposals preserve reference validity', () => {
       key: 'test-key',
       urs,
       context,
-      fetchImpl: transport('openai', [proposal(['references/independent-reference.csv'])]),
+      fetchImpl: transport(
+        'openai',
+        Array.from({ length: 3 }, () =>
+          resolutionProviderValue(proposal(['references/independent-reference.csv'])),
+        ),
+      ),
     });
     expect(result.incomplete).toBe(true);
     expect(result.value).toBeUndefined();
@@ -323,7 +329,10 @@ describe('resolution proposals preserve reference validity', () => {
       key: 'test-key',
       urs,
       context,
-      fetchImpl: transport('openai', [proposal([])]),
+      fetchImpl: transport(
+        'openai',
+        Array.from({ length: 3 }, () => resolutionProviderValue(proposal([]))),
+      ),
     });
     expect(result.incomplete).toBe(true);
     expect(result.value).toBeUndefined();

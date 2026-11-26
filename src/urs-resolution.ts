@@ -22,6 +22,104 @@ export const resolutionProposalSchema = z.strictObject({
 });
 export type UrsResolutionProposal = z.infer<typeof resolutionProposalSchema>;
 
+function resolutionSource(urs: Urs) {
+  if (new Set(urs.open_questions.map((question) => question.id)).size !== urs.open_questions.length)
+    throw new Error('Resolve duplicate question IDs before applying answers.');
+  const currentRequirements = requirements(urs);
+  const requirementIds = new Set(currentRequirements.map((requirement) => requirement.id));
+  if (requirementIds.size !== currentRequirements.length)
+    throw new Error('Resolve duplicate requirement IDs before applying answers.');
+  const pending = new Map(pendingAnsweredQuestions(urs).map((question) => [question.id, question]));
+  return { pending, requirementIds };
+}
+
+/** One required property per pending answer makes its disposition exclusive during
+ * generation. Shared outcomes keep repeated questions within provider schema limits. */
+export function makeResolutionAuthoringSchema(urs: Urs) {
+  const { pending, requirementIds } = resolutionSource(urs);
+  const requirementId = requirementIds.size
+    ? z.enum([...requirementIds] as [string, ...string[]])
+    : questionSchema.shape.id;
+  const outcome = z.discriminatedUnion('status', [
+    z.strictObject({
+      status: z.literal('resolved'),
+      requirement_ids: z
+        .array(requirementId)
+        .describe(
+          'Existing requirements addressed by this answer. Every named requirement must have one replacement in requirements, including unchanged text when already correct.',
+        ),
+      document: z
+        .boolean()
+        .describe('True only when this answer addresses the proposed document changes.'),
+    }),
+    z.strictObject({
+      status: z.literal('clarification'),
+      reason: reason.describe(
+        'Ask the specific missing decision; do not invent an answer or mark this question resolved.',
+      ),
+    }),
+  ]);
+  return z.strictObject({
+    requirements: z.array(z.strictObject({ value: requirementSchema, reason })),
+    document: z.strictObject({ value: editableDocumentSchema, reason }).optional(),
+    questions: z.strictObject(Object.fromEntries([...pending.keys()].map((id) => [id, outcome]))),
+  });
+}
+export type UrsResolutionAuthoringProposal = z.infer<
+  ReturnType<typeof makeResolutionAuthoringSchema>
+>;
+
+/** Convert exclusive question outcomes to the retained, backwards-compatible review
+ * format. Question/answer records are never supplied by or editable in the proposal. */
+export function decodeResolutionAuthoringProposal(urs: Urs, input: unknown): UrsResolutionProposal {
+  const authored = makeResolutionAuthoringSchema(urs).parse(input);
+  const questionIdsByRequirement = new Map<string, string[]>();
+  const documentQuestionIds: string[] = [];
+  const unresolved: UrsResolutionProposal['unresolved'] = [];
+  const proposedIds = new Set(authored.requirements.map((change) => change.value.id));
+  for (const [id, outcome] of Object.entries(authored.questions)) {
+    if (outcome.status === 'clarification') {
+      unresolved.push({ question_id: id, reason: outcome.reason });
+      continue;
+    }
+    if (new Set(outcome.requirement_ids).size !== outcome.requirement_ids.length)
+      throw new Error(`Question ${id} contains duplicate requirement targets.`);
+    if (!outcome.requirement_ids.length && !outcome.document)
+      throw new Error(`Resolved question ${id} must address a requirement or the document.`);
+    for (const requirementId of outcome.requirement_ids) {
+      if (!proposedIds.has(requirementId))
+        throw new Error(
+          `Question ${id} targets requirement ${requirementId} without a proposed replacement. Include its current text if no text change is needed.`,
+        );
+      const ids = questionIdsByRequirement.get(requirementId) ?? [];
+      ids.push(id);
+      questionIdsByRequirement.set(requirementId, ids);
+    }
+    if (outcome.document) {
+      if (!authored.document)
+        throw new Error(`Question ${id} targets document changes that were not proposed.`);
+      documentQuestionIds.push(id);
+    }
+  }
+  const proposal: UrsResolutionProposal = {
+    requirements: authored.requirements.map((change) => {
+      const ids = questionIdsByRequirement.get(change.value.id);
+      if (!ids?.length)
+        throw new Error(
+          `Proposed requirement ${change.value.id} is not addressed by a resolved question.`,
+        );
+      return { ...change, question_ids: ids };
+    }),
+    unresolved,
+  };
+  if (authored.document) {
+    if (!documentQuestionIds.length)
+      throw new Error('Proposed document changes are not addressed by a resolved question.');
+    proposal.document = { ...authored.document, question_ids: documentQuestionIds };
+  }
+  return validateResolutionProposal(urs, proposal);
+}
+
 function resolutionTargets(proposal: UrsResolutionProposal): Map<string, Set<string>> {
   const targets = new Map<string, Set<string>>();
   const add = (ids: string[], target: string) => {
@@ -40,13 +138,7 @@ function resolutionTargets(proposal: UrsResolutionProposal): Map<string, Set<str
 /** A proposal can edit named existing requirements, never the question or answer records. */
 export function validateResolutionProposal(urs: Urs, input: unknown): UrsResolutionProposal {
   const proposal = resolutionProposalSchema.parse(input);
-  const pending = new Map(pendingAnsweredQuestions(urs).map((question) => [question.id, question]));
-  if (new Set(urs.open_questions.map((question) => question.id)).size !== urs.open_questions.length)
-    throw new Error('Resolve duplicate question IDs before applying answers.');
-  const currentRequirements = requirements(urs);
-  const requirementIds = new Set(currentRequirements.map((requirement) => requirement.id));
-  if (requirementIds.size !== currentRequirements.length)
-    throw new Error('Resolve duplicate requirement IDs before applying answers.');
+  const { pending, requirementIds } = resolutionSource(urs);
 
   const validateQuestionIds = (ids: string[]) => {
     if (new Set(ids).size !== ids.length)

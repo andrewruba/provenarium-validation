@@ -141,18 +141,30 @@ export async function resolveUrsFile(
     document = next;
     return backup;
   };
-  const summary = () => {
+  const resolveCommand = (questionIds: string[] = []) =>
+    projectCommand(root, [
+      'urs',
+      'resolve',
+      path.relative(root, file),
+      ...questionIds.flatMap((id) => ['--question', id]),
+    ]);
+  const summary = (nextStep?: string) => {
     const unresolved = unresolvedQuestions(document);
     log(
-      `${document.open_questions.length - unresolved.length} resolved; ${pendingAnsweredQuestions(document).length} answered awaiting review; ${unresolved.filter((question) => questionStatus(document, question) === 'unanswered').length} unanswered.`,
+      `${document.open_questions.length - unresolved.length} resolved; ${pendingAnsweredQuestions(document).length} answers saved, requirement review pending; ${unresolved.filter((question) => questionStatus(document, question) === 'unanswered').length} unanswered.`,
     );
-    log(`Check requirements: ${projectCommand(root, ['urs', 'check', path.relative(root, file)])}`);
+    log(
+      nextStep ??
+        (unresolved.length
+          ? `Continue answering and reviewing requirements: ${resolveCommand()}`
+          : `Check requirements: ${projectCommand(root, ['urs', 'check', path.relative(root, file)])}`),
+    );
   };
   const reviewAndApply = async (proposal: UrsResolutionProposal, allowYes: boolean) => {
     log(formatResolutionChanges(document, proposal));
     if (!proposal.requirements.length && !proposal.document) {
       log(
-        'No requirement changes can be applied yet. Clarify the pending answers and rerun resolve.',
+        'The saved answers need the specific clarifications below before requirement changes can be reviewed.',
       );
       return false;
     }
@@ -190,8 +202,16 @@ export async function resolveUrsFile(
         'This proposal does not match the current URS. Rerun resolve to review fresh changes.',
       );
     const proposal = validateResolutionProposal(document, saved.proposal);
-    await reviewAndApply(proposal, true);
-    summary();
+    const applied = await reviewAndApply(proposal, true);
+    summary(
+      applied && proposal.unresolved.length
+        ? `Clarify the remaining answers: ${resolveCommand(proposal.unresolved.map((item) => item.question_id))}`
+        : !applied && (proposal.requirements.length || proposal.document)
+          ? `Review this saved proposal without another AI call: ${projectCommand(root, ['urs', 'resolve', path.relative(root, file), '--apply', options.apply])}`
+          : proposal.unresolved.length
+            ? `Clarify the remaining answers: ${resolveCommand(proposal.unresolved.map((item) => item.question_id))}`
+            : undefined,
+    );
     return;
   }
 
@@ -333,40 +353,91 @@ export async function resolveUrsFile(
     summary();
     return;
   }
-  const result = await runtime.propose(document);
-  if (!result.value || result.incomplete) {
-    log(
-      'No requirement changes were applied. Your answers are saved; retry when the authoring issue is resolved.',
+  let clarificationRounds = 0;
+  let appliedAny = false;
+  while (pendingAnsweredQuestions(document).length) {
+    log('Answers are saved. Preparing requirement changes for your review.');
+    const result = await runtime.propose(document);
+    if (!result.value || result.incomplete) {
+      log(
+        appliedAny
+          ? 'No further requirement changes were applied. Your answers and reviewed changes are saved.'
+          : 'The generator could not prepare a reviewable proposal. Your answers are saved; no requirement changes were applied.',
+      );
+      summary(`Resume requirement review without re-entering answers: ${resolveCommand()}`);
+      return;
+    }
+    const proposal = validateResolutionProposal(document, result.value);
+    await assertCurrent();
+    const identifier = randomUUID();
+    const proposalFile = await artifact(`${identifier}.proposal.json`);
+    const diffFile = await artifact(`${identifier}.diff.txt`);
+    await writeNew(
+      proposalFile,
+      JSON.stringify(
+        {
+          schema_version: 1,
+          created_at: new Date().toISOString(),
+          source: file,
+          source_sha256: sha256(raw),
+          proposal,
+        },
+        null,
+        2,
+      ) + '\n',
     );
-    summary();
-    return;
+    await writeNew(diffFile, formatResolutionChanges(document, proposal) + '\n');
+    log(`Saved review: ${diffFile}\nProposal: ${proposalFile}`);
+    // --yes covers authoring consent, never unseen freshly generated requirement changes.
+    const applied = await reviewAndApply(proposal, false);
+    appliedAny ||= applied;
+    if (!applied && (proposal.requirements.length || proposal.document)) {
+      summary(
+        `Review this saved proposal without another AI call: ${projectCommand(root, ['urs', 'resolve', path.relative(root, file), '--apply', path.relative(root, proposalFile)])}`,
+      );
+      return;
+    }
+    const remaining = proposal.unresolved.filter((item) =>
+      pendingAnsweredQuestions(document).some((question) => question.id === item.question_id),
+    );
+    if (!remaining.length) {
+      summary();
+      return;
+    }
+    const nextStep = `Clarify the remaining answers: ${resolveCommand(remaining.map((item) => item.question_id))}`;
+    if (!interactive || options.yes || clarificationRounds >= 1) {
+      summary(nextStep);
+      return;
+    }
+    log('Only these saved answers need clarification. The other answers will not be asked again.');
+    let changed = false;
+    for (const item of remaining) {
+      const question = document.open_questions.find((entry) => entry.id === item.question_id)!;
+      log(`${question.id}: ${item.reason}\nSaved answer: ${question.answer}`);
+      const answer = await ask({
+        message: `${question.id}: Edit the saved answer to address this clarification (Enter to keep it; Ctrl+C to stop)`,
+        initialValue: question.answer ?? undefined,
+      });
+      if (typeof answer === 'symbol') {
+        log(`Stopped. Your answers and reviewed changes are saved in ${file}.`);
+        summary(nextStep);
+        return;
+      }
+      if (!answer.trim() || answer.trim() === question.answer?.trim()) continue;
+      const next = structuredClone(document);
+      next.open_questions.find((entry) => entry.id === item.question_id)!.answer = answer.trim();
+      await save(next, 'answer');
+      changed = true;
+      log(`Saved clarified answer for ${item.question_id}.`);
+    }
+    if (!changed) {
+      summary(nextStep);
+      return;
+    }
+    clarificationRounds++;
+    log(
+      'Preparing one follow-up review from the clarified answers under the same spending ceiling.',
+    );
   }
-  const proposal = validateResolutionProposal(document, result.value);
-  await assertCurrent();
-  const identifier = randomUUID();
-  const proposalFile = await artifact(`${identifier}.proposal.json`);
-  const diffFile = await artifact(`${identifier}.diff.txt`);
-  await writeNew(
-    proposalFile,
-    JSON.stringify(
-      {
-        schema_version: 1,
-        created_at: new Date().toISOString(),
-        source: file,
-        source_sha256: sha256(raw),
-        proposal,
-      },
-      null,
-      2,
-    ) + '\n',
-  );
-  await writeNew(diffFile, formatResolutionChanges(document, proposal) + '\n');
-  log(`Saved review: ${diffFile}\nProposal: ${proposalFile}`);
-  // --yes covers authoring consent, never unseen freshly generated requirement changes.
-  const applied = await reviewAndApply(proposal, false);
-  if (!applied)
-    log(
-      `Review this saved proposal without another AI call: ${projectCommand(root, ['urs', 'resolve', path.relative(root, file), '--apply', path.relative(root, proposalFile)])}`,
-    );
   summary();
 }

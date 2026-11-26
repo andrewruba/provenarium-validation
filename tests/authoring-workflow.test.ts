@@ -1,4 +1,5 @@
 import { providerOutputText } from './provider-fixture.js';
+import { resolutionProviderValue } from './resolution-fixture.js';
 import { describe, expect, it, vi } from 'vitest';
 import { planSchema, ursSchema } from '../src/schema.js';
 import { draftUrs, generatePlan, proposeUrsResolution, reviewUrs } from '../src/authoring/index.js';
@@ -144,7 +145,7 @@ describe('answer-based requirements authoring', () => {
       const document = answeredUrs();
       const proposal = answerProposal(document);
       proposal.requirements[0].value.details = ['The operator shall see Sample ID on receipt.'];
-      const requests = transport(provider, [proposal]);
+      const requests = transport(provider, [resolutionProviderValue(proposal)]);
       const context = { passages: [], hashes: [], warnings: [] };
       const result = await proposeUrsResolution({
         root: '/tmp',
@@ -198,7 +199,7 @@ describe('answer-based requirements authoring', () => {
       provider: 'openai',
       key: 'test-key',
       urs: document,
-      fetchImpl: transport('openai', [proposal]),
+      fetchImpl: transport('openai', [resolutionProviderValue(proposal)]),
     });
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(proposal);
@@ -214,15 +215,18 @@ describe('answer-based requirements authoring', () => {
       provider: 'openai',
       key: 'test-key',
       urs: answeredUrs(),
-      fetchImpl: transport('openai', [proposal]),
+      fetchImpl: transport(
+        'openai',
+        Array.from({ length: 3 }, () => resolutionProviderValue(proposal)),
+      ),
     });
     expect(result.incomplete).toBe(true);
     expect(result.value).toBeUndefined();
-    expect(result.questions.join()).toContain('INVENTED');
+    expect(JSON.stringify(result.diagnostics)).toContain('INVENTED');
   });
 
   it('stops before dispatch when the budget cannot cover resolution authoring', async () => {
-    const requests = transport('openai', [answerProposal()]);
+    const requests = transport('openai', [resolutionProviderValue(answerProposal())]);
     const result = await proposeUrsResolution({
       root: '/tmp',
       provider: 'openai',

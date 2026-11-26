@@ -9,10 +9,13 @@ import {
 } from '../src/urs.js';
 import {
   applyResolutionProposal,
+  decodeResolutionAuthoringProposal,
   formatResolutionChanges,
+  makeResolutionAuthoringSchema,
   resolutionProposalSchema,
   validateResolutionProposal,
   type UrsResolutionProposal,
+  type UrsResolutionAuthoringProposal,
 } from '../src/urs-resolution.js';
 
 const timestamp = '2026-11-26T01:00:00.000Z';
@@ -73,6 +76,213 @@ function proposal(urs: Urs): UrsResolutionProposal {
     unresolved: [],
   };
 }
+
+function authoredProposal(urs: Urs): UrsResolutionAuthoringProposal {
+  return {
+    requirements: proposal(urs).requirements.map(({ value, reason }) => ({ value, reason })),
+    questions: {
+      'Q-CSV': { status: 'resolved', requirement_ids: ['URS-CSV'], document: false },
+    },
+  };
+}
+
+it('separates a clarified answer from a pending decision sharing its requirement', async () => {
+  const urs = fixture();
+  urs.open_questions.push({
+    id: 'Q-LIMITS',
+    requirement: 'URS-CSV',
+    question: 'What numeric magnitude limits apply to exported concentrations?',
+    answer: 'Use explicit magnitude limits.',
+  });
+  const authored = authoredProposal(urs);
+  authored.questions['Q-LIMITS'] = {
+    status: 'clarification',
+    reason: 'Which minimum and maximum concentration values should be permitted?',
+  };
+  const original = structuredClone(urs);
+  const converted = decodeResolutionAuthoringProposal(urs, authored);
+  expect(converted.requirements[0].question_ids).toEqual(['Q-CSV']);
+  expect(converted.unresolved).toEqual([
+    { question_id: 'Q-LIMITS', reason: authored.questions['Q-LIMITS'].reason },
+  ]);
+  const applied = applyResolutionProposal(urs, converted, timestamp);
+  expect(applied.open_questions.map((question) => questionStatus(applied, question))).toEqual([
+    'resolved',
+    'answered',
+  ]);
+  expect(applied.open_questions[1]).toEqual(urs.open_questions[1]);
+  expect(applied.families[0].requirements[0].details).toEqual(
+    proposal(urs).requirements[0].value.details,
+  );
+  expect((await checkUrs(applied)).every((issue) => issue.includes('Q-LIMITS'))).toBe(true);
+  expect(urs).toEqual(original);
+});
+
+it.each([
+  { status: 'resolved', requirement_ids: ['URS-CSV'], document: false, reason: 'Still unknown.' },
+  { status: 'clarification', reason: 'Specify the headers.', requirement_ids: ['URS-CSV'] },
+  { status: 'resolved', requirement_ids: ['URS-CSV'], document: false, unresolved: true },
+  [
+    { status: 'resolved', requirement_ids: ['URS-CSV'], document: false },
+    { status: 'clarification', reason: 'Still unknown.' },
+  ],
+])('rejects contradictory question dispositions in the provider schema (%j)', (outcome) => {
+  const urs = fixture();
+  const authored = authoredProposal(urs);
+  expect(
+    makeResolutionAuthoringSchema(urs).safeParse({
+      ...authored,
+      questions: { 'Q-CSV': outcome },
+    }).success,
+  ).toBe(false);
+});
+
+it('requires exactly the pending answered question IDs and forbids legacy parallel dispositions', () => {
+  const urs = fixture();
+  urs.open_questions.push({ id: 'Q-UNANSWERED', question: 'Who reviews records?', answer: null });
+  const schema = makeResolutionAuthoringSchema(urs);
+  const authored = authoredProposal(urs);
+  expect(schema.safeParse(authored).success).toBe(true);
+  expect(schema.safeParse({ ...authored, questions: {} }).success).toBe(false);
+  expect(
+    schema.safeParse({
+      ...authored,
+      questions: {
+        ...authored.questions,
+        'Q-UNANSWERED': { status: 'clarification', reason: 'No answer supplied.' },
+      },
+    }).success,
+  ).toBe(false);
+  expect(schema.safeParse({ ...authored, unresolved: [] }).success).toBe(false);
+  const resolved = applyResolutionProposal(urs, proposal(urs), timestamp);
+  expect(makeResolutionAuthoringSchema(resolved).safeParse(authored).success).toBe(false);
+});
+
+it('combines multiple reviewed answers into one requirement replacement without duplicating IDs', () => {
+  const urs = fixture();
+  urs.open_questions.push({
+    id: 'Q-CSV-ORDER',
+    question: 'Which CSV column order is required?',
+    requirement: 'URS-CSV',
+    answer: 'Use the register column order.',
+  });
+  const authored = authoredProposal(urs);
+  authored.questions['Q-CSV-ORDER'] = {
+    status: 'resolved',
+    requirement_ids: ['URS-CSV'],
+    document: false,
+  };
+  authored.requirements[0].value.details!.push('Use the register column order.');
+  const converted = decodeResolutionAuthoringProposal(urs, authored);
+  expect(converted.requirements).toHaveLength(1);
+  expect(converted.requirements[0].question_ids).toEqual(['Q-CSV', 'Q-CSV-ORDER']);
+  expect(converted.unresolved).toEqual([]);
+});
+
+it.each([
+  [
+    'missing replacement',
+    (value: UrsResolutionAuthoringProposal) => {
+      value.requirements = [];
+    },
+  ],
+  [
+    'missing document',
+    (value: UrsResolutionAuthoringProposal) => {
+      value.questions['Q-CSV'] = { status: 'resolved', requirement_ids: [], document: true };
+    },
+  ],
+  [
+    'missing target',
+    (value: UrsResolutionAuthoringProposal) => {
+      value.questions['Q-CSV'] = { status: 'resolved', requirement_ids: [], document: false };
+    },
+  ],
+  [
+    'duplicate target',
+    (value: UrsResolutionAuthoringProposal) => {
+      value.questions['Q-CSV'] = {
+        status: 'resolved',
+        requirement_ids: ['URS-CSV', 'URS-CSV'],
+        document: false,
+      };
+    },
+  ],
+  [
+    'unknown target',
+    (value: UrsResolutionAuthoringProposal) => {
+      value.questions['Q-CSV'] = {
+        status: 'resolved',
+        requirement_ids: ['MISSING'],
+        document: false,
+      };
+    },
+  ],
+  [
+    'unassociated replacement',
+    (value: UrsResolutionAuthoringProposal) => {
+      value.questions['Q-CSV'] = { status: 'clarification', reason: 'Missing exact values.' };
+    },
+  ],
+  [
+    'duplicate replacement',
+    (value: UrsResolutionAuthoringProposal) => {
+      value.requirements.push(structuredClone(value.requirements[0]));
+    },
+  ],
+] as const)(
+  'rejects an authored resolution with %s before changing any answer',
+  (_label, mutate) => {
+    const urs = fixture();
+    const original = structuredClone(urs);
+    const authored = authoredProposal(urs);
+    mutate(authored);
+    expect(() => decodeResolutionAuthoringProposal(urs, authored)).toThrow();
+    expect(urs).toEqual(original);
+  },
+);
+
+it('preserves linked-requirement validation and explicit document targets', () => {
+  const urs = fixture();
+  const authored = authoredProposal(urs);
+  authored.requirements[0].value = structuredClone(urs.families[0].requirements[1]);
+  authored.questions['Q-CSV'] = {
+    status: 'resolved',
+    requirement_ids: ['URS-RECORDS'],
+    document: false,
+  };
+  expect(() => decodeResolutionAuthoringProposal(urs, authored)).toThrow(
+    /linked requirement URS-CSV/,
+  );
+
+  delete urs.open_questions[0].requirement;
+  const { id: _id, revision: _revision, ...document } = urs.document;
+  const scoped = {
+    requirements: [],
+    document: { value: document, reason: 'Confirm the supplied purpose and scope.' },
+    questions: { 'Q-CSV': { status: 'resolved', requirement_ids: [], document: true } },
+  };
+  expect(decodeResolutionAuthoringProposal(urs, scoped).document?.question_ids).toEqual(['Q-CSV']);
+  expect(() =>
+    decodeResolutionAuthoringProposal(urs, {
+      ...scoped,
+      questions: { 'Q-CSV': { status: 'clarification', reason: 'Scope remains unspecified.' } },
+    }),
+  ).toThrow(/document changes are not addressed/);
+});
+
+it('converts all clarification outcomes without creating changes or acceptance records', () => {
+  const urs = fixture();
+  const converted = decodeResolutionAuthoringProposal(urs, {
+    requirements: [],
+    questions: { 'Q-CSV': { status: 'clarification', reason: 'Which exact column headings?' } },
+  });
+  expect(converted).toEqual({
+    requirements: [],
+    unresolved: [{ question_id: 'Q-CSV', reason: 'Which exact column headings?' }],
+  });
+  expect(applyResolutionProposal(urs, converted, timestamp)).toEqual(urs);
+});
 
 it.each([undefined, null, '', '   '])(
   'keeps legacy and blank answers unresolved (%s)',
