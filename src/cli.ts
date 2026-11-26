@@ -221,7 +221,7 @@ async function retainResult<T>(directory: string, result: AuthoringResult<T>): P
   if (result.questions.length) console.log(result.questions.map((q) => `  ${q}`).join('\n'));
   if (result.diagnostics?.length)
     console.log(
-      `Provider response diagnostics: ${result.diagnostics.length} redacted rejected response(s) retained in the authoring record.`,
+      `Authoring diagnostics: ${result.diagnostics.length} entries with redacted output and correction details retained in the authoring record.`,
     );
   if (result.incomplete) {
     console.log(

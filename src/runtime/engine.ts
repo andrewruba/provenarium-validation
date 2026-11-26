@@ -32,6 +32,7 @@ import {
 } from './io.js';
 import { assertSessionLocation } from '../credentials.js';
 import { boundedHttpRequest } from './http.js';
+import { csvExpectedRowsError, parseCsv } from '../csv.js';
 
 const MAX_ARTIFACT_BYTES = 20 * 1024 * 1024;
 const MAX_OBSERVATION_CHARS = 2 * 1024 * 1024;
@@ -79,6 +80,22 @@ export function compare(actual: unknown, assertion: Assertion): boolean {
       return Array.isArray(actual)
         ? actual.some((item) => isDeepStrictEqual(item, expected))
         : typeof actual === 'string' && actual.includes(String(expected));
+    case 'contains_any':
+      return (
+        typeof actual === 'string' &&
+        Array.isArray(expected) &&
+        expected.length >= 1 &&
+        expected.length <= 20 &&
+        expected.every(
+          (value) => typeof value === 'string' && value.length >= 1 && value.length <= 200,
+        ) &&
+        expected.some((value) => actual.includes(value))
+      );
+    case 'csv_equals': {
+      if (typeof actual !== 'string' || csvExpectedRowsError(expected)) return false;
+      const rows = parseCsv(actual);
+      return rows !== undefined && isDeepStrictEqual(rows, expected);
+    }
     case 'not_contains':
       return Array.isArray(actual)
         ? !actual.some((item) => isDeepStrictEqual(item, expected))

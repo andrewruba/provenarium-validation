@@ -275,15 +275,24 @@ including discovery, drafting, and review rounds. Malformed provider JSON and
 documents that fail the local schema use this same two-correction allowance;
 they do not receive a separate retry budget. These requests share the original
 spending cap.
-Corrections must preserve cases, requirement coverage, and expected results;
-they cannot make a failing format check disappear by converting automated cases
-to manual work. If errors remain or the budget cannot cover a correction, the
+Corrections must preserve cases, requirement coverage, valid expected results,
+and expectations from an existing reviewed plan. An initial draft assertion
+with a diagnosed invalid runtime predicate can receive a corrected predicate
+for the same intended check. This does not authorize changing unrelated valid
+assertions, removing checks, replacing data checks with presence/absence, or
+converting automated cases to manual work. A correction that changes protected
+expectations is rejected with its precise differences; the remaining correction
+allowance can be used to correct that proposal against the original baseline.
+If errors remain or the budget cannot cover a correction, the
 authoring record retains the incomplete attempt and diagnostics, and no
 candidate is published.
 
 The authoring record's `diagnostics` list retains the operation, validation
-paths and error codes, and bounded, redacted rejected output. This is untrusted
-diagnostic material, not a validated plan. Schema correction reuses the supplied
+paths and error codes, and bounded, redacted output. It also retains structural
+failures, protected expectation differences, and before/proposed values for
+corrections to invalid draft assertions. A proposed correction is still subject
+to validation and protocol review; the diagnostic itself does not grant approval.
+Schema correction reuses the supplied
 requirements and runtime contract and does not execute the rejected content.
 Network failures, refusals, and provider-declared incomplete output are not
 automatically retried as schema corrections.
@@ -356,8 +365,20 @@ optional credential cleanup before uninstalling.
 Plans support navigation, declared sessions, filling/selecting/clicking, named
 secret bindings, file upload/download, bounded HTTP checks, value/table reads,
 explicit assertions, and required evidence. Text comparisons preserve exact
-whitespace. `matches` supports literal text with `*` wildcards, not regular
-expressions. Numeric comparisons require a declared expected number and tolerance.
+whitespace. `matches` supports literal text with `*` wildcards, with a maximum
+pattern length of 200 characters. It does not execute regular expressions;
+recognizable regex constructs are rejected during authoring validation.
+`contains_any` checks whether text contains at least one of 1–20 nonempty literal
+strings, each at most 200 characters. Matching is case-sensitive.
+`csv_equals` compares downloaded text, such as `export.text`, with a complete
+array of string rows, including headers. It decodes an optional initial BOM,
+CSV quoting and escaped quotes, and LF/CRLF record separators. Row and column
+order, field whitespace, embedded line breaks, and numeric formatting remain
+exact: `"1.250"` differs from `"1.25"`. Malformed CSV fails the assertion. CSV
+checks are bounded to 2 MiB, 10,000 rows, 1,000 columns, and 100,000 fields; rows
+must have a consistent number of fields. The original downloaded artifact is
+retained unchanged.
+Numeric comparisons require a declared expected number and tolerance.
 Variable references identify preceding reads, HTTP responses, or downloads.
 
 An obligation's `source` identifies actual text or a table in the linked

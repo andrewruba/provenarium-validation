@@ -10,6 +10,8 @@ export const protocolContractExamples = {
     'Observation variable names are declared by action.as or download.save_as. Dot paths select fields or array cells afterward: records.1.0, export.text, or response.status. Do not use dots in declared variable names.',
     'Screenshot evidence has kind screenshot; download evidence names the preceding download variable. Evidence items are objects with IDs, not filenames or strings.',
     'Use comparison numeric with a numeric expected value and a nonnegative tolerance. Use string expected values for literal formatting checks such as trailing zeros.',
+    'matches is a bounded literal wildcard comparison: only * is special, and the pattern has at most 200 characters. Never send regex groups, alternatives, flags, anchors, or character classes. Use contains_any with 1 to 20 case-sensitive literal strings (each 1 to 200 characters) only when the intended behavior permits those alternatives.',
+    'Use csv_equals on a downloaded .text variable with the complete expected string[][], including headers and every row in order. CSV quoting, a leading BOM, and CRLF versus LF line endings are parsed by the runtime; do not write regex for CSV. Preserve exact cell strings, units, and decimal trailing zeros.',
     'A manual case has manual true, concrete manual_procedure and manual_expected text, and an empty steps array. Keep supported browser operations automated.',
   ],
   automated_step: stepSchema.parse({
@@ -47,8 +49,20 @@ export const protocolContractExamples = {
       {
         id: 'EX-CSV',
         variable: 'export.text',
-        comparison: 'contains',
-        expected: 'Example header',
+        comparison: 'csv_equals',
+        expected: [['Example header'], ['Example input']],
+      },
+      {
+        id: 'EX-MESSAGE',
+        locator: { by: 'role', role: 'status', value: 'Example status' },
+        comparison: 'contains_any',
+        expected: ['Example record saved', 'Example record created'],
+      },
+      {
+        id: 'EX-WILDCARD',
+        variable: 'records.1.0',
+        comparison: 'matches',
+        expected: 'Example *',
       },
     ],
     evidence: [

@@ -236,16 +236,26 @@ export const assertionSchema = z
     read: z
       .enum(['text', 'value', 'count', 'table', 'visible', 'enabled', 'checked'])
       .default('text'),
-    comparison: z.enum([
-      'equals',
-      'contains',
-      'not_contains',
-      'numeric',
-      'matches',
-      'present',
-      'absent',
-    ]),
-    expected: json.optional(),
+    comparison: z
+      .enum([
+        'equals',
+        'contains',
+        'not_contains',
+        'contains_any',
+        'numeric',
+        'matches',
+        'csv_equals',
+        'present',
+        'absent',
+      ])
+      .describe(
+        'equals compares complete values. contains and not_contains use literal content. contains_any accepts finite case-sensitive literal alternatives. numeric uses a number and tolerance. matches uses only literal text and * wildcards, never regular expressions. csv_equals compares complete ordered CSV rows and cells. present and absent need no expected value.',
+      ),
+    expected: json
+      .optional()
+      .describe(
+        'Required except for present/absent. numeric: a finite number with nonnegative tolerance. matches: a literal pattern of at most 200 characters; only * is a wildcard, with no regex groups, flags, anchors, or character classes. contains_any: 1 to 20 nonempty literal strings, each at most 200 characters. csv_equals: a rectangular string[][] including any header row; compare observed CSV text with CSV quoting, BOM, and line endings handled by the runtime. Preserve exact cell strings and row order, including decimal trailing zeros.',
+      ),
     tolerance: z.number().nonnegative().optional(),
   })
   .refine(

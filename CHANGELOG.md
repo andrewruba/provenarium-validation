@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fixed invalid draft predicates being frozen as accepted expected results during
+  protocol correction. Scoped repairs preserve valid and reviewed expectations;
+  rejected changes retain assertion IDs and before/proposed values and can use
+  the remaining shared correction allowance. Structural failures and proposed
+  draft assertion changes are retained for review.
+- Added exact decoded CSV row comparison with `csv_equals` and finite,
+  case-sensitive literal alternatives with `contains_any`. Authoring now explains
+  and validates that `matches` uses `*` wildcards rather than regular expressions.
 - Fixed provider JSON/schema failures bypassing protocol correction and losing
   their validation details. Authoring records now retain bounded, redacted
   rejected output with exact error paths and codes. Protocol schema failures

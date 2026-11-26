@@ -298,6 +298,99 @@ describe('retained invalid provider output', () => {
   });
 });
 
+describe('retained local validation failures', () => {
+  it.each(['document_structure', 'protected_expectation', 'draft_assertion_repair'] as const)(
+    'retains %s with precise field paths without dispatching or throwing',
+    async (kind) => {
+      const { client, budget, transport } = fixture('openai', envelope({ answer: 'yes' }));
+      await client.complete(answerSchema, 'Draft', {});
+      const spend = budget.snapshot();
+      const candidate = {
+        changes: [
+          {
+            assertion: 'CSV-01',
+            before: { expected: 'invalid pattern' },
+            proposed: { expected: [['ID'], ['A']] },
+          },
+        ],
+        candidate: { title: 'Retained protocol' },
+      };
+      const diagnostic = client.recordValidationFailure(kind, 'technical correction', candidate, [
+        {
+          path: ['plan', 'cases', 0, 'part/with~escapes', 'expected'],
+          code: 'expected_result_changed',
+          message: 'CSV-01 changed an existing expected result.',
+        },
+      ]);
+
+      expect(diagnostic).toEqual({
+        request: 1,
+        kind,
+        operation: 'technical correction',
+        candidate,
+        issues: [
+          {
+            path: '/plan/cases/0/part~1with~0escapes/expected',
+            code: 'expected_result_changed',
+            message: 'CSV-01 changed an existing expected result.',
+          },
+        ],
+        truncated: false,
+      });
+      expect(client.diagnostics).toEqual([diagnostic]);
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(budget.snapshot()).toEqual(spend);
+    },
+  );
+
+  it('redacts technical failure labels, codes, paths, messages, and before/proposed values', () => {
+    const applicationSecret = 'APPLICATION"SECRET\\end';
+    const { client, transport } = fixture('anthropic', '', { secrets: [applicationSecret] });
+    const diagnostic = client.recordValidationFailure(
+      'protected_expectation',
+      `correction ${key}`,
+      {
+        changes: [{ assertion: 'A-1', before: key, proposed: applicationSecret }],
+        candidate: { password: 'unknown-private', title: 'Safe title' },
+      },
+      [{ path: ['plan', key], code: `changed_${key}`, message: `Rejected ${applicationSecret}` }],
+    );
+
+    const retained = JSON.stringify(diagnostic);
+    expect(retained).not.toMatch(/provider-key-sentinel|APPLICATION|unknown-private/);
+    expect(diagnostic).toMatchObject({
+      operation: 'correction [REDACTED]',
+      candidate: {
+        changes: [{ assertion: 'A-1', before: '[REDACTED]', proposed: '[REDACTED]' }],
+        candidate: { password: '[REDACTED]', title: 'Safe title' },
+      },
+      issues: [
+        { path: '/plan/[REDACTED]', code: 'changed_[REDACTED]', message: 'Rejected [REDACTED]' },
+      ],
+    });
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it('bounds the entire technical diagnostic including all metadata and escaped snapshots', () => {
+    const { client } = fixture('openai', '');
+    const diagnostic = client.recordValidationFailure(
+      'document_structure',
+      '"\\\n'.repeat(2000),
+      { changes: [{ before: '"\\\n'.repeat(50000), proposed: 'replacement' }] },
+      Array.from({ length: 100 }, (_, index) => ({
+        path: ['plan', '"\\\n'.repeat(500), index],
+        code: '"\\\n'.repeat(500),
+        message: '"\\\n'.repeat(500),
+      })),
+    );
+
+    expect(diagnostic.truncated).toBe(true);
+    expect(diagnostic.issues.length).toBeLessThanOrEqual(40);
+    expect(diagnostic.raw).toBeTruthy();
+    expect(Buffer.byteLength(JSON.stringify(diagnostic))).toBeLessThanOrEqual(64 * 1024);
+  });
+});
+
 describe('nonrepairable provider failures', () => {
   it.each([
     { provider: 'openai' as const, body: { status: 'incomplete', output: [] } },

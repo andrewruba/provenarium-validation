@@ -27,6 +27,7 @@ import { Discovery, discoveryActionSchema, type PageObservation } from './discov
 import { redact, safeUrl } from './security.js';
 import { rehearsePlan, type Rehearsal } from './rehearsal.js';
 import { protocolContractExamples } from './contract-examples.js';
+import { assertionContractIssues } from '../assertion-contract.js';
 import {
   validatePlan,
   validatePlanStructure,
@@ -561,37 +562,73 @@ function changedRequirements(previous: Urs | undefined, next: Urs): Set<string> 
       .map((r) => r.id),
   );
 }
-function unchangedExpectations(
+type ExpectationChange = {
+  case: string;
+  assertion?: string;
+  path: (string | number)[];
+  before: unknown;
+  proposed: unknown;
+  message: string;
+};
+type PredicateField = 'comparison' | 'expected' | 'tolerance';
+function expectationChanges(
   previous: Plan,
   next: Plan,
   allowedChanges: ReadonlySet<string> = new Set(),
-): void {
+  repairableFields: ReadonlyMap<string, ReadonlySet<PredicateField>> = new Map(),
+): ExpectationChange[] {
+  const changes: ExpectationChange[] = [];
   const assertions = new Map(
     next.cases.flatMap((c) => c.steps.flatMap((s) => s.assertions)).map((a) => [a.id, a]),
   );
-  for (const testCase of previous.cases) {
+  for (const [caseIndex, testCase] of previous.cases.entries()) {
     if (testCase.manual && !testCase.requirements.every((id) => allowedChanges.has(id))) {
       const revised = next.cases.find((item) => item.id === testCase.id);
       if (!revised?.manual || revised.manual_expected !== testCase.manual_expected)
-        throw new Error(
-          'Revision changed or removed a manual expected result. Revise the requirement or expectation explicitly before authoring a replacement.',
-        );
+        changes.push({
+          case: testCase.id,
+          path: ['plan', 'cases', caseIndex, 'manual_expected'],
+          before: testCase.manual_expected,
+          proposed: revised?.manual_expected ?? null,
+          message: `${testCase.id}: correction changed or removed a protected manual expected result. Preserve the original text.`,
+        });
     }
-    for (const assertion of testCase.steps.flatMap((s) => s.assertions)) {
-      // An assertion shared with an unchanged requirement remains frozen. A changed
-      // revision alone is insufficient: the linked requirement itself must change.
-      if (testCase.requirements.every((id) => allowedChanges.has(id))) continue;
-      const revised = assertions.get(assertion.id);
-      if (
-        !revised ||
-        JSON.stringify([assertion.comparison, assertion.expected, assertion.tolerance]) !==
-          JSON.stringify([revised.comparison, revised.expected, revised.tolerance])
-      )
-        throw new Error(
-          'Revision changed or removed an accepted expected result. Revise the requirement or expectation explicitly before authoring a replacement.',
-        );
-    }
+    for (const [stepIndex, step] of testCase.steps.entries())
+      for (const [assertionIndex, assertion] of step.assertions.entries()) {
+        // A changed revision alone is insufficient: its linked requirements must change.
+        if (testCase.requirements.every((id) => allowedChanges.has(id))) continue;
+        const revised = assertions.get(assertion.id);
+        const before = {
+          comparison: assertion.comparison,
+          expected: assertion.expected,
+          tolerance: assertion.tolerance,
+        };
+        const proposed = revised
+          ? {
+              comparison: revised.comparison,
+              expected: revised.expected,
+              tolerance: revised.tolerance,
+            }
+          : null;
+        const fields = repairableFields.get(assertion.id) ?? new Set<PredicateField>();
+        const changed =
+          !proposed ||
+          (['comparison', 'expected', 'tolerance'] as const).some(
+            (field) => !fields.has(field) && !isDeepStrictEqual(before[field], proposed[field]),
+          ) ||
+          (fields.has('comparison') && ['present', 'absent'].includes(revised!.comparison));
+        if (changed)
+          changes.push({
+            case: testCase.id,
+            assertion: assertion.id,
+            path: ['plan', 'cases', caseIndex, 'steps', stepIndex, 'assertions', assertionIndex],
+            before,
+            proposed,
+            message: `${assertion.id}: correction changed or removed a protected expected result. Preserve the original comparison, expected value, and tolerance.`,
+          });
+      }
   }
+  return changes;
 }
 function unchangedCoverage(previous: Plan, next: Plan): void {
   for (const testCase of previous.cases) {
@@ -794,9 +831,74 @@ export async function generatePlan(
         examples: protocolContractExamples,
       },
     };
+    const preserveCandidate = async (
+      candidate: GeneratedPlan,
+      baseline: Plan,
+      operation: string,
+      instructions: string,
+      request: Record<string, unknown>,
+      allowedChanges: ReadonlySet<string> = new Set(),
+      preserveCoverage = true,
+    ): Promise<GeneratedPlan> => {
+      while (true) {
+        const changes = expectationChanges(baseline, candidate.plan, allowedChanges);
+        const errors = changes.map((change) => change.message);
+        if (preserveCoverage)
+          try {
+            unchangedCoverage(baseline, candidate.plan);
+          } catch (error) {
+            errors.push(reason(error, options.key));
+          }
+        if (!errors.length) return candidate;
+        client.recordValidationFailure('protected_expectation', operation, { changes, candidate }, [
+          ...changes.map((change, index) => ({
+            path: ['changes', index, 'proposed'],
+            code: 'expected_result_changed',
+            message: change.message,
+          })),
+          ...errors.slice(changes.length).map((message) => ({
+            path: ['candidate', 'plan'],
+            code: 'coverage_changed',
+            message,
+          })),
+        ]);
+        if (technicalRepairs >= 2)
+          throw new Error(
+            `Protocol correction limit reached while preserving expected results. Rejected changes are retained; no candidate can be published.\n${errors.join('\n')}`,
+          );
+        technicalRepairs++;
+        options.onProgress?.(
+          `Correcting protected protocol expectations (${technicalRepairs}/2): ${errors.join(' ')}`,
+        );
+        candidate = await completeProtocol(
+          generatedPlanSchema,
+          instructions +
+            '\nThe previous response changed protected expectations or coverage. Restore the before values in rejected_changes and address validation_errors while satisfying the original request. Do not remove or rename existing assertions/cases/obligations, downgrade automation, change valid expected outcomes, or assign this generator error to a human question. Return the complete corrected plan.',
+          { ...request, rejected_changes: changes, validation_errors: errors },
+          operation,
+        );
+      }
+    };
     const checkedCandidate = async (candidate: GeneratedPlan): Promise<GeneratedPlan> => {
       while (true) {
-        candidate = validateGenerated(candidate, options.urs, options.url, origins);
+        if (options.existing)
+          candidate = await preserveCandidate(
+            candidate,
+            options.existing,
+            'existing plan preservation',
+            prompt,
+            { ...input, candidate },
+            changedRequirements(options.existingUrs, options.urs),
+            false,
+          );
+        try {
+          candidate = validateGenerated(candidate, options.urs, options.url, origins);
+        } catch (error) {
+          client.recordValidationFailure('document_structure', 'protocol validation', candidate, [
+            { path: ['plan'], code: 'invalid_protocol', message: reason(error, options.key) },
+          ]);
+          throw error;
+        }
         const normalized = normalizeObligationSources(candidate.plan, options.urs);
         candidate.plan = normalized.plan;
         if (normalized.changes.length)
@@ -804,34 +906,132 @@ export async function generatePlan(
             `Normalized ${normalized.changes.length} requirement source bindings.`,
           );
         candidate.plan.context_hashes = material.hashes;
-        if (options.existing)
-          unchangedExpectations(
-            options.existing,
-            candidate.plan,
-            changedRequirements(options.existingUrs, options.urs),
-          );
         value = candidate;
         const errors = [
           ...validatePlanStructure(candidate.plan, options.urs),
           ...(await validateGeneratedPlanInputs(options.root, candidate, inputCatalog)),
         ];
         if (!errors.length) return candidate;
-        if (technicalRepairs >= 2)
-          throw new Error(
-            `Protocol generation could not correct its technical validation errors. The attempted plan is retained for diagnostics; no candidate can be published.\n${errors.join('\n')}`,
-          );
-        technicalRepairs++;
-        options.onProgress?.(`Correcting generated protocol structure (${technicalRepairs}/2).`);
-        const repaired = await completeProtocol(
-          generatedPlanSchema,
-          prompt +
-            '\nCorrect the supplied technical validation_errors. Preserve requirement coverage, case/obligation/assertion IDs, existing expected outcomes, and automated cases. Do not delete checks, downgrade cases to manual, invent missing reference files, or turn tool errors into user questions. Remove a runtime-compatibility question only after correcting its technical cause; retain genuine product or evidence questions.',
-          { ...input, candidate, validation_errors: errors },
-          'technical correction',
+        client.recordValidationFailure(
+          'document_structure',
+          'protocol validation',
+          candidate,
+          errors.map((message) => ({ path: ['plan'], code: 'invalid_structure', message })),
         );
-        unchangedExpectations(candidate.plan, repaired.plan);
-        unchangedCoverage(candidate.plan, repaired.plan);
-        candidate = repaired;
+        const repairableAssertions = new Map(
+          candidate.plan.cases.flatMap((testCase) =>
+            testCase.steps.flatMap((step) =>
+              step.assertions.flatMap((assertion) => {
+                const issues = assertionContractIssues(assertion);
+                return issues.length ? [[assertion.id, issues] as const] : [];
+              }),
+            ),
+          ),
+        );
+        const repairableFields = new Map(
+          [...repairableAssertions].map(([id, issues]) => {
+            const fields = new Set<PredicateField>(issues.map((issue) => issue.field));
+            if (
+              issues.some((issue) =>
+                [
+                  'wildcard_expected',
+                  'wildcard_regex',
+                  'csv_expected',
+                  'alternatives_expected',
+                ].includes(issue.code),
+              )
+            )
+              for (const field of ['comparison', 'expected', 'tolerance'] as const)
+                fields.add(field);
+            return [id, fields] as const;
+          }),
+        );
+        let rejectedChanges: ExpectationChange[] = [];
+        let preservationErrors: string[] = [];
+        while (true) {
+          if (technicalRepairs >= 2)
+            throw new Error(
+              `Protocol generation could not correct its technical validation errors. The attempted plan and rejected corrections are retained for diagnostics; no candidate can be published.\n${[...errors, ...preservationErrors].join('\n')}`,
+            );
+          technicalRepairs++;
+          options.onProgress?.(`Correcting generated protocol structure (${technicalRepairs}/2).`);
+          const repaired = await completeProtocol(
+            generatedPlanSchema,
+            prompt +
+              '\nCorrect the supplied technical validation_errors. The original candidate is the baseline; preserve requirement coverage, case/obligation/assertion IDs, valid expected outcomes, and automated cases. Only the explicit fields listed for each repairable_draft_assertions entry may change to express the same intended check using supported operations. A missing tolerance permits supplying that tolerance, never changing an already valid expected number. These malformed draft fields have not been accepted. Do not replace invalid predicates with presence/absence or omit data checks. For CSV use csv_equals with the complete independently derived string rows; for text alternatives use contains_any with explicit nonempty strings; matches is literal text plus * wildcards, never regex. rejected_changes identifies unrelated changes from the previous correction that must not recur. Do not delete checks, downgrade cases to manual, invent missing reference files, or turn tool errors into user questions. Remove a runtime-compatibility question only after correcting its technical cause; retain genuine product or evidence questions.',
+            {
+              ...input,
+              candidate,
+              validation_errors: [...errors, ...preservationErrors],
+              repairable_draft_assertions: [...repairableAssertions].map(([id, issues]) => ({
+                id,
+                issues,
+                fields: [...repairableFields.get(id)!],
+              })),
+              rejected_changes: rejectedChanges,
+            },
+            'technical correction',
+          );
+          rejectedChanges = expectationChanges(
+            candidate.plan,
+            repaired.plan,
+            new Set(),
+            repairableFields,
+          );
+          if (options.existing)
+            rejectedChanges.push(
+              ...expectationChanges(
+                options.existing,
+                repaired.plan,
+                changedRequirements(options.existingUrs, options.urs),
+              ),
+            );
+          preservationErrors = rejectedChanges.map((change) => change.message);
+          try {
+            unchangedCoverage(candidate.plan, repaired.plan);
+          } catch (error) {
+            preservationErrors.push(reason(error, options.key));
+          }
+          if (preservationErrors.length) {
+            client.recordValidationFailure(
+              'protected_expectation',
+              'technical correction',
+              { changes: rejectedChanges, candidate: repaired },
+              [
+                ...rejectedChanges.map((change, index) => ({
+                  path: ['changes', index, 'proposed'],
+                  code: 'expected_result_changed',
+                  message: change.message,
+                })),
+                ...preservationErrors.slice(rejectedChanges.length).map((message) => ({
+                  path: ['candidate', 'plan'],
+                  code: 'coverage_changed',
+                  message,
+                })),
+              ],
+            );
+            options.onProgress?.(`Rejected correction: ${preservationErrors.join(' ')}`);
+            continue;
+          }
+          const changes = expectationChanges(candidate.plan, repaired.plan);
+          if (changes.length) {
+            client.recordValidationFailure(
+              'draft_assertion_repair',
+              'technical correction',
+              { changes, candidate: repaired },
+              changes.map((change, index) => ({
+                path: ['changes', index, 'proposed'],
+                code: 'draft_assertion_repaired',
+                message: `${change.assertion}: proposed a correction to an invalid draft predicate; full protocol validation and human review still apply.`,
+              })),
+            );
+            options.onProgress?.(
+              `Proposed corrections to invalid draft assertions: ${changes.map((change) => change.assertion).join(', ')}. Changes retained for protocol review.`,
+            );
+          }
+          candidate = repaired;
+          break;
+        }
       }
     };
     value = await checkedCandidate(
@@ -866,15 +1066,23 @@ export async function generatePlan(
       );
       rounds++;
       if (!review.findings.length) break;
-      const revised = await completeProtocol(
-        generatedPlanSchema,
+      const revisionInstructions =
         prompt +
-          '\nAddress the review findings without changing or removing existing expected outcomes. Navigation and locators may change; additional relevant cases are allowed. Rehearsal failures may be genuine defects; never weaken an expectation to pass.',
-        { ...input, candidate: value, findings: review.findings, rehearsal },
+        '\nAddress the review findings without changing or removing existing expected outcomes. Navigation and locators may change; additional relevant cases are allowed. Rehearsal failures may be genuine defects; never weaken an expectation to pass.';
+      const revisionRequest = { ...input, candidate: value, findings: review.findings, rehearsal };
+      let revised = await completeProtocol(
+        generatedPlanSchema,
+        revisionInstructions,
+        revisionRequest,
         'protocol revision',
       );
-      unchangedExpectations(value.plan, revised.plan);
-      unchangedCoverage(value.plan, revised.plan);
+      revised = await preserveCandidate(
+        revised,
+        value.plan,
+        'protocol revision',
+        revisionInstructions,
+        revisionRequest,
+      );
       value = await checkedCandidate(revised);
     }
     questions.push(...value.plan.questions.map((q) => `${q.id}: ${q.question}`));

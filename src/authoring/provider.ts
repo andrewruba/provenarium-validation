@@ -52,10 +52,19 @@ export type ProviderOutputIssue = {
   expected?: string;
   allowed_values?: (string | number | boolean | null)[];
 };
+export type ProviderValidationIssue = {
+  path: PropertyKey[];
+  code: string;
+  message: string;
+};
+type ProviderSchemaFailure =
+  'envelope_json' | 'envelope_schema' | 'document_json' | 'document_schema';
+type ProviderValidationFailure =
+  'document_structure' | 'protected_expectation' | 'draft_assertion_repair';
 export type ProviderOutputDiagnostic = {
   request: number;
   operation?: string;
-  kind: 'envelope_json' | 'envelope_schema' | 'document_json' | 'document_schema';
+  kind: ProviderSchemaFailure | ProviderValidationFailure;
   issues: ProviderOutputIssue[];
   /** Redacted, untrusted output. This is never a validated authoring result. */
   candidate?: unknown;
@@ -144,10 +153,7 @@ function diagnosticRaw(text: string, bytes: number): { text: string; truncated: 
   }
   return { text: text.slice(0, low), truncated: true };
 }
-function diagnosticIssues(
-  issues: readonly z.core.$ZodIssue[],
-  secrets: readonly string[],
-): { issues: ProviderOutputIssue[]; truncated: boolean } {
+function diagnosticIssueCollector(secrets: readonly string[]) {
   const result: ProviderOutputIssue[] = [];
   let truncated = false;
   let issueBytes = 0;
@@ -170,9 +176,26 @@ function diagnosticIssues(
     issueBytes += bytes;
     result.push(issue);
   };
-  const visit = (issue: z.core.$ZodIssue, prefix: PropertyKey[] = []) => {
-    if (result.length >= MAX_DIAGNOSTIC_ISSUES) {
+  return {
+    safe,
+    pointer,
+    add,
+    full: () => result.length >= MAX_DIAGNOSTIC_ISSUES,
+    truncate: () => {
       truncated = true;
+    },
+    finish: () => ({ issues: result, truncated }),
+  };
+}
+function diagnosticIssues(
+  issues: readonly z.core.$ZodIssue[],
+  secrets: readonly string[],
+): { issues: ProviderOutputIssue[]; truncated: boolean } {
+  const collector = diagnosticIssueCollector(secrets);
+  const { safe, pointer, add } = collector;
+  const visit = (issue: z.core.$ZodIssue, prefix: PropertyKey[] = []) => {
+    if (collector.full()) {
+      collector.truncate();
       return;
     }
     const path = [...prefix, ...issue.path];
@@ -191,7 +214,7 @@ function diagnosticIssues(
         : issue.code === 'invalid_union' && 'options' in issue
           ? issue.options
           : undefined;
-    if (values && values.length > 30) truncated = true;
+    if (values && values.length > 30) collector.truncate();
     const allowed = values
       ?.slice(0, 30)
       .map((value) =>
@@ -214,7 +237,25 @@ function diagnosticIssues(
       for (const child of issue.issues) visit(child, path);
   };
   for (const issue of issues) visit(issue);
-  return { issues: result, truncated };
+  return collector.finish();
+}
+function validationIssues(
+  issues: readonly ProviderValidationIssue[],
+  secrets: readonly string[],
+): { issues: ProviderOutputIssue[]; truncated: boolean } {
+  const collector = diagnosticIssueCollector(secrets);
+  for (const issue of issues) {
+    if (collector.full()) {
+      collector.truncate();
+      break;
+    }
+    collector.add({
+      path: collector.pointer(issue.path),
+      code: collector.safe(issue.code, 100),
+      message: collector.safe(issue.message),
+    });
+  }
+  return collector.finish();
 }
 
 export class Budget {
@@ -323,8 +364,42 @@ export class ProviderClient {
     this.options = options;
     this.model = name as Model;
   }
-  private outputError(
+  private retainDiagnostic(
     kind: ProviderOutputDiagnostic['kind'],
+    value: unknown,
+    parsedIssues: { issues: ProviderOutputIssue[]; truncated: boolean },
+    raw = false,
+    operation?: string,
+  ): ProviderOutputDiagnostic {
+    const secrets = [this.options.key, ...(this.options.secrets ?? [])];
+    const label =
+      operation === undefined
+        ? undefined
+        : clipDiagnostic(diagnosticRedact(operation, secrets), 256);
+    const metadata = {
+      request: this.options.budget.snapshot().calls,
+      kind,
+      issues: parsedIssues.issues,
+      ...(label ? { operation: label.text } : {}),
+    };
+    // Leave space for the snapshot property, truncated flag, and a later operation label.
+    const remaining = MAX_DIAGNOSTIC_BYTES - Buffer.byteLength(JSON.stringify(metadata)) - 1024;
+    const snapshot = raw
+      ? (() => {
+          const clipped = diagnosticRaw(diagnosticRedact(String(value), secrets), remaining);
+          return { raw: clipped.text, truncated: clipped.truncated };
+        })()
+      : diagnosticSnapshot(value, secrets, remaining);
+    const diagnostic: ProviderOutputDiagnostic = {
+      ...metadata,
+      ...snapshot,
+      truncated: snapshot.truncated || parsedIssues.truncated || Boolean(label?.truncated),
+    };
+    this.diagnostics.push(diagnostic);
+    return diagnostic;
+  }
+  private outputError(
+    kind: ProviderSchemaFailure,
     value: unknown,
     issues?: readonly z.core.$ZodIssue[],
     raw = false,
@@ -342,26 +417,23 @@ export class ProviderClient {
           ],
           truncated: false,
         };
-    const metadata = {
-      request: this.options.budget.snapshot().calls,
+    return new ProviderOutputError(this.retainDiagnostic(kind, value, parsedIssues, raw));
+  }
+  /** Retain local structural or preservation failures without throwing or dispatching a request. */
+  recordValidationFailure(
+    kind: ProviderValidationFailure,
+    operation: string,
+    candidate: unknown,
+    issues: readonly ProviderValidationIssue[],
+  ): ProviderOutputDiagnostic {
+    const secrets = [this.options.key, ...(this.options.secrets ?? [])];
+    return this.retainDiagnostic(
       kind,
-      issues: parsedIssues.issues,
-    };
-    // Leave space for the snapshot property, truncated flag, and a later operation label.
-    const remaining = MAX_DIAGNOSTIC_BYTES - Buffer.byteLength(JSON.stringify(metadata)) - 1024;
-    const snapshot = raw
-      ? (() => {
-          const clipped = diagnosticRaw(diagnosticRedact(String(value), secrets), remaining);
-          return { raw: clipped.text, truncated: clipped.truncated };
-        })()
-      : diagnosticSnapshot(value, secrets, remaining);
-    const diagnostic: ProviderOutputDiagnostic = {
-      ...metadata,
-      ...snapshot,
-      truncated: snapshot.truncated || parsedIssues.truncated,
-    };
-    this.diagnostics.push(diagnostic);
-    return new ProviderOutputError(diagnostic);
+      candidate,
+      validationIssues(issues, secrets),
+      false,
+      operation,
+    );
   }
   async complete<T>(schema: z.ZodType<T>, instructions: string, input: unknown): Promise<T> {
     this.options.signal?.throwIfAborted();

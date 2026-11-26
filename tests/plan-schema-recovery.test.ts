@@ -321,12 +321,16 @@ it('does not weaken the last valid expected outcome while repairing a malformed 
     },
     malformedRevision,
     weakened,
+    weakened,
   ]);
 
   expect(result.incomplete).toBe(true);
-  expect(fetchImpl).toHaveBeenCalledTimes(5);
+  expect(fetchImpl).toHaveBeenCalledTimes(6);
   expect(result.questions.join('\n')).toMatch(/expected result/i);
   expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
+  expect(
+    result.diagnostics?.filter((diagnostic) => diagnostic.kind === 'protected_expectation'),
+  ).toHaveLength(2);
 });
 
 it.each(['removed', 'manual'] as const)(
@@ -366,14 +370,52 @@ it.each(['removed', 'manual'] as const)(
       },
       malformedRevision,
       repaired,
+      repaired,
     ]);
 
     expect(result.incomplete).toBe(true);
-    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
     expect(result.questions.join('\n')).toMatch(/removed a case|downgraded/i);
     expect(result.value?.plan.cases).toEqual(candidate().plan.cases);
   },
 );
+
+it('uses the remaining correction to restore a protected expectation after a schema-invalid revision', async () => {
+  const malformedRevision = candidate();
+  malformedRevision.plan.cases[0].steps[0].assertions[0].read = 'not-supported' as never;
+  const weakened = candidate();
+  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    candidate(),
+    {
+      findings: [
+        { requirement: 'URS-001', severity: 'suggestion', message: 'Clarify instruction.' },
+      ],
+      summary: 'Clarify procedure.',
+    },
+    malformedRevision,
+    weakened,
+    candidate(),
+  ]);
+
+  expect(result.incomplete).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledTimes(6);
+  expect(result.value).toEqual(candidate());
+  expect(result.questions).toEqual([]);
+  const correction = inputAt(fetchImpl, 5, 'openai');
+  expect(correction.rejected_changes).toEqual([
+    expect.objectContaining({
+      assertion: 'A-01',
+      before: expect.objectContaining({ expected: true }),
+      proposed: expect.objectContaining({ expected: false }),
+    }),
+  ]);
+  expect(correction.findings).toHaveLength(1);
+  expect(
+    result.diagnostics?.some((diagnostic) => diagnostic.kind === 'protected_expectation'),
+  ).toBe(true);
+});
 
 it('allows schema repair to add automated cases and coverage while retaining existing checks', async () => {
   const malformedRevision = candidate();

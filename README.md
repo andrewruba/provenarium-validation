@@ -37,6 +37,11 @@ can request up to two technical corrections under the same spending ceiling.
 That limit also covers malformed provider JSON and schema-invalid documents.
 Rejected responses remain diagnostic data, with redacted output and exact field
 errors retained in the authoring record; they are never executed as a plan.
+Diagnosed invalid draft assertions can be corrected without freezing their
+unsupported syntax as an accepted expectation. Valid expectations and existing
+reviewed expectations remain protected. Proposed assertion changes and rejected
+corrections are retained for review. CSV checks compare complete decoded rows;
+text alternatives use literal strings, without generated regular expressions.
 Uncorrected tool-format errors remain in an incomplete authoring record;
 genuine product decisions and missing required evidence still need review.
 

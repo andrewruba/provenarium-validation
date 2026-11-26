@@ -1,5 +1,6 @@
 import { type Action, type Assertion, type Plan, type Urs } from './schema.js';
 import { requirements, unresolvedQuestions } from './urs.js';
+import { assertionContractIssues } from './assertion-contract.js';
 
 type Requirement = Urs['families'][number]['requirements'][number];
 export type ObligationSource = {
@@ -233,18 +234,8 @@ export function validatePlanStructure(plan: Plan, urs: Urs): string[] {
         assertionCases.set(a.id, c.id);
         if (a.variable && !variables.has(a.variable.split('.')[0]))
           errors.push(`${a.id}: undefined observation variable ${a.variable}.`);
-        if (a.expected === undefined && !['present', 'absent'].includes(a.comparison))
-          errors.push(`${a.id}: missing expected result.`);
-        if (
-          a.comparison === 'numeric' &&
-          (typeof a.expected !== 'number' || a.tolerance === undefined)
-        )
-          errors.push(`${a.id}: numeric comparison requires expected number and tolerance.`);
-        if (
-          a.comparison === 'matches' &&
-          (typeof a.expected !== 'string' || a.expected.length > 200)
-        )
-          errors.push(`${a.id}: wildcard pattern must be a string of at most 200 characters.`);
+        for (const message of new Set(assertionContractIssues(a).map((issue) => issue.message)))
+          errors.push(`${a.id}: ${message}`);
       }
       for (const e of step.evidence) {
         addId(e.id);

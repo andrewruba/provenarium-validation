@@ -574,7 +574,10 @@ describe('authoring workflows', () => {
       url: 'http://localhost:3210',
       existing: plan,
       feedback: 'Make it pass',
-      fetchImpl: transport('openai', [{ action: 'finish' }, { plan: changed, fixtures: [] }]),
+      fetchImpl: transport('openai', [
+        { action: 'finish' },
+        ...Array.from({ length: 3 }, () => ({ plan: changed, fixtures: [] })),
+      ]),
     });
     expect(result.incomplete).toBe(true);
     expect(result.questions.join()).toContain('expected result');
@@ -633,7 +636,10 @@ describe('authoring workflows', () => {
       existingUrs: urs,
       existing: plan,
       url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [{ action: 'finish' }, { plan: revisedPlan, fixtures: [] }]),
+      fetchImpl: transport('openai', [
+        { action: 'finish' },
+        ...Array.from({ length: 3 }, () => ({ plan: revisedPlan, fixtures: [] })),
+      ]),
     });
     expect(unchanged.incomplete).toBe(true);
     expect(unchanged.questions.join()).toContain('expected result');

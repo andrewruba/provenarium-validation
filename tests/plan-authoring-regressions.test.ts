@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { generatePlan } from '../src/authoring/index.js';
-import { planSchema, ursSchema } from '../src/schema.js';
+import { assertionSchema, planSchema, ursSchema } from '../src/schema.js';
 
 vi.mock('../src/authoring/discovery.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/authoring/discovery.js')>();
@@ -124,7 +124,10 @@ function transport(values: unknown[]) {
   });
 }
 
-async function run(values: unknown[]) {
+async function run(
+  values: unknown[],
+  options: Partial<Pick<Parameters<typeof generatePlan>[0], 'existing' | 'existingUrs'>> = {},
+) {
   const root = await mkdtemp(path.join(tmpdir(), 'provenarium-plan-authoring-'));
   roots.push(root);
   const fetchImpl = transport(values);
@@ -136,6 +139,7 @@ async function run(values: unknown[]) {
     url: 'https://example.test/',
     thoroughness: 'quick',
     context: { passages: [], hashes: [], warnings: [] },
+    ...options,
     fetchImpl,
   });
   return { result, fetchImpl };
@@ -143,6 +147,45 @@ async function run(values: unknown[]) {
 
 function requestBody(fetchImpl: ReturnType<typeof transport>, index: number) {
   return JSON.parse(String(fetchImpl.mock.calls[index][1]?.body));
+}
+
+function malformedPredicates() {
+  const generated = candidate();
+  const step = generated.plan.cases[0].steps[0];
+  step.actions.push({
+    op: 'download',
+    locator: { by: 'role', role: 'link', value: 'Export', exact: true },
+    save_as: 'export',
+  });
+  step.assertions.push(
+    assertionSchema.parse({
+      id: 'A-CSV',
+      variable: 'export.text',
+      comparison: 'matches',
+      expected: '^' + 'Sample ID,Volume\\r?\\n'.repeat(15) + '$',
+    }),
+    assertionSchema.parse({
+      id: 'A-TEXT',
+      locator: { by: 'label', value: 'Validation message' },
+      comparison: 'matches',
+      expected: '(?:required|missing)',
+    }),
+  );
+  generated.plan.obligations[0].assertion_ids.push('A-CSV', 'A-TEXT');
+  return generated;
+}
+
+function correctedPredicates() {
+  const generated = malformedPredicates();
+  const [, csv, text] = generated.plan.cases[0].steps[0].assertions;
+  csv.comparison = 'csv_equals';
+  csv.expected = [
+    ['Sample ID', 'Volume'],
+    ['SYNTHETIC-1', '1.250'],
+  ];
+  text.comparison = 'contains_any';
+  text.expected = ['required', 'missing'];
+  return generated;
 }
 
 it('supplies exact source bindings and runtime rules and normalizes an unambiguous local source', async () => {
@@ -290,4 +333,213 @@ it('does not weaken a manual expected result while repairing a source binding', 
 
   expect(result.incomplete).toBe(true);
   expect(result.questions.join('\n')).toMatch(/manual|expected/i);
+});
+
+it('repairs malformed CSV and text predicates while preserving valid expected results', async () => {
+  const malformed = malformedPredicates();
+  const corrected = correctedPredicates();
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, corrected, reviewed]);
+
+  expect(result.incomplete).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(result.value?.plan.cases[0].steps[0].assertions).toEqual(
+    corrected.plan.cases[0].steps[0].assertions,
+  );
+  expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
+  const correction = JSON.parse(requestBody(fetchImpl, 2).input[0].content[0].text);
+  expect(correction.repairable_draft_assertions.map((item: { id: string }) => item.id)).toEqual([
+    'A-CSV',
+    'A-TEXT',
+  ]);
+  expect(correction.validation_errors.join('\n')).toContain('A-CSV: wildcard pattern');
+  expect(correction.validation_errors.join('\n')).toContain('A-TEXT: matches supports literal');
+  expect(result.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: 'document_structure' }),
+      expect.objectContaining({
+        kind: 'draft_assertion_repair',
+        candidate: expect.objectContaining({
+          changes: expect.arrayContaining([
+            expect.objectContaining({
+              assertion: 'A-CSV',
+              before: expect.objectContaining({ comparison: 'matches' }),
+              proposed: expect.objectContaining({ comparison: 'csv_equals' }),
+            }),
+            expect.objectContaining({
+              assertion: 'A-TEXT',
+              proposed: expect.objectContaining({ comparison: 'contains_any' }),
+            }),
+          ]),
+        }),
+      }),
+    ]),
+  );
+});
+
+it('rejects an unrelated expected-result change and uses the remaining correction on the original draft', async () => {
+  const malformed = malformedPredicates();
+  const weakened = correctedPredicates();
+  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    malformed,
+    weakened,
+    correctedPredicates(),
+    reviewed,
+  ]);
+
+  expect(result.incomplete).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledTimes(5);
+  expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
+  const rejection = result.diagnostics?.find(
+    (diagnostic) => diagnostic.kind === 'protected_expectation',
+  );
+  expect(rejection).toMatchObject({
+    operation: 'technical correction',
+    issues: expect.arrayContaining([
+      expect.objectContaining({
+        path: '/changes/0/proposed',
+        code: 'expected_result_changed',
+      }),
+    ]),
+    candidate: {
+      changes: [
+        expect.objectContaining({
+          assertion: 'A-01',
+          path: ['plan', 'cases', 0, 'steps', 0, 'assertions', 0],
+          before: expect.objectContaining({ expected: true }),
+          proposed: expect.objectContaining({ expected: false }),
+        }),
+      ],
+    },
+  });
+  const secondCorrection = JSON.parse(requestBody(fetchImpl, 3).input[0].content[0].text);
+  expect(secondCorrection.candidate).toEqual(malformed);
+  expect(secondCorrection.validation_errors.join('\n')).toContain('A-CSV: wildcard pattern');
+  expect(secondCorrection.validation_errors.join('\n')).toContain('A-01: correction changed');
+  expect(secondCorrection.rejected_changes).toEqual([
+    expect.objectContaining({
+      assertion: 'A-01',
+      before: expect.objectContaining({ expected: true }),
+      proposed: expect.objectContaining({ expected: false }),
+    }),
+  ]);
+});
+
+it('retains the original draft and both rejected changes after two weakening corrections', async () => {
+  const malformed = malformedPredicates();
+  const weakened = correctedPredicates();
+  weakened.plan.cases[0].steps[0].assertions[0].expected = false;
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, weakened, weakened]);
+
+  expect(result.incomplete).toBe(true);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(result.spend.calls).toBe(4);
+  expect(result.reviewRounds).toBe(0);
+  expect(result.value).toEqual(malformed);
+  const rejected = result.diagnostics?.filter(
+    (diagnostic) => diagnostic.kind === 'protected_expectation',
+  );
+  expect(rejected).toHaveLength(2);
+  expect(
+    result.diagnostics?.some((diagnostic) => diagnostic.kind === 'draft_assertion_repair'),
+  ).toBe(false);
+  expect(result.questions.join('\n')).toContain('A-01');
+  expect(result.questions.join('\n')).not.toContain('Revise the requirement');
+});
+
+it('repairs a missing numeric tolerance without allowing its valid expected value to change', async () => {
+  const malformed = candidate();
+  malformed.plan.cases[0].steps[0].assertions.push(
+    assertionSchema.parse({
+      id: 'A-NUMERIC',
+      locator: { by: 'label', value: 'Volume' },
+      read: 'value',
+      comparison: 'numeric',
+      expected: 1.25,
+    }),
+  );
+  malformed.plan.obligations[0].assertion_ids.push('A-NUMERIC');
+  const corrected = structuredClone(malformed);
+  corrected.plan.cases[0].steps[0].assertions[1].tolerance = 0.001;
+  const weakened = structuredClone(corrected);
+  weakened.plan.cases[0].steps[0].assertions[1].expected = 9.99;
+  const { result, fetchImpl } = await run([
+    { action: 'finish' },
+    malformed,
+    weakened,
+    corrected,
+    reviewed,
+  ]);
+
+  expect(result.incomplete).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledTimes(5);
+  expect(result.value?.plan.cases[0].steps[0].assertions[1]).toMatchObject({
+    comparison: 'numeric',
+    expected: 1.25,
+    tolerance: 0.001,
+  });
+  const rejected = result.diagnostics?.find(
+    (diagnostic) => diagnostic.kind === 'protected_expectation',
+  );
+  expect(rejected?.candidate).toMatchObject({
+    changes: [
+      expect.objectContaining({
+        assertion: 'A-NUMERIC',
+        before: expect.objectContaining({ expected: 1.25 }),
+        proposed: expect.objectContaining({ expected: 9.99 }),
+      }),
+    ],
+  });
+  const firstCorrection = JSON.parse(requestBody(fetchImpl, 2).input[0].content[0].text);
+  expect(firstCorrection.repairable_draft_assertions).toEqual([
+    expect.objectContaining({
+      id: 'A-NUMERIC',
+      issues: [expect.objectContaining({ field: 'tolerance', code: 'numeric_tolerance' })],
+      fields: ['tolerance'],
+    }),
+  ]);
+});
+
+it('keeps an existing reviewed CSV expectation frozen even when its replacement draft is malformed', async () => {
+  const existing = correctedPredicates();
+  const malformed = malformedPredicates();
+  const weakened = correctedPredicates();
+  weakened.plan.cases[0].steps[0].assertions[1].expected = [
+    ['Sample ID', 'Volume'],
+    ['SYNTHETIC-1', '9.999'],
+  ];
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, weakened, weakened], {
+    existing: existing.plan,
+    existingUrs: urs,
+  });
+
+  expect(result.incomplete).toBe(true);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(result.questions.join('\n')).toContain('A-CSV');
+  expect(result.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'protected_expectation',
+        candidate: expect.objectContaining({
+          changes: expect.arrayContaining([
+            expect.objectContaining({
+              assertion: 'A-CSV',
+              before: expect.objectContaining({
+                comparison: 'csv_equals',
+                expected: [
+                  ['Sample ID', 'Volume'],
+                  ['SYNTHETIC-1', '1.250'],
+                ],
+              }),
+            }),
+          ]),
+        }),
+      }),
+    ]),
+  );
+  if (result.value)
+    expect(result.value.plan.cases[0].steps[0].assertions[1].expected).toEqual(
+      existing.plan.cases[0].steps[0].assertions[1].expected,
+    );
 });

@@ -133,6 +133,31 @@ retain the printed authoring record: it now includes the operation and actual
 validation details needed to investigate. Refusals, incomplete provider output,
 and uncertain network failures do not trigger automatic schema retries.
 
+## A correction changed or removed an expected result
+
+Older generation could author a regex under `matches`, whose runtime supports
+only literal text and `*` wildcards. A long pattern then failed validation, but
+the correction was blocked because the invalid initial draft was treated as an
+accepted expectation. Short regex patterns could pass the old length check while
+still having the wrong runtime meaning.
+
+Updated authoring diagnoses these unsupported predicates and permits a scoped
+correction to the invalid draft assertion. `csv_equals` checks complete decoded
+CSV rows, and `contains_any` expresses finite literal text alternatives. Valid
+assertions and existing reviewed expectations remain protected; the tool cannot
+repair a format error by dropping checks or weakening an accepted result.
+
+A rejected correction now retains the changed assertion IDs and before/proposed
+values, and can use the remaining allowance within the same two-correction limit
+and spending cap. Proposed corrections to invalid draft assertions are also
+retained for protocol review. A historical record with only the original plan
+and generic error cannot reveal the exact replacement that was rejected.
+
+Update the CLI and rerun generation. Do not change an intended requirement just
+to accommodate a malformed generated predicate. If a correction remains blocked,
+inspect the printed authoring record's `diagnostics` for the specific protected
+expectation or coverage change.
+
 ## The CLI reports missing Chromium
 
 Install the browser using the setup command printed by the installed CLI. Browser files are version-specific. Linux may also need system libraries. Execution and report generation never install dependencies automatically.

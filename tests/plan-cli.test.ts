@@ -278,7 +278,7 @@ it('persists redacted rejected responses and field diagnostics when schema corre
   });
   expect(JSON.stringify(record)).not.toContain('synthetic-provider-key');
   const output = vi.mocked(console.log).mock.calls.flat().join('\n');
-  expect(output).toContain('Provider response diagnostics:');
+  expect(output).toContain('Authoring diagnostics:');
   expect(output).toContain('INCOMPLETE:');
 });
 

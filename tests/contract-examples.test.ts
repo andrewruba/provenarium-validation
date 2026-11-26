@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { protocolContractExamples } from '../src/authoring/contract-examples.js';
 import { validatePlanStructure } from '../src/compiler.js';
 import {
@@ -65,6 +66,13 @@ describe('provider protocol contract examples', () => {
       ],
     });
     expect(validatePlanStructure(plan, urs)).toEqual([]);
+    const malformed = structuredClone(plan);
+    malformed.cases[0].steps[0].assertions.find(
+      (assertion) => assertion.id === 'EX-WILDCARD',
+    )!.expected = '(?:required|missing)';
+    expect(validatePlanStructure(malformed, urs)).toEqual([
+      expect.stringContaining('EX-WILDCARD: matches supports literal text and the * wildcard'),
+    ]);
   });
 
   it('explains local refinements that the JSON schema alone does not encode', () => {
@@ -94,5 +102,24 @@ describe('provider protocol contract examples', () => {
         .success,
     ).toBe(false);
     expect(protocolContractExamples.guidance.join('\n')).toContain('do not create a read action');
+  });
+
+  it('shows complete CSV expectations, finite literal alternatives, and wildcard semantics', () => {
+    const assertions = protocolContractExamples.automated_step.assertions;
+    expect(assertions.find((assertion) => assertion.id === 'EX-CSV')).toMatchObject({
+      variable: 'export.text',
+      comparison: 'csv_equals',
+      expected: [['Example header'], ['Example input']],
+    });
+    expect(assertions.find((assertion) => assertion.id === 'EX-MESSAGE')).toMatchObject({
+      comparison: 'contains_any',
+      expected: ['Example record saved', 'Example record created'],
+    });
+    const guidance = protocolContractExamples.guidance.join('\n');
+    expect(guidance).toContain('only * is special');
+    expect(guidance).toContain('do not write regex for CSV');
+    const schema = JSON.stringify(z.toJSONSchema(assertionSchema, { unrepresentable: 'any' }));
+    expect(schema).toContain('never regular expressions');
+    expect(schema).toContain('Preserve exact cell strings and row order');
   });
 });
