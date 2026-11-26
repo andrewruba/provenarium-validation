@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planSchema, ursSchema, type Plan, type Urs } from '../src/schema.js';
+import { caseSchema, planSchema, ursSchema, type Plan, type Urs } from '../src/schema.js';
 import {
   normalizeObligationSources,
   obligationSourceCatalog,
@@ -292,5 +292,47 @@ describe('technical errors versus human decisions', () => {
     plan.questions = [{ id: 'OB-1', question: 'Which empty-state text is mandatory?' }];
     expect(validatePlanStructure(plan, urs)).toContain('Duplicate plan ID: OB-1');
     expect(validatePlan(plan, urs)).toContain('OB-1: Which empty-state text is mandatory?');
+  });
+
+  it('identifies steps by case while preserving globally unique assertion and evidence IDs', () => {
+    const { urs, plan } = fixture();
+    plan.access = [];
+    plan.cases = ['OQ-1', 'OQ-2'].map((caseId) =>
+      caseSchema.parse({
+        id: caseId,
+        title: 'Inspect the saved record',
+        classification: 'OQ',
+        requirements: ['URS-1'],
+        steps: ['01', '02'].map((stepId) => ({
+          id: stepId,
+          instruction: 'Inspect the visible record.',
+          actions: [],
+          assertions: [
+            {
+              id: `${caseId}-${stepId}-A`,
+              locator: { by: 'text', value: 'Record saved' },
+              read: 'visible',
+              comparison: 'equals',
+              expected: true,
+            },
+          ],
+          evidence: [{ id: `${caseId}-${stepId}-E`, kind: 'observation' }],
+        })),
+      }),
+    );
+    plan.obligations[0].manual_case_ids = [];
+    plan.obligations[0].assertion_ids = plan.cases.flatMap((c) =>
+      c.steps.flatMap((s) => s.assertions.map((a) => a.id)),
+    );
+    expect(validatePlanStructure(plan, urs)).toEqual([]);
+
+    plan.cases[1].steps[1].id = '01';
+    expect(validatePlanStructure(plan, urs)).toEqual(['OQ-2: duplicate step ID 01.']);
+    plan.cases[1].steps[1].id = '02';
+    plan.cases[1].steps[0].assertions[0].id = 'OQ-1-01-A';
+    plan.cases[1].steps[0].evidence[0].id = 'OQ-1-01-E';
+    expect(validatePlanStructure(plan, urs)).toEqual(
+      expect.arrayContaining(['Duplicate plan ID: OQ-1-01-A', 'Duplicate plan ID: OQ-1-01-E']),
+    );
   });
 });

@@ -152,6 +152,40 @@ function inputAt(fetchImpl: ReturnType<typeof transport>, index: number, provide
 }
 
 it.each(['openai', 'anthropic'] as const)(
+  'accepts repeated case-local step numbers from %s without paid repair requests',
+  async (provider) => {
+    const draft = candidate();
+    draft.plan.cases = ['IQ-01', 'IQ-02', 'IQ-03'].map((caseId) => ({
+      ...structuredClone(draft.plan.cases[0]),
+      id: caseId,
+      steps: ['01', '02'].map((stepId) => ({
+        ...structuredClone(draft.plan.cases[0].steps[0]),
+        id: stepId,
+        assertions: [
+          {
+            ...draft.plan.cases[0].steps[0].assertions[0],
+            id: `${caseId}-A-${stepId}`,
+          },
+        ],
+        evidence: [{ id: `${caseId}-E-${stepId}`, kind: 'observation', required: true }],
+      })),
+    }));
+    draft.plan.obligations[0].assertion_ids = draft.plan.cases.flatMap((testCase) =>
+      testCase.steps.flatMap((step) => step.assertions.map((assertion) => assertion.id)),
+    );
+    const original = structuredClone(draft);
+    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, reviewed], { provider });
+
+    expect(result.incomplete).toBe(false);
+    expect(result.value).toEqual(original);
+    expect(result.diagnostics ?? []).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(inputAt(fetchImpl, 2, provider).candidate).toEqual(original);
+    expect(browser.perform).not.toHaveBeenCalled();
+  },
+);
+
+it.each(['openai', 'anthropic'] as const)(
   'repairs a schema-invalid %s plan using the rejected document and exact diagnostic paths',
   async (provider) => {
     const malformed = candidate();

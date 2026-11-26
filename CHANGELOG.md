@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Matched protocol step-ID validation to runtime identity: step numbers may repeat
+  across test cases, while duplicates within one case remain invalid. Scoped edits
+  and their audit records now consistently identify steps by case and step,
+  preventing unnecessary authoring correction requests for valid numbering.
 - Replaced the default question-by-question requirements interview with one
   consolidated recommendation and requirement-change review. Explicit delegation
   now produces labeled proposed defaults; concrete saved decisions are preserved.

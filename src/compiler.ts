@@ -220,8 +220,11 @@ export function validatePlanStructure(plan: Plan, urs: Urs): string[] {
         );
     } else if (!c.steps.length) errors.push(`${c.id}: automated case has no steps.`);
     const variables = new Map<string, string>();
+    const stepIds = new Set<string>();
     for (const step of c.steps) {
-      addId(step.id);
+      // Execution, observations, reports, and edits identify steps by case + step.
+      if (stepIds.has(step.id)) errors.push(`${c.id}: duplicate step ID ${step.id}.`);
+      stepIds.add(step.id);
       for (const a of step.actions) {
         if (a.op === 'read' || a.op === 'request' || a.op === 'download') {
           const name = a.op === 'download' ? a.save_as : a.as;

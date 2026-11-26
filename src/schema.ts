@@ -270,7 +270,7 @@ export const evidenceSchema = z.strictObject({
   required: z.boolean().default(true),
 });
 export const stepSchema = z.strictObject({
-  id,
+  id: id.describe('Unique within its test case. Other cases may reuse this step ID.'),
   instruction: nonempty,
   actions: z.array(actionSchema),
   assertions: z.array(assertionSchema),

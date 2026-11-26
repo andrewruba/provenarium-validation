@@ -374,6 +374,7 @@ export function applyPlanEdits(
   const catalog = planEditCatalog(base, options);
   const reqs = new Set(catalog.requirements);
   const ids = new Set<string>();
+  const stepIds = new Map<string, Set<string>>();
   const writes = new Set<string>();
   let editIndex = -1;
   const fail = (message: string, details: Partial<Omit<PlanEditIssue, 'message'>> = {}): never => {
@@ -390,14 +391,17 @@ export function applyPlanEdits(
     if (ids.has(name)) fail(`Duplicate plan ID ${name}.`);
     ids.add(name);
   };
-  const registerStep = (step: Plan['cases'][number]['steps'][number]) => {
-    register(step.id);
+  const registerStep = (caseId: string, step: Plan['cases'][number]['steps'][number]) => {
+    const scopedIds = stepIds.get(caseId)!;
+    if (scopedIds.has(step.id)) fail(`Duplicate step ID ${step.id} in case ${caseId}.`);
+    scopedIds.add(step.id);
     step.assertions.forEach((a) => register(a.id));
     step.evidence.forEach((e) => register(e.id));
   };
   const registerCase = (c: Plan['cases'][number]) => {
     register(c.id);
-    c.steps.forEach(registerStep);
+    stepIds.set(c.id, new Set());
+    c.steps.forEach((step) => registerStep(c.id, step));
   };
   value.plan.cases.forEach(registerCase);
   value.plan.access.forEach((a) => register(a.id));
@@ -449,7 +453,7 @@ export function applyPlanEdits(
       case 'add_step': {
         const c = testCase(edit.case_id);
         if (c.manual) fail(`Cannot add executable steps to manual case ${c.id}.`);
-        registerStep(edit.value);
+        registerStep(c.id, edit.value);
         const index =
           edit.after_step_id === undefined
             ? c.steps.length
@@ -458,7 +462,7 @@ export function applyPlanEdits(
           fail(`Unknown preceding step ${edit.after_step_id}.`);
         if (edit.after_step_id !== undefined) write(`step-insertion/${c.id}/${edit.after_step_id}`);
         c.steps.splice(index, 0, edit.value);
-        record(edit.op, edit.value.id, undefined, edit.value);
+        record(edit.op, `${c.id}/${edit.value.id}`, undefined, edit.value);
         break;
       }
       case 'add_assertion':
@@ -569,8 +573,8 @@ export function applyPlanEdits(
       }
       case 'update_instruction': {
         const s = step(edit.case_id, edit.step_id);
-        write(`instruction/${s.id}`);
-        record(edit.op, s.id, s.instruction, edit.instruction);
+        write(`instruction/${edit.case_id}/${s.id}`);
+        record(edit.op, `${edit.case_id}/${s.id}`, s.instruction, edit.instruction);
         s.instruction = edit.instruction;
         break;
       }
@@ -581,13 +585,13 @@ export function applyPlanEdits(
           s.actions[edit.action_index] ?? fail(`Unknown action ${s.id}/${edit.action_index}.`);
         const key = edit.op === 'update_action_locator' ? 'locator' : 'url';
         if (!(key in a)) fail(`Action ${s.id}/${edit.action_index} has no ${key} binding.`);
-        write(`action/${s.id}/${edit.action_index}/${key}`);
+        write(`action/${edit.case_id}/${s.id}/${edit.action_index}/${key}`);
         if (edit.op === 'update_action_locator' && 'locator' in a) {
-          record(edit.op, `${s.id}/${edit.action_index}`, a.locator, edit.locator);
+          record(edit.op, `${edit.case_id}/${s.id}/${edit.action_index}`, a.locator, edit.locator);
           a.locator = edit.locator;
         }
         if (edit.op === 'update_action_url' && 'url' in a) {
-          record(edit.op, `${s.id}/${edit.action_index}`, a.url, edit.url);
+          record(edit.op, `${edit.case_id}/${s.id}/${edit.action_index}`, a.url, edit.url);
           a.url = edit.url;
         }
         break;

@@ -828,6 +828,8 @@ export async function generatePlan(
       obligation_sources: obligationSourceCatalog(options.urs),
       available_reference_files: inputCatalog.references,
       runtime_contract: {
+        id_scope:
+          'Step IDs are unique within each case; different cases may each use 01, 02, etc. Address a step by case_id and step_id together. Case, assertion, evidence, actor, obligation, and question IDs must remain globally unique across the plan.',
         source_syntax:
           'Copy an exact source from obligation_sources, such as URS-001/statement, URS-001/details/0, or URS-001/table. Do not use free-form clause labels.',
         anonymous_access:

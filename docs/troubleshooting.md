@@ -101,6 +101,19 @@ placeholders, duplicate IDs, and other structural issues are separate from
 question resolution. Correct those issues in the working requirements, then check again.
 Refresh existing HTML/PDF views with `provenarium urs render urs.yaml` after edits.
 
+## Protocol generation stops on “Duplicate plan ID 01”
+
+Older versions required step IDs to be unique across the entire protocol, even
+though execution, evidence, and reports identify a step by its case and step ID.
+Numbering each case from `01` therefore triggered a correction that could not
+rename the protected IDs. Updated validation accepts repeated step numbers in
+different cases, and scoped edits use the same case-and-step identity. Duplicate
+steps within one case are still rejected, as are duplicate assertion, evidence,
+case, actor, obligation, or question IDs across the plan.
+
+After updating the CLI, rerun `generate --urs` with the same requirements and URL.
+The retained failed draft is not automatically approved or published.
+
 ## Protocol generation reports invalid source bindings or opens a document title as a file
 
 Older protocol generation could emit bare labels such as `statement` or

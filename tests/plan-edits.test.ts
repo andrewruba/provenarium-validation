@@ -125,6 +125,18 @@ const step = (id = 'S2', assertionId = 'A17') => ({
   assertions: [assertion(assertionId)],
   evidence: [],
 });
+function repeatedStepNumbers(): GeneratedPlanDocument {
+  const original = baseline();
+  original.plan.cases[0].steps[0].id = '01';
+  const second = structuredClone(original.plan.cases[0]);
+  second.id = 'OQ-02';
+  second.steps[0].assertions[0].id = 'A18';
+  second.steps[0].evidence[0].id = 'E2';
+  original.plan.cases.push(second);
+  original.plan.access[0].cases.push(second.id);
+  original.plan.obligations[0].assertion_ids.push('A18');
+  return original;
+}
 
 describe('scoped protocol review edits', () => {
   it('adds checks and coverage while preserving A16, manual expectations, and fixtures byte for byte', () => {
@@ -159,6 +171,133 @@ describe('scoped protocol review edits', () => {
     expect(validatePlanStructure(result.value.plan, urs)).toEqual([]);
     expect(result.changes).toHaveLength(4);
   });
+
+  it('accepts repeated step numbers in different cases without rewriting the baseline', () => {
+    const original = repeatedStepNumbers();
+    const before = structuredClone(original);
+    const result = applyPlanEdits(original, { edits: [] }, options);
+    expect(result.value).toEqual(before);
+    expect(result.changes).toEqual([]);
+    expect(original).toEqual(before);
+  });
+
+  it('keeps instruction and action edits and their audit targets scoped to each case', () => {
+    const original = repeatedStepNumbers();
+    const before = structuredClone(original);
+    const result = applyPlanEdits(
+      original,
+      {
+        edits: ['OQ-01', 'OQ-02'].flatMap((caseId) => [
+          {
+            op: 'update_instruction',
+            case_id: caseId,
+            step_id: '01',
+            instruction: `Open the form for ${caseId}.`,
+          },
+          {
+            op: 'update_action_url',
+            case_id: caseId,
+            step_id: '01',
+            action_index: 0,
+            url: `/${caseId}`,
+          },
+          {
+            op: 'update_action_locator',
+            case_id: caseId,
+            step_id: '01',
+            action_index: 1,
+            locator: { by: 'role', role: 'button', value: `Open ${caseId}` },
+          },
+        ]),
+      },
+      options,
+    );
+    for (const caseId of ['OQ-01', 'OQ-02']) {
+      const updated = result.value.plan.cases.find((c) => c.id === caseId)!.steps[0];
+      const previous = before.plan.cases.find((c) => c.id === caseId)!.steps[0];
+      expect(updated.id).toBe('01');
+      expect(updated.instruction).toBe(`Open the form for ${caseId}.`);
+      expect(updated.actions[0]).toEqual({ op: 'navigate', url: `/${caseId}` });
+      expect(updated.actions[1]).toEqual({
+        op: 'click',
+        locator: { by: 'role', role: 'button', value: `Open ${caseId}`, exact: true },
+      });
+      expect(updated.assertions).toEqual(previous.assertions);
+      expect(updated.evidence).toEqual(previous.evidence);
+    }
+    expect(result.changes.map((change) => change.target)).toEqual([
+      'OQ-01/01',
+      'OQ-01/01/0',
+      'OQ-01/01/1',
+      'OQ-02/01',
+      'OQ-02/01/0',
+      'OQ-02/01/1',
+    ]);
+    expect(result.value.plan.obligations).toEqual(before.plan.obligations);
+    expect(original).toEqual(before);
+  });
+
+  it('adds a case and steps with case-local numbering while retaining global assertion IDs', () => {
+    const original = baseline();
+    original.plan.cases[0].steps[0].id = '01';
+    const extra = structuredClone(original.plan.cases[0]);
+    extra.id = 'OQ-02';
+    extra.steps[0].assertions[0].id = 'A18';
+    extra.steps[0].evidence[0].id = 'E2';
+    const result = applyPlanEdits(
+      original,
+      {
+        edits: [
+          { op: 'add_case', value: extra },
+          { op: 'add_actor_case', actor_id: 'ACTOR', case_id: extra.id },
+          { op: 'add_step', case_id: 'OQ-01', after_step_id: '01', value: step('02', 'A19') },
+          { op: 'add_step', case_id: 'OQ-02', after_step_id: '01', value: step('02', 'A20') },
+          {
+            op: 'extend_obligation',
+            obligation_id: 'OB-1',
+            assertion_ids: ['A18', 'A19', 'A20'],
+            manual_case_ids: [],
+          },
+        ],
+      },
+      options,
+    );
+    for (const caseId of ['OQ-01', 'OQ-02'])
+      expect(result.value.plan.cases.find((c) => c.id === caseId)!.steps.map((s) => s.id)).toEqual([
+        '01',
+        '02',
+      ]);
+    expect(
+      result.changes.filter((change) => change.op === 'add_step').map((change) => change.target),
+    ).toEqual(['OQ-01/02', 'OQ-02/02']);
+    expect(result.value.plan.cases[0].steps[0]).toEqual(original.plan.cases[0].steps[0]);
+    expect(result.value.plan.cases[1]).toEqual(original.plan.cases[1]);
+    expect(result.value.fixtures).toEqual(original.fixtures);
+    expect(validatePlanStructure(result.value.plan, urs)).toEqual([]);
+  });
+
+  it.each(['baseline', 'new step', 'new case'])(
+    'rejects a duplicated step within one case in %s',
+    (kind) => {
+      const original = baseline();
+      let edits: unknown[] = [];
+      if (kind === 'baseline') original.plan.cases[0].steps.push(step('S1'));
+      if (kind === 'new step') edits = [{ op: 'add_step', case_id: 'OQ-01', value: step('S1') }];
+      if (kind === 'new case') {
+        const extra = structuredClone(original.plan.cases[0]);
+        extra.id = 'OQ-NEW';
+        extra.steps[0].assertions[0].id = 'A18';
+        extra.steps[0].evidence[0].id = 'E2';
+        extra.steps.push(step('S1'));
+        edits = [{ op: 'add_case', value: extra }];
+      }
+      const before = structuredClone(original);
+      expect(() => applyPlanEdits(original, { edits }, options)).toThrow(
+        /Duplicate step ID S1 in case OQ-/,
+      );
+      expect(original).toEqual(before);
+    },
+  );
 
   it.each([
     { edits: [{ op: 'delete_assertion', assertion_id: 'A16' }] },
