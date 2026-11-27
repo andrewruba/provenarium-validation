@@ -59,6 +59,8 @@ function verifyCommandSurface(cli) {
   const options = run('validate', '--help');
   assert.match(options, /--context/);
   assert.match(options, /--url/);
+  assert.match(options.replace(/\s+/g, ' '), /--provider.*openai.*anthropic/);
+  assert.throws(() => run('validate', '--provider', 'unsupported'), /Allowed choices/i);
   for (const flag of [
     '--review-coverage',
     '--yes',

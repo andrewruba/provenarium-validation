@@ -1,4 +1,4 @@
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { confirm } from '@clack/prompts';
 import { chromium } from '@playwright/test';
 import { access, readFile } from 'node:fs/promises';
@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
 import { spawn } from 'node:child_process';
 import { stringify } from 'yaml';
-import { type Bindings, type Plan } from './schema.js';
+import { providerSchema, type Bindings, type Plan } from './schema.js';
 import { exists, safePath, sha256, writeJson, writeNew } from './files.js';
 import { loadUrs, checkUrsStructure, unresolvedQuestions } from './urs.js';
 import { prepareUrsInputs } from './urs-setup.js';
@@ -75,9 +75,12 @@ async function ensureBrowser() {
   });
 }
 
-async function authoring(directory: string): Promise<AuthoringOptions> {
+async function authoring(
+  directory: string,
+  providerOverride?: AuthoringOptions['provider'],
+): Promise<AuthoringOptions> {
   const project = await loadProject(directory);
-  const provider = project.provider ?? 'openai';
+  const provider = providerOverride ?? project.provider ?? 'openai';
   const cap = PRESETS.standard.cap;
   console.log(`AI authoring with ${provider}, up to $${cap.toFixed(2)} for this validation.`);
   console.log(
@@ -142,6 +145,9 @@ program
   .command('validate')
   .description('Draft, review, dry-run, and execute a validation')
   .option('--url <url>', 'Deployed application URL')
+  .addOption(
+    new Option('--provider <provider>', 'AI provider for this run').choices(providerSchema.options),
+  )
   .option(
     '--context <location>',
     'Source folder or design document (repeatable)',
@@ -160,7 +166,7 @@ program
     if (!url) throw new Error('Supply the deployed application URL with --url.');
     const target = safeUrl(url).href;
     let shared: Promise<AuthoringOptions> | undefined;
-    const getAuthoring = () => (shared ??= authoring(directory));
+    const getAuthoring = () => (shared ??= authoring(directory, opts.provider));
     let document;
     if (await exists(file)) {
       document = await loadUrs(file);

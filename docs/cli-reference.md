@@ -26,8 +26,9 @@ and deployment.
 
 Before the first provider request, the CLI previews selected sources and the
 spending ceiling. One ceiling covers drafting, question resolution, and test
-authoring. OpenAI is the default for new projects. Existing provider settings
-remain available. For an existing working URS, see the
+authoring. Use `--provider anthropic` or `--provider openai` to select the
+provider for this run. Otherwise the CLI uses the saved project provider or
+defaults to OpenAI. For an existing working URS, see the
 [requirements guide](urs-writing-guide.md).
 
 The project contains the editable URS, the readable IOQ and tests in

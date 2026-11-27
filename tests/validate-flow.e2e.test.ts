@@ -224,21 +224,26 @@ async function fixture({ defective = false, existing = false } = {}) {
   };
 }
 
-function mockProvider(replies: Array<() => unknown>) {
+function mockProvider(replies: Array<() => unknown>, provider: 'openai' | 'anthropic' = 'openai') {
   const fetch = vi.fn(async (url: string, options: RequestInit) => {
-    expect(url).toBe('https://api.openai.com/v1/responses');
+    expect(url).toBe(
+      provider === 'openai'
+        ? 'https://api.openai.com/v1/responses'
+        : 'https://api.anthropic.com/v1/messages',
+    );
     const reply = replies.shift();
     if (!reply) throw new Error('Unexpected provider request.');
+    const text = providerOutputText(options, reply());
+    const usage = { input_tokens: 100, output_tokens: 50 };
     return new Response(
       JSON.stringify({
-        status: 'completed',
-        usage: { input_tokens: 100, output_tokens: 50 },
-        output: [
-          {
-            type: 'message',
-            content: [{ type: 'output_text', text: providerOutputText(options, reply()) }],
-          },
-        ],
+        usage,
+        ...(provider === 'openai'
+          ? {
+              status: 'completed',
+              output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
+            }
+          : { stop_reason: 'end_turn', content: [{ type: 'text', text }] }),
       }),
     );
   });
@@ -246,7 +251,7 @@ function mockProvider(replies: Array<() => unknown>) {
   return fetch;
 }
 
-async function validate({ root, url }: { root: string; url: string }) {
+async function validate({ root, url }: { root: string; url: string }, provider?: 'anthropic') {
   process.argv = [
     process.execPath,
     'provenarium',
@@ -257,86 +262,98 @@ async function validate({ root, url }: { root: string; url: string }) {
     url,
     '--context',
     'design.md',
+    ...(provider ? ['--provider', provider] : []),
   ];
   await import('../src/cli.js');
 }
 
-it('drafts, resolves and approves the URS before creating, dry-running and executing the IOQ', async () => {
-  const app = await fixture();
-  let stageApproved = false;
-  const provider = mockProvider([
-    () => draft,
-    () => recommendations,
-    () => resolution,
-    () => {
-      expect(stageApproved).toBe(true);
-      return generated(app.url, '2', false);
-    },
-  ]);
-  prompts.confirm
-    .mockImplementationOnce(async ({ message }) => {
-      expect(message).toMatch(/provider|authoring/i);
-      expect(provider).not.toHaveBeenCalled();
-      return true;
-    })
-    .mockImplementationOnce(async ({ message }) => {
-      expect(message).toMatch(/approve.*requirements/i);
-      expect(provider).toHaveBeenCalledTimes(3);
-      const saved = await loadUrs(join(app.root, 'urs.yaml'));
-      expect(questionStatus(saved, saved.open_questions[0])).toBe('resolved');
-      expect(app.saves).toEqual([]);
-      stageApproved = true;
-      return true;
+it.each(['openai', 'anthropic'] as const)(
+  '%s drafts, resolves and approves the URS before creating, dry-running and executing the IOQ',
+  async (name) => {
+    const app = await fixture();
+    if (name === 'anthropic')
+      await writeFile(join(app.root, 'provenarium.yaml'), stringify({ provider: 'openai' }));
+    let stageApproved = false;
+    const provider = mockProvider(
+      [
+        () => draft,
+        () => recommendations,
+        () => resolution,
+        () => {
+          expect(stageApproved).toBe(true);
+          return generated(app.url, '2', false);
+        },
+      ],
+      name,
+    );
+    prompts.confirm
+      .mockImplementationOnce(async ({ message }) => {
+        expect(message).toMatch(/provider|authoring/i);
+        expect(provider).not.toHaveBeenCalled();
+        return true;
+      })
+      .mockImplementationOnce(async ({ message }) => {
+        expect(message).toMatch(/approve.*requirements/i);
+        expect(provider).toHaveBeenCalledTimes(3);
+        const saved = await loadUrs(join(app.root, 'urs.yaml'));
+        expect(questionStatus(saved, saved.open_questions[0])).toBe('resolved');
+        expect(app.saves).toEqual([]);
+        stageApproved = true;
+        return true;
+      });
+    await validate(app, name === 'anthropic' ? name : undefined);
+
+    expect(console.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+    expect(provider).toHaveBeenCalledTimes(4);
+    expect(prompts.getProviderKey).toHaveBeenCalledOnce();
+    expect(prompts.getProviderKey).toHaveBeenCalledWith(name);
+    expect(prompts.confirm).toHaveBeenCalledTimes(2);
+    expect(prompts.text).not.toHaveBeenCalled();
+    expect(app.saves).toEqual(['SYNTH-1', 'SYNTH-1']);
+
+    const project = await loadProject(app.root);
+    if (name === 'anthropic') expect(project.provider).toBe('openai');
+    expect(project.current_candidate).toBeDefined();
+    expect(project.current_package).toBeDefined();
+    expect(project.last_run).toBeDefined();
+    const packagePath = join(app.root, 'packages', project.current_package!);
+    const approval = approvalSchema.parse(
+      JSON.parse(await readFile(join(packagePath, 'approval.json'), 'utf8')),
+    );
+    const packagedUrs = await loadUrs(join(packagePath, 'urs.yaml'));
+    const packagedPlan = planSchema.parse(
+      JSON.parse(await readFile(join(packagePath, 'plan.json'), 'utf8')),
+    );
+    expect(packagedPlan.cases[0].steps[0].actions[2]).toMatchObject({
+      op: 'click',
+      locator: { value: 'Save', exact: true },
     });
-  await validate(app);
-
-  expect(console.error).not.toHaveBeenCalled();
-  expect(process.exitCode).toBeUndefined();
-  expect(provider).toHaveBeenCalledTimes(4);
-  expect(prompts.getProviderKey).toHaveBeenCalledOnce();
-  expect(prompts.getProviderKey).toHaveBeenCalledWith('openai');
-  expect(prompts.confirm).toHaveBeenCalledTimes(2);
-  expect(prompts.text).not.toHaveBeenCalled();
-  expect(app.saves).toEqual(['SYNTH-1', 'SYNTH-1']);
-
-  const project = await loadProject(app.root);
-  expect(project.current_candidate).toBeDefined();
-  expect(project.current_package).toBeDefined();
-  expect(project.last_run).toBeDefined();
-  const packagePath = join(app.root, 'packages', project.current_package!);
-  const approval = approvalSchema.parse(
-    JSON.parse(await readFile(join(packagePath, 'approval.json'), 'utf8')),
-  );
-  const packagedUrs = await loadUrs(join(packagePath, 'urs.yaml'));
-  const packagedPlan = planSchema.parse(
-    JSON.parse(await readFile(join(packagePath, 'plan.json'), 'utf8')),
-  );
-  expect(packagedPlan.cases[0].steps[0].actions[2]).toMatchObject({
-    op: 'click',
-    locator: { value: 'Save', exact: true },
-  });
-  expect(approval).toHaveProperty(
-    'requirements_approval',
-    expect.objectContaining({
-      urs_sha256: sha256(JSON.stringify(packagedUrs)),
-      target_url: app.url,
-      rehearsal_plan_sha256: sha256(JSON.stringify(packagedPlan)),
-    }),
-  );
-  expect(await readFile(join(packagePath, 'ioq.html'), 'utf8')).toContain('Confirm a saved sample');
-  expect(await readdir(join(packagePath, 'tests'))).toEqual(['OQ-SAVE.spec.cjs']);
-  const runPath = join(app.root, 'runs', project.last_run!);
-  const run = runSchema.parse(JSON.parse(await readFile(join(runPath, 'run.json'), 'utf8')));
-  expect(run).toMatchObject({
-    package_id: project.current_package,
-    complete: true,
-    cases: [{ id: 'OQ-SAVE', status: 'passed' }],
-  });
-  expect(await readFile(join(runPath, 'reports', 'executed-record.html'), 'utf8')).toContain(
-    'OQ-SAVE',
-  );
-  expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain('executed-record.html');
-});
+    expect(approval).toHaveProperty(
+      'requirements_approval',
+      expect.objectContaining({
+        urs_sha256: sha256(JSON.stringify(packagedUrs)),
+        target_url: app.url,
+        rehearsal_plan_sha256: sha256(JSON.stringify(packagedPlan)),
+      }),
+    );
+    expect(await readFile(join(packagePath, 'ioq.html'), 'utf8')).toContain(
+      'Confirm a saved sample',
+    );
+    expect(await readdir(join(packagePath, 'tests'))).toEqual(['OQ-SAVE.spec.cjs']);
+    const runPath = join(app.root, 'runs', project.last_run!);
+    const run = runSchema.parse(JSON.parse(await readFile(join(runPath, 'run.json'), 'utf8')));
+    expect(run).toMatchObject({
+      package_id: project.current_package,
+      complete: true,
+      cases: [{ id: 'OQ-SAVE', status: 'passed' }],
+    });
+    expect(await readFile(join(runPath, 'reports', 'executed-record.html'), 'utf8')).toContain(
+      'OQ-SAVE',
+    );
+    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain('executed-record.html');
+  },
+);
 
 it('stops after a failed dry run and reuses the exact IOQ after the application is fixed', async () => {
   const app = await fixture({ defective: true, existing: true });
