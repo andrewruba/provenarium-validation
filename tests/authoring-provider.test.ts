@@ -290,3 +290,42 @@ describe('provider transport and budget', () => {
     expect(Object.keys(MODEL_CATALOG)).toHaveLength(2);
   });
 });
+
+it.each(['openai', 'anthropic'] as const)(
+  '%s identifies an oversized assembled request without dispatch, reservation, or copying its source',
+  async (provider) => {
+    const transport = vi.fn();
+    const budget = new Budget(15);
+    const client = new ProviderClient({
+      provider,
+      key: 'synthetic-private-key',
+      budget,
+      now,
+      fetchImpl: transport,
+    });
+    await expect(
+      client.complete(z.strictObject({ answer: z.string() }), 'Review', {
+        candidate: { content: 'Large retained procedure '.repeat(12000) },
+        context: { text: 'small source passage' },
+      }),
+    ).rejects.toThrow(/assembled authoring request.*local 200000-byte limit/);
+    expect(transport).not.toHaveBeenCalled();
+    expect(budget.snapshot()).toEqual({ cap: 15, calls: 0, reserved: 0, actual: 0 });
+    expect(client.diagnostics).toEqual([
+      expect.objectContaining({
+        kind: 'request_size',
+        operation: 'request preparation',
+        candidate: expect.objectContaining({
+          request_bytes: expect.any(Number),
+          limit_bytes: 200000,
+          input_field_json_bytes: expect.objectContaining({
+            candidate: expect.any(Number),
+            context: expect.any(Number),
+          }),
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(client.diagnostics)).not.toContain('Large retained procedure');
+    expect(JSON.stringify(client.diagnostics)).not.toContain('synthetic-private-key');
+  },
+);

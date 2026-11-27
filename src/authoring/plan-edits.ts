@@ -525,6 +525,37 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
   };
 }
 
+/** Provider-facing permissions point to authoritative text already in candidate/URS.
+ * The full local catalog remains available to the validator; no behavior is omitted. */
+export function planEditRequestCatalog(base: GeneratedPlanDocument, options: PlanEditOptions) {
+  const catalog = planEditCatalog(base, options);
+  return {
+    ...catalog,
+    automatable_cases: catalog.automatable_cases.map((c) => {
+      const pointer = `/candidate/plan/cases/${base.plan.cases.findIndex((item) => item.id === c.id)}`;
+      return {
+        id: c.id,
+        manual_procedure_pointer: `${pointer}/manual_procedure`,
+        prerequisites_pointer: `${pointer}/prerequisites`,
+        preserved_manual_expected_pointer: `${pointer}/manual_expected`,
+        obligations: c.obligations.map((o) => ({
+          id: o.id,
+          statement_pointer: `/candidate/plan/obligations/${base.plan.obligations.findIndex((item) => item.id === o.id)}/statement`,
+        })),
+        preparation_questions: c.preparation_questions.map((q) => ({
+          id: q.id,
+          question_pointer: `/candidate/plan/questions/${base.plan.questions.findIndex((item) => item.id === q.id)}/question`,
+          case_ids: q.case_ids,
+        })),
+      };
+    }),
+    manual_justification_cases: catalog.manual_justification_cases.map((c) => ({
+      id: c.id,
+      sources: c.sources.map(({ requirement_id, source }) => ({ requirement_id, source })),
+    })),
+  };
+}
+
 /** Apply a whole proposal to a clone or reject it without changing the original. */
 export function applyPlanEdits(
   base: GeneratedPlanDocument,

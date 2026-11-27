@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Removed duplicated prior plans and repeated requirement/decision/catalog text
+  from protocol revision requests. Requests retain the complete URS, context,
+  current candidate, and fixtures, with explicit references for repeated text.
+  Local size failures now retain a byte breakdown and identify request assembly
+  as the cause, without dispatching or reserving budget for that step.
 - Persisted accepted delegated decisions with their authority, rationale, sources,
   and scope, and supplied them to subsequent protocol authoring. Default generation
   now requires automated coverage; manual exceptions require `--allow-manual` and

@@ -171,6 +171,21 @@ describe behavior the implementation does not provide. Keep those failures as
 evidence. Change the application or deliberately revise the intended requirement;
 do not change the expected result merely to match an observed output.
 
+## Assembled authoring request exceeds the local byte limit
+
+The CLI checks the complete request against a 200,000-byte bound before sending
+it. That total includes requirements, the current candidate, source context,
+instructions, and the provider's response schema; it is not a source-context
+limit. A rejected local request makes no API call or budget reservation for that
+step. Earlier completed calls remain in the spending record.
+
+Older versions duplicated the existing plan and repeated requirement and manual
+procedure text in revision requests. Updated versions keep the full URS, source
+context, candidate, and fixtures once, using references for repeated text.
+If the assembled request still exceeds the bound, the authoring record contains
+a `request_size` diagnostic with total bytes and component sizes. Existing
+requirements and approved packages are preserved.
+
 ## Provider request returned HTTP 400
 
 HTTP 400 means the provider rejected the API request. Updated versions display

@@ -69,7 +69,7 @@ type ProviderValidationFailure =
 export type ProviderOutputDiagnostic = {
   request: number;
   operation?: string;
-  kind: ProviderSchemaFailure | ProviderValidationFailure | 'provider_http';
+  kind: ProviderSchemaFailure | ProviderValidationFailure | 'provider_http' | 'request_size';
   issues: ProviderOutputIssue[];
   /** Redacted, untrusted output. This is never a validated authoring result. */
   candidate?: unknown;
@@ -85,6 +85,19 @@ export class ProviderOutputError extends ProviderError {
       .join('; ');
     super(
       `Provider output failed local schema validation (${diagnostic.kind}). ${details} No generated content was executed.`,
+    );
+  }
+}
+
+export class ProviderRequestSizeError extends ProviderError {
+  override name = 'ProviderRequestSizeError';
+  constructor(
+    readonly diagnostic: ProviderOutputDiagnostic,
+    bytes: number,
+    limit: number,
+  ) {
+    super(
+      `The assembled authoring request is ${bytes} bytes, above the local ${limit}-byte limit. This includes the document, candidate, context, instructions, and response schema. No request was sent for this step and no budget was reserved. The size breakdown is retained in the authoring record; completed work is unchanged.`,
     );
   }
 }
@@ -533,9 +546,8 @@ export class ProviderClient {
   }
   async complete<T>(schema: z.ZodType<T>, instructions: string, input: unknown): Promise<T> {
     this.options.signal?.throwIfAborted();
-    const prompt = JSON.stringify(
-      redactValue(input, [this.options.key, ...(this.options.secrets ?? [])]),
-    );
+    const cleanInput = redactValue(input, [this.options.key, ...(this.options.secrets ?? [])]);
+    const prompt = JSON.stringify(cleanInput) ?? 'null';
     let contract: ReturnType<typeof compileStructuredOutput<T>>;
     try {
       contract = compileStructuredOutput(schema, this.options.provider);
@@ -576,10 +588,40 @@ export class ProviderClient {
           };
     const encoded = JSON.stringify(body);
     const bytes = Buffer.byteLength(encoded);
-    if (bytes > MAX_REQUEST)
-      throw new ProviderError(
-        'The selected authoring context exceeds the bounded request size. Select fewer sources or split requirements into smaller families.',
+    if (bytes > MAX_REQUEST) {
+      // Retain sizes only, never an additional copy of the input or credential material.
+      const diagnostic = this.retainDiagnostic(
+        'request_size',
+        {
+          request_bytes: bytes,
+          limit_bytes: MAX_REQUEST,
+          input_json_bytes: Buffer.byteLength(prompt),
+          instructions_bytes: Buffer.byteLength(system),
+          response_schema_bytes: Buffer.byteLength(JSON.stringify(contract.schema)),
+          input_field_json_bytes:
+            cleanInput && typeof cleanInput === 'object' && !Array.isArray(cleanInput)
+              ? Object.fromEntries(
+                  Object.entries(cleanInput)
+                    .filter(([, value]) => value !== undefined)
+                    .map(([name, value]) => [name, Buffer.byteLength(JSON.stringify(value))]),
+                )
+              : undefined,
+        },
+        {
+          issues: [
+            {
+              path: '',
+              code: 'request_too_large',
+              message: `Assembled request ${bytes} bytes exceeds local ${MAX_REQUEST}-byte limit before dispatch.`,
+            },
+          ],
+          truncated: false,
+        },
+        false,
+        'request preparation',
       );
+      throw new ProviderRequestSizeError(diagnostic, bytes, MAX_REQUEST);
+    }
     // One token per UTF-8 byte plus 32K tokens for provider formatting is a deliberately
     // conservative bound for the supported text-only byte-tokenized models. Prices use
     // the highest documented applicable rates, not cache or tier discounts.

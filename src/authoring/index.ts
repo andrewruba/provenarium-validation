@@ -33,7 +33,7 @@ import type { SourceCorrespondence } from './source-correspondence.js';
 import {
   applyPlanEdits,
   makePlanEditsSchema,
-  planEditCatalog,
+  planEditRequestCatalog,
   PlanEditError,
   type PlanEditOptions,
 } from './plan-edits.js';
@@ -184,6 +184,21 @@ function finish<T>(
 }
 function requirementList(urs: Urs) {
   return urs.families.flatMap((f) => f.requirements);
+}
+function decisionRequestLedger(urs: Urs) {
+  return acceptedDecisionLedger(urs).map((decision) => {
+    const index = urs.open_questions.findIndex((q) => q.id === decision.question_id);
+    const pointer = `/urs/open_questions/${index}`;
+    return {
+      question_id: decision.question_id,
+      authority: decision.authority,
+      basis: decision.basis,
+      requirement_ids: decision.requirement_ids,
+      question_pointer: `${pointer}/question`,
+      decision_pointer: `${pointer}/answer`,
+      resolution_pointer: `${pointer}/resolution`,
+    };
+  });
 }
 async function requireValidAuthoredStructure(urs: Urs, root: string): Promise<void> {
   const errors = await checkUrsStructure(urs, root);
@@ -800,13 +815,13 @@ export async function generatePlan(
       const action = await completeProtocol(
         discoveryActionSchema,
         BASE +
-          '\nChoose one bounded discovery action to learn how to exercise the URS. Prefer accessible label/role/test-ID locators. Finish when observations suffice. Never treat observed values as independent expected values. URS questions with accepted resolution records are retained human decisions, not unanswered questions. Use only supplied credential binding names, never request or invent secrets. ' +
+          '\nChoose one bounded discovery action to learn how to exercise the URS. Prefer accessible label/role/test-ID locators. Finish when observations suffice. Never treat observed values as independent expected values. URS questions with accepted resolution records are retained human decisions, not unanswered questions. Accepted decision fields ending in _pointer point into the supplied urs; follow them to the exact answer and resolution provenance, never treat a pointer as a literal answer. Use only supplied credential binding names, never request or invent secrets. ' +
           (options.allowInteractions
             ? 'Synthetic interactions within declared origins are authorized.'
             : 'Read-only navigation is authorized; do not click, fill, or submit forms.'),
         {
           urs: options.urs,
-          accepted_decisions: acceptedDecisionLedger(options.urs),
+          accepted_decisions: decisionRequestLedger(options.urs),
           observations: observations.slice(-5),
           allowedOrigins: origins,
           availableCredentialBindings: boundNames,
@@ -837,7 +852,7 @@ export async function generatePlan(
       '\nAuthor the IOQ plan and text fixtures. Copy obligation source strings exactly from obligation_sources for the linked requirement. The runtime_contract defines supported binding and actor syntax; internal schema, source bindings, file paths, and runtime compatibility are generator responsibilities, never questions for the user. Use only supported typed operations. Every automated assertion maps to a numbered step and requirement clause; manual cases need explicit procedure and expected result. Prefer automated form entry, validation, record and CSV checks whenever supported. Read-only discovery limits exploration now, not the synthetic interactions authored for later approved execution. Normal generation requires zero manual cases. Consult automation_policy.capabilities: browser restarts, tabs, profiles, dialog decisions, controlled storage denial, exact CSV content and download absence are supported. When allow_manual is explicitly true, a manual exception still needs manual_reason with an exact requirement source, supporting quote and verbatim external dependency or explicit human activity. Do not manufacture a dependency from a runtime limitation. Preserve all required coverage; report an unavoidable external dependency before publishing, never hide it in routine post-run homework. Evidence requests must support the claim. Include an accurate non-secret actor inventory with role/state and fresh-login versus reusable-session needs. Start each independent case from declared prerequisites. Do not embed credential values. Only genuine missing intended behavior or evidence belongs in questions, linked to an existing requirement where applicable. Numeric expected results require supplied independent values or transparent derivations from the reviewed URS equations and unit equivalences. Where the URS permits hand calculations, retain explicit arithmetic and expected display strings in a generated text fixture for human review. Do not copy application outputs or source-code results as an oracle. Do not invent mandatory preparer identities, separate reviewer assignments, approval gates, or external attachments that the URS does not require; the normal protocol approval reviews proposed derivations. Model-generated code is forbidden. Locators must be supported by observations. Include plan schema/runtime version 1. Context hashes are assigned by the caller. When selected context informs a case, include case-level citations using the supplied source ID and exact supporting location; do not invent sources or cite irrelevant material. Assertion variable paths use names established by read/request/download/dialog/observe_download actions; request results expose status and body. Download results expose text (valid UTF-8 only), filename, byte_length, utf8_valid, has_bom, line_endings and final_newline; use csv_equals on .text for parsed CSV comparison. observe_download exposes count, activated, filenames and downloads; assert count zero to verify absence. Dialog results expose count, type, message and dialogs. Browser profiles/tabs use declared names; main is the initial profile and tab. Storage denial is scoped to the active tab and reloads it while preserving stored data. Never assume implementation/database inspection is evidence.';
     const input = {
       urs: options.urs,
-      accepted_decisions: acceptedDecisionLedger(options.urs),
+      accepted_decisions: decisionRequestLedger(options.urs),
       source_correspondence: sourceCorrespondence,
       automation_policy: {
         allow_manual: !!options.allowManual,
@@ -846,10 +861,11 @@ export async function generatePlan(
       target: { url: options.url, allowed_origins: origins },
       context: material,
       observations,
-      existing: options.existing,
       feedback: options.feedback,
       thoroughness: tier,
-      obligation_sources: obligationSourceCatalog(options.urs),
+      obligation_sources: obligationSourceCatalog(options.urs).map(
+        ({ requirement_id, source }) => ({ requirement_id, source }),
+      ),
       available_reference_files: inputCatalog.references,
       runtime_contract: {
         question_kinds:
@@ -857,7 +873,9 @@ export async function generatePlan(
         id_scope:
           'Step IDs are unique within each case; different cases may each use 01, 02, etc. Address a step by case_id and step_id together. Case, assertion, evidence, actor, obligation, and question IDs must remain globally unique across the plan.',
         source_syntax:
-          'Copy an exact source from obligation_sources, such as URS-001/statement, URS-001/details/0, or URS-001/table. Do not use free-form clause labels.',
+          'Copy an exact source from obligation_sources, such as URS-001/statement, URS-001/details/0, or URS-001/table. Read its authoritative text in the matching requirement in urs; the catalog lists bindings without duplicating their content. Do not use free-form clause labels.',
+        input_references:
+          'Fields ending in _pointer are JSON pointers into this request, not file paths or literal expected values. Follow them to the complete text already present in candidate or urs. Accepted decisions point to retained answers and resolution provenance in urs. Copy the referenced text exactly when an edit requires it. candidate is the current complete plan and fixtures; prior versions are enforced locally rather than repeated in the request.',
         anonymous_access:
           'A public no-login actor uses state signed_out and mode anonymous. This combination is supported.',
         artifact_rules: PLAN_INPUT_INSTRUCTIONS,
@@ -890,7 +908,7 @@ export async function generatePlan(
             ...input,
             ...extra,
             candidate,
-            edit_catalog: planEditCatalog(candidate, permissions),
+            edit_catalog: planEditRequestCatalog(candidate, permissions),
             rejected_proposal: rejected,
             validation_errors: [
               ...(Array.isArray(extra.validation_errors) ? extra.validation_errors : []),
