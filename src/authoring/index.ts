@@ -254,6 +254,8 @@ export async function draftUrs(
     bindings?: Bindings;
     discoveryActor?: string;
     allowInteractions?: boolean;
+    /** Keep the first locally validated draft for the requirements review. */
+    guided?: boolean;
   },
 ): Promise<AuthoringResult<Urs>> {
   const { tier, budget, client } = runtime(options, options.bindings);
@@ -275,7 +277,7 @@ export async function draftUrs(
         url: options.url,
         bindings: options.bindings,
         discoveryActor: options.discoveryActor,
-        allowInteractions: options.allowInteractions,
+        allowInteractions: options.guided ? false : options.allowInteractions,
         signal: options.signal,
       });
       try {
@@ -317,7 +319,7 @@ export async function draftUrs(
       );
     if (existing) value = preserveExisting(existing, value);
     await requireValidAuthoredStructure(value, options.root);
-    for (let i = 0; i < PRESETS[tier].reviews; i++) {
+    for (let i = 0; !options.guided && i < PRESETS[tier].reviews; i++) {
       options.onProgress?.(`Reviewing requirements (${i + 1}/${PRESETS[tier].reviews}).`);
       const review = await client.complete(
         reviewSchema,
@@ -672,6 +674,8 @@ export async function generatePlan(
     allowInteractions?: boolean;
     allowedOrigins?: string[];
     discoveryActor?: string;
+    /** Use one page observation and author the approved scope directly. */
+    guided?: boolean;
     rehearse?: boolean;
     /** Request one findings-only coverage review after the local checks. */
     reviewCoverage?: boolean;
@@ -698,7 +702,7 @@ export async function generatePlan(
     allowedOrigins: origins,
     bindings: options.bindings,
     discoveryActor: options.discoveryActor,
-    allowInteractions: options.allowInteractions,
+    allowInteractions: options.guided ? false : options.allowInteractions,
     signal: options.signal,
   });
   let rehearsal: Rehearsal | undefined;
@@ -840,6 +844,7 @@ export async function generatePlan(
     questions.push(...material.warnings);
     const observations: PageObservation[] = [];
     try {
+      if (options.guided) options.onProgress?.('Inspecting the application.');
       observations.push(await browser.open());
       if (typeof browser.sourceCorrespondence === 'function')
         sourceCorrespondence = await browser.sourceCorrespondence(material.hashes);
@@ -858,7 +863,8 @@ export async function generatePlan(
         .filter((field) => Boolean(binding[field as 'username' | 'password' | 'token']))
         .map((field) => id + '.' + field),
     );
-    const limit = { quick: 4, standard: 8, thorough: 12 }[tier];
+    discoveryComplete = Boolean(options.guided);
+    const limit = options.guided ? 0 : { quick: 4, standard: 8, thorough: 12 }[tier];
     for (let index = 0; index < limit; index++) {
       options.onProgress?.(`Inspecting application (${index + 1}/${limit}).`);
       const action = await completeProtocol(
@@ -894,6 +900,9 @@ export async function generatePlan(
     options.onProgress?.('Authoring the qualification plan and fixtures.');
     const prompt =
       BASE +
+      (options.guided
+        ? '\nAuthor a compact executable suite for the accepted requirements. Cover each applicable requirement and its material conditions with the smallest useful set of representative cases. Prefer exact accessible locators from the browser observation or linked source. Keep procedures self-contained with disposable synthetic data, and take extra evidence only when it supports a requirement. The browser dry run is part of preparation; leave independent expected outcomes fixed.'
+        : '') +
       '\nRetained URS questions with accepted resolution records document human decisions. Preserve those decisions and do not copy them into unresolved plan questions. New uncertainties must use new question IDs.' +
       '\nAccepted_decisions is the durable record of reviewed delegated defaults and human decisions. Implement those decisions in executable assertions; never reopen them under new question IDs, turn them into human setup tasks, or require additional evidence unless the reviewed URS explicitly requires it. A source_correspondence entry proves only that the named selected script has identical bytes to the named deployed script; it supersedes a stale concern about that script match, not scientific correctness. If scripts do not match, continue black-box tests against the reviewed behavior. Keep implementation provenance limitations as observations, not invented acceptance gates. Use concrete representative boundaries with independent derivations, not an exhaustive precision classification job or invented product limits. Do not expand a storage key into a cross-deployment matrix unless the URS explicitly requires that scope. Do not invent new safeguards or features from recommendations. Ordinary protocol approval reviews generated arithmetic fixtures; no extra reviewer, attachment, or identity collection is needed. Genuine missing consequential behavior remains a specific requirement_decision question. Execution_preparation is permitted only for explicitly opted-in, grounded manual exceptions; never claim missing evidence was obtained.' +
       '\n' +
@@ -1227,7 +1236,7 @@ export async function generatePlan(
         rehearsalWarning = `Rehearsal did not complete. ${detail}`;
       }
     }
-    if (discoveryComplete && options.reviewCoverage) {
+    if (discoveryComplete && options.reviewCoverage && !options.guided) {
       options.onProgress?.('Collecting advisory protocol coverage findings.');
       const reviewInstructions =
         BASE +

@@ -37,9 +37,9 @@ import {
   findAutomationResume,
   loadAutomationResume,
 } from './authoring/automation-resume.js';
-import { rehearsePlan } from './authoring/rehearsal.js';
-import { redact } from './authoring/security.js';
-import { validatePlanStructure } from './compiler.js';
+import { checkPlanInBrowser, rehearsePlan } from './authoring/rehearsal.js';
+import { redact, safeUrl } from './authoring/security.js';
+import { validatePlan, validatePlanStructure } from './compiler.js';
 import {
   collectPlanInputCatalog,
   planInputPathError,
@@ -136,6 +136,7 @@ async function authoring(
     resolution?: boolean;
     resolutionSuggestions?: boolean;
     requirementsDraft?: boolean;
+    validation?: boolean;
     referenceFiles?: string[];
   } = {},
 ): Promise<AuthoringOptions> {
@@ -157,7 +158,7 @@ async function authoring(
   }
   provider = providerSchema.parse(provider);
   let tier = thoroughnessSchema.parse(opts.thoroughness ?? project.thoroughness ?? 'standard');
-  if (!options.resolution && !opts.thoroughness && !opts.yes) {
+  if (!options.resolution && !options.validation && !opts.thoroughness && !opts.yes) {
     terminal();
     const capLabel = (level: keyof typeof PRESETS) =>
       `$${(opts.maxSpend ?? PRESETS[level].cap).toFixed(2)} max per command`;
@@ -212,7 +213,9 @@ async function authoring(
     console.log(
       'Local HTML context includes its source and bounded JavaScript companions within the selected source folder.',
     );
-  if (options.requirementsDraft)
+  if (options.validation)
+    console.log('This ceiling covers requirements and IOQ authoring for the whole validation.');
+  else if (options.requirementsDraft)
     console.log(
       'This ceiling covers requirements drafting and the recommendation review, including edited review updates.',
     );
@@ -597,6 +600,229 @@ async function generateRequirements(
     await renderUrs(await loadUrs(file), file.replace(/\.ya?ml$/i, ''), opts.pdf);
   }
 }
+
+discovery(
+  paid(
+    program
+      .command('validate')
+      .description('Draft, review, dry-run, and execute a software validation')
+      .option('--urs <file>', 'Working requirements file', 'urs.yaml')
+      .option('--url <url>', 'Deployed application URL')
+      .option(
+        '--context <location>',
+        'Application source or supporting document (repeatable)',
+        (value: string, previous: string[]) => [...previous, value],
+        [] as string[],
+      )
+      .option('--no-pdf', 'Keep readable documents and reports in HTML'),
+  ),
+).action(async (opts, command) => {
+  const directory = root(command);
+  const file = await safePath(directory, opts.urs);
+  const project = await loadProject(directory);
+  const { url } = await prepareUrsInputs(directory, {
+    locations: opts.context,
+    url: opts.url,
+    interactive: !!process.stdin.isTTY && !opts.yes && !project.target_url,
+  });
+  if (!url) throw new Error('Supply the deployed application URL with --url.');
+  const target = safeUrl(url).href;
+  let shared: Promise<AuthoringOptions> | undefined;
+  const getAuthoring = () =>
+    (shared ??= authoring(command, { validation: true }).then(sharedRequirementsAuthoring));
+  let document;
+  if (await exists(file)) {
+    document = await loadUrs(file);
+  } else {
+    console.log('Drafting requirements.');
+    const draft = await draftUrs({
+      ...(await getAuthoring()),
+      url: target,
+      guided: true,
+      bindings: await discoveryBindings(command, target),
+      discoveryActor: opts.discoveryActor,
+    });
+    await retainResult(directory, draft);
+    if (!draft.value || draft.incomplete) return;
+    await writeNew(file, stringify(draft.value));
+    document = draft.value;
+  }
+  if (unresolvedQuestions(document).length) {
+    await resolveUrsFile(
+      { root: directory, file: opts.urs, url: target },
+      requirementsReviewRuntime(directory, target, getAuthoring),
+    );
+    document = await loadUrs(file);
+    if (unresolvedQuestions(document).length) {
+      console.log('Requirements review is saved. Run validate again to continue.');
+      return;
+    }
+  }
+  const catalog = await collectPlanInputCatalog(directory, document);
+  const ursIssues = [
+    ...new Set([...(await checkUrsStructure(document, directory)), ...catalog.errors]),
+  ];
+  if (ursIssues.length) throw new Error(ursIssues.join('\n'));
+  const ursView = file.replace(/\.ya?ml$/i, '');
+  await renderUrs(document, ursView, opts.pdf);
+  console.log(`Review the requirements at ${ursView}.html`);
+  terminal();
+  if (
+    !answer(
+      await confirm({
+        message: `Approve these requirements and authorize synthetic browser tests at ${target}?`,
+        initialValue: false,
+      }),
+    )
+  ) {
+    console.log('Requirements saved. Run validate again when you are ready to approve them.');
+    return;
+  }
+  const approvedAt = new Date().toISOString();
+  const current = await loadProject(directory);
+  const prior = current.current_candidate
+    ? await inspectCandidate(directory, current.current_candidate)
+    : undefined;
+  let savedFiles: Record<string, string | Buffer> | undefined;
+  if (
+    prior &&
+    !prior.errors.length &&
+    isDeepStrictEqual(prior.urs, document) &&
+    prior.plan.target.url === target &&
+    prior.plan.target.allowed_origins.every((origin) => origin === new URL(target).origin) &&
+    prior.plan.cases.every((item) => !item.manual) &&
+    isDeepStrictEqual(current.context, project.context) &&
+    !opts.source
+  ) {
+    const saved = Object.fromEntries(
+      await Promise.all(
+        [...new Set([...prior.plan.fixtures, ...prior.plan.references])].map(async (relative) => [
+          relative,
+          await readFile(await safePath(prior.directory, relative)),
+        ]),
+      ),
+    );
+    if (
+      catalog.references.every((ref) => saved[ref.path] && sha256(saved[ref.path]) === ref.sha256)
+    )
+      savedFiles = saved;
+  }
+  let plan: Plan;
+  let files: Record<string, string | Buffer>;
+  if (savedFiles && prior) {
+    plan = prior.plan;
+    files = savedFiles;
+    console.log('Using the saved IOQ and tests.');
+  } else {
+    console.log('Preparing the IOQ and Playwright tests.');
+    const result = await generatePlan({
+      ...(await getAuthoring()),
+      urs: document,
+      url: target,
+      guided: true,
+      bindings: await discoveryBindings(command, target),
+      discoveryActor: opts.discoveryActor,
+    });
+    await retainResult(directory, result);
+    if (!result.value || result.incomplete) return;
+    plan = result.value.plan;
+    const inputIssues = await validateGeneratedPlanInputs(directory, result.value, catalog);
+    if (inputIssues.length) throw new Error(inputIssues.join('\n'));
+    files = Object.fromEntries(result.value.fixtures.map(({ path, content }) => [path, content]));
+    for (const ref of catalog.references) {
+      const bytes = await readFile(await safePath(directory, ref.path));
+      if (sha256(bytes) !== ref.sha256)
+        throw new Error(`Requirement reference changed during preparation: ${ref.path}`);
+      files[ref.path] = bytes;
+    }
+  }
+  const blockers = [...validatePlan(plan, document), ...auditAutomation(plan, document)];
+  if (blockers.length) {
+    const candidate = await createCandidate(directory, document, plan, { files, pdf: opts.pdf });
+    throw new Error(
+      `Review the IOQ at ${path.join(candidate.directory, 'ioq.html')}\n${blockers.join('\n')}`,
+    );
+  }
+  console.log(`Dry-running ${plan.cases.length} browser tests.`);
+  const inputs = Object.entries(files).map(([path, content]) => ({ path, content }));
+  let bindings: Bindings = {};
+  let dryRun;
+  let rehearsalWarning: string | undefined;
+  try {
+    bindings = await prepareBindings(plan.access, directory, target, plan);
+    dryRun = await checkPlanInBrowser(directory, plan, inputs, bindings, abort.signal, console.log);
+    rehearsalWarning = dryRun.rehearsalWarning;
+  } catch (error) {
+    const secrets = Object.values(bindings).flatMap(({ password, token }) =>
+      [password, token].filter((item): item is string => !!item),
+    );
+    rehearsalWarning = redact(
+      error instanceof Error ? error.message : 'The browser could not finish.',
+      secrets,
+    );
+  }
+  const finalPlan = dryRun?.plan ?? plan;
+  const candidate =
+    savedFiles && prior && isDeepStrictEqual(finalPlan, prior.plan)
+      ? prior
+      : await createCandidate(directory, document, finalPlan, { files, pdf: opts.pdf });
+  const diagnostics = await safePath(directory, `drafts/${randomUUID()}.dry-run.json`);
+  await writeJson(diagnostics, {
+    candidate: candidate.id,
+    rehearsal: dryRun?.rehearsal,
+    before_repair: dryRun?.rehearsalBeforeRepair,
+    warning: rehearsalWarning,
+  });
+  console.log(
+    `IOQ: ${path.join(candidate.directory, 'ioq.html')}\nPlaywright tests: ${path.join(candidate.directory, 'tests')}\nDry run: ${diagnostics}`,
+  );
+  const failed = dryRun?.rehearsal.cases.filter((item) => item.status !== 'passed') ?? [];
+  if (!dryRun || rehearsalWarning || failed.length) {
+    if (rehearsalWarning) console.log(`Dry run stopped: ${rehearsalWarning}`);
+    for (const item of failed) {
+      const action = dryRun?.rehearsal.action_issues?.find((issue) => issue.case_id === item.id);
+      const check = dryRun?.rehearsal.observations.find(
+        (entry) => entry.case_id === item.id && entry.status !== 'passed',
+      );
+      if (action) {
+        console.log(
+          `  ${item.id} / ${action.step_id}: ${action.operation} action ${action.action_index + 1} (${action.reason.replaceAll('_', ' ')}).`,
+        );
+        continue;
+      }
+      console.log(
+        `  ${item.id}${check ? ` / ${check.assertion_id ?? check.step_id}` : ''}: ${check?.message ?? item.status}`,
+      );
+    }
+    console.log('The IOQ is saved. Run validate again after addressing the dry run results.');
+    process.exitCode = 1;
+    return;
+  }
+  const execution = await approveCandidate(directory, {
+    candidate: path.relative(directory, candidate.directory),
+    pdf: opts.pdf,
+    requirementsApproval: {
+      approved_at: approvedAt,
+      urs_sha256: sha256(JSON.stringify(document)),
+      target_url: target,
+      rehearsal_plan_sha256: dryRun.rehearsal.plan_sha256,
+      rehearsal_input_hashes: Object.fromEntries(
+        inputs.map(({ path, content }) => [path, sha256(content)]),
+      ),
+    },
+  });
+  console.log('Dry run passed. Executing the checked tests.');
+  const run = await executePackage(directory, execution.package_id, {
+    bindings,
+    signal: abort.signal,
+  });
+  const report = await renderReport(directory, { runId: run.id, pdf: opts.pdf });
+  const passed = run.cases.filter((item) => item.status === 'passed').length;
+  console.log(
+    `Result: ${passed}/${run.cases.length} cases passed.${run.complete ? '' : ' Execution stopped early.'}\nReport: ${report.html}`,
+  );
+  if (!run.complete || passed !== run.cases.length) process.exitCode = 1;
+});
 
 const context = program
   .command('context')

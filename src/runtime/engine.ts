@@ -153,6 +153,14 @@ export function compare(actual: unknown, assertion: Assertion): boolean {
 }
 
 type Step = TestCase['steps'][number];
+export type ActionIssue = {
+  case_id: string;
+  step_id: string;
+  action_index: number;
+  operation: Action['op'];
+  reason: 'locator_missing' | 'locator_ambiguous' | 'action_failed';
+  exact_match_available?: true;
+};
 type DownloadValue = {
   path: string;
   text?: string;
@@ -204,11 +212,48 @@ export class ExecutionEngine {
     private readonly options: WorkerContext,
     readonly plan: Plan,
     private readonly bindings: Bindings,
+    private readonly onActionIssue?: (issue: ActionIssue) => void,
   ) {
     this.secrets = Object.values(bindings).flatMap((binding) =>
       [binding.password, binding.token].filter((item): item is string => Boolean(item)),
     );
     this.clean = redactor(this.secrets);
+  }
+
+  /** Diagnose the failing step without retaining Playwright errors or page contents. */
+  private async diagnoseAction(
+    action: Action,
+    index: number,
+    error: unknown,
+  ): Promise<ActionIssue> {
+    const issue: ActionIssue = {
+      case_id: this.caseId,
+      step_id: this.stepId,
+      action_index: index,
+      operation: action.op,
+      reason: 'action_failed',
+    };
+    const page = this.page;
+    if (!page || page.isClosed() || !('locator' in action)) return issue;
+    try {
+      const count = await locate(page, action.locator).count();
+      if (count === 0) issue.reason = 'locator_missing';
+      if (count > 1) {
+        issue.reason = 'locator_ambiguous';
+        if (
+          error instanceof Error &&
+          error.message.includes('strict mode violation') &&
+          action.locator.exact === false &&
+          ['role', 'label', 'text'].includes(action.locator.by) &&
+          (await locate(page, { ...action.locator, exact: true }).count()) === 1
+        ) {
+          issue.exact_match_available = true;
+        }
+      }
+    } catch {
+      // A disconnected browser or invalid selector can prevent finer diagnosis.
+    }
+    return issue;
   }
 
   async setBrowser(browser: Browser): Promise<void> {
@@ -883,7 +928,15 @@ export class ExecutionEngine {
         this.stepId = step.id;
         let stepFailure: unknown;
         try {
-          for (const action of step.actions) await this.action(action);
+          for (const [index, action] of step.actions.entries()) {
+            try {
+              await this.action(action);
+            } catch (error) {
+              if (this.onActionIssue)
+                this.onActionIssue(await this.diagnoseAction(action, index, error));
+              throw error;
+            }
+          }
           for (const assertion of step.assertions) await this.assertion(assertion);
         } catch (error) {
           stepFailure = error;

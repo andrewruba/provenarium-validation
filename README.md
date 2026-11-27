@@ -5,133 +5,29 @@ workflows, centered on user requirements, readable protocols, and test evidence.
 
 ## Workflow
 
-Start with your source code or design documents and the deployed application
-URL. `provenarium urs` collects those inputs, shows the authoring cost and data
-preview, and drafts a User Requirements Specification (URS): what the application
-must do for its users. It prepares concrete recommendations and their requirement
-changes, then presents one accept/edit review. Recommendations distinguish
-documented behavior, observed implementation, and proposed defaults.
-
 ```sh
-provenarium urs
-# Accept the prepared recommendations or edit selected items in the review.
-
-# Turn the reviewed requirements into a protocol and tests:
-provenarium generate --urs urs.yaml --url https://app.example.com
-# Review the generated IOQ before approving:
-provenarium approve
-provenarium run
-provenarium report
+provenarium validate --context ../my-app --url https://app.example.com
 ```
 
-Use the requirements filename printed by setup. Existing files are preserved,
-and a new revision receives a separate filename. `generate --urs` produces a
-human-readable Installation and Operational Qualification (IOQ) protocol and
-deterministic Playwright tests.
+The CLI prepares a draft User Requirements Specification (URS) from the source
+and deployed app. Review any proposed answers and approve the resulting URS.
+That approval authorizes synthetic browser tests on the displayed deployment.
+The CLI then generates the readable IOQ and Playwright tests, runs a browser dry
+run, and, if it passes, executes the checked tests and prints the summary and report path.
 
-Authoring sends the document's typed schema to the provider's structured-output
-API. Corrections and revisions requested through feedback use named edits. The
-CLI validates those edits locally and protects existing checks, identifiers,
-and expected results.
+To start with a requirements file you already have, run
+`provenarium validate --urs urs.yaml`. A new project can also start with just
+`provenarium validate` and enter its source and URL at the prompts.
 
-When revising manual cases, generation converts one case at a time and keeps each
-successful conversion. The technical correction allowance covers malformed
-output and invalid edits. As a plan grows, revisions use bounded case views.
-The complete plan stays local for validation.
+The dry run can retry once after narrowing an ambiguous locator to a unique
+exact match. Application failures and other test problems are retained with the
+IOQ and dry run results. Address the reported issue and run `provenarium validate`
+again to check the saved tests. Pass `--urs` again if you used a different
+requirements filename. After a successful dry run, the CLI freezes the exact
+plan and inputs for execution and prints the final summary and report location.
 
-Retrying `generate` with the same inputs reuses matching saved conversions. If
-all conversions are complete, the CLI can package an unapproved candidate
-without a provider call. Use `generate --urs urs.yaml --resume drafts/<record>.json`
-to select a specific record from the project and add `--rehearse` to run its
-candidate procedures. The CLI verifies the original candidate, reviewed URS,
-target URL, and source hashes before replaying the retained edits.
-
-Protocol generation checks requirement links, actor declarations, and required
-files before creating a candidate. It corrects unambiguous source notation and
-can request up to two technical corrections under the same spending ceiling.
-That limit also covers malformed provider JSON and schema-invalid documents.
-Rejected responses remain diagnostic data, with redacted output and exact field
-errors retained in the authoring record; they are never executed as a plan.
-Diagnosed invalid draft assertions can be corrected without freezing their
-unsupported syntax as an accepted expectation. Valid expectations and existing
-reviewed expectations remain protected. Proposed assertion changes and rejected
-corrections are retained for review. CSV checks compare complete decoded rows;
-text alternatives use literal strings, without generated regular expressions.
-Uncorrected tool-format errors remain in an incomplete authoring record;
-genuine product decisions and missing required evidence still need review.
-
-For an existing draft, `urs resolve urs.yaml` opens the same consolidated review.
-It honors requests such as “choose something reasonable” by preparing proposed
-defaults for approval, while preserving concrete answers already supplied.
-The review offers acceptance, selected edits, the complete before/after changes,
-or saving for later. One acceptance records the reviewed answers and requirement
-changes together. Questions and accepted answers remain for traceability.
-The URS also records whether you accepted the agent's recommendation or supplied
-your own answer, along with the rationale and sources. Protocol generation uses
-these accepted decisions as test policy: an approved default becomes concrete
-automated checks, rather than another question or a task left for you after execution.
-Once the review is complete, continue with the printed `generate --urs` command.
-All authoring requests in the command share one spending ceiling.
-Use `urs resolve --answers-only` to type answers without an AI request, or edit
-the `answer` fields directly and return to `urs resolve` for review.
-
-Generated protocols default to automated execution. Browser tabs, disposable
-persistent profiles and restarts, confirmation dialogs, denied storage, and CSV
-download details can be tested directly. `generate --allow-manual` permits a
-manual exception only when the requirements explicitly call for human work or
-name a genuine external dependency; the case must cite that requirement.
-The tool must preserve real application failures and cannot invent new product
-obligations to make a test possible or remove a blocker.
-
-`generate` performs local checks and then presents the candidate for human
-review. `--rehearse` authorizes synthetic browser procedures before review. The
-authoring record shows their results and any errors starting the rehearsal.
-Add `--review-coverage` to request one advisory AI review after any requested
-rehearsal. Its findings and errors appear separately from approval blockers.
-The candidate is ready for human review with or without AI findings.
-
-Generated drafts are checked for structural defects before being written as a
-working URS. Source observations belong in citations; file references must name
-real supporting files. For older drafts with misplaced provenance, run
-`urs check urs.yaml --fix-references` to review evidence-backed reference repairs
-without a provider call. Genuine missing files remain readiness blockers.
-
-You can supply the inputs directly instead of using prompts:
-
-```sh
-provenarium urs generate --context ../my-app --context ./design.docx \
-  --url https://app.example.com
-```
-
-Manual writing and existing requirements remain available as alternatives:
-
-| Starting point | Command | What you do next |
-| --- | --- | --- |
-| Write requirements yourself | `provenarium urs template` | Fill in the blank `urs.yaml`. |
-| Already have requirements in the supported YAML format | `provenarium urs check urs.yaml` | Resolve any issues, then continue to `generate --urs`. |
-
-Context added during setup is reused for later protocol generation. You do not
-need to name each source or link it again. Optional `context` commands let you
-inspect and manage those links. See the [CLI reference](docs/cli-reference.md)
-for additional authoring options.
-
-The CLI supports:
-
-- Blank, AI-assisted, or human-authored YAML requirements, informed by linked
-  source code, design documents, and other context.
-- AI-assisted IOQ and test authoring, followed by approval that freezes files
-  by hash. Execution and reporting use fixed procedures without model calls.
-- Guided terminal prompts for the user's provider API key and the application
-  accounts needed for positive and negative access tests. Secrets stay out of
-  requirements, generated tests, and reports.
-- An executed record, screenshots and other evidence, and a requirements
-  traceability matrix.
-
-Users supply context appropriate to the deployed application. During discovery,
-the tool compares linked JavaScript hashes with scripts served by the application
-and records exact matches automatically. A match establishes those script bytes,
-not equivalence of the entire deployment or correctness of the implementation.
-Validation decisions remain with the organization responsible for intended use.
+The individual `urs`, `generate`, `approve`, `run`, and `report` commands remain
+available for teams that manage each step separately. [CLI reference](docs/cli-reference.md)
 
 ## Installation and use
 
@@ -159,11 +55,9 @@ node bin/provenarium.mjs browser install
 node bin/provenarium.mjs --help
 ```
 
-Start with `provenarium urs` for guided requirements setup.
-OpenAI and Anthropic authoring offer Quick ($5), Standard ($15), and Thorough
-($40) default spending ceilings per command. Draft and protocol authoring let you choose
-the level before confirming the spend, with your last choice preselected.
-Approval, execution, and reporting make no provider calls.
+OpenAI and Anthropic authoring use a spending ceiling shown before the first
+provider call. `validate` shares it across requirements drafting, recommendations,
+and test authoring. The browser dry run, execution, and reporting run locally.
 
 Read the [CLI reference](docs/cli-reference.md), [installation and demonstration
 guide](docs/installation.md), [URS writing guide](docs/urs-writing-guide.md), and

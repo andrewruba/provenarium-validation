@@ -113,6 +113,43 @@ function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
   });
 }
 
+it('drafts guided requirements in one request before human review', async () => {
+  const fetchImpl = transport('openai', [urs]);
+  const result = await draftUrs({
+    root: process.cwd(),
+    provider: 'openai',
+    key: 'synthetic-key',
+    url: plan.target.url,
+    guided: true,
+    fetchImpl,
+  });
+  expect(result.incomplete).toBe(false);
+  expect(result.value).toEqual(urs);
+  expect(result.reviewRounds).toBe(0);
+  expect(fetchImpl).toHaveBeenCalledOnce();
+});
+
+it('authors guided protocol directly from browser observations and approved requirements', async () => {
+  const fetchImpl = transport('openai', [{ plan, fixtures: [] }]);
+  const result = await generatePlan({
+    root: process.cwd(),
+    provider: 'openai',
+    key: 'synthetic-key',
+    urs,
+    url: plan.target.url,
+    guided: true,
+    fetchImpl,
+  });
+  expect(result.incomplete).toBe(false);
+  expect(result.value?.plan.cases).toEqual(plan.cases);
+  expect(result.reviewRounds).toBe(0);
+  expect(fetchImpl).toHaveBeenCalledOnce();
+  const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
+  const input = JSON.parse(request.input[0].content[0].text);
+  expect(input.urs).toEqual(urs);
+  expect(input.observations).toMatchObject([{ controls: [{ label: 'Sample ID' }] }]);
+});
+
 function answeredUrs() {
   const document = structuredClone(urs);
   document.open_questions = [

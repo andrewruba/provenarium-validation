@@ -7,10 +7,12 @@ import {
   type Urs,
   type Plan,
   type Approval,
+  type RequirementsApproval,
   projectSchema,
   ursSchema,
   planSchema,
   approvalSchema,
+  requirementsApprovalSchema,
 } from './schema.js';
 import {
   atomicWrite,
@@ -247,11 +249,18 @@ export async function inspectCandidate(
 }
 export async function approveCandidate(
   root: string,
-  options: { candidate?: string; pdf?: boolean } = {},
+  options: { candidate?: string; pdf?: boolean; requirementsApproval?: RequirementsApproval } = {},
 ): Promise<Approval> {
   const candidate = await inspectCandidate(root, options.candidate);
   if (candidate.errors.length)
     throw new Error(`Approval blocked:\n${candidate.errors.map((e) => `- ${e}`).join('\n')}`);
+  const requirementsApproval = options.requirementsApproval
+    ? requirementsApprovalSchema.parse(options.requirementsApproval)
+    : undefined;
+  if (requirementsApproval) {
+    const errors = requirementsApprovalErrors(requirementsApproval, candidate.urs, candidate.plan);
+    if (errors.length) throw new Error(errors.join('\n'));
+  }
   const packageId = `pkg-${randomUUID()}`;
   const directory = await safePath(root, `packages/${packageId}`);
   const staging = await safePath(root, `.provenarium/staging/${packageId}`);
@@ -268,13 +277,22 @@ export async function approveCandidate(
     await writeJson(path.join(staging, 'context-hashes.json'), candidate.plan.context_hashes);
     for (const [relative, content] of Object.entries(compilePlan(candidate.plan)))
       await atomicWrite(await safePath(staging, relative), content);
-    const html = protocolHtml(candidate.plan, candidate.urs, packageId);
+    const html = protocolHtml(candidate.plan, candidate.urs, packageId, requirementsApproval);
     await atomicWrite(path.join(staging, 'ioq.html'), html);
     await atomicWrite(path.join(staging, 'urs.html'), ursHtml(candidate.urs));
     if (options.pdf !== false) await renderPdf(html, path.join(staging, 'ioq.pdf'));
     const files: Record<string, string> = {};
     for (const relative of await listFiles(staging))
       files[relative] = sha256(await readFile(await safePath(staging, relative)));
+    if (requirementsApproval) {
+      const errors = requirementsApprovalErrors(
+        requirementsApproval,
+        candidate.urs,
+        candidate.plan,
+        files,
+      );
+      if (errors.length) throw new Error(errors.join('\n'));
+    }
     const approval: Approval = {
       schema_version: 1,
       package_id: packageId,
@@ -282,6 +300,7 @@ export async function approveCandidate(
       runtime_version: 1,
       files,
       tests: Object.keys(compilePlan(candidate.plan)),
+      ...(requirementsApproval ? { requirements_approval: requirementsApproval } : {}),
     };
     approvalSchema.parse(approval);
     await writeJson(path.join(staging, 'approval.json'), approval);
@@ -295,4 +314,33 @@ export async function approveCandidate(
     await rm(staging, { recursive: true, force: true });
     throw error;
   }
+}
+
+/** Link execution authorization to the approved requirements and rehearsal snapshot. */
+export function requirementsApprovalErrors(
+  approval: RequirementsApproval,
+  urs: Urs,
+  plan: Plan,
+  inputHashes?: Record<string, string>,
+): string[] {
+  const errors: string[] = [];
+  if (approval.urs_sha256 !== sha256(JSON.stringify(urs)))
+    errors.push('The candidate requirements differ from the reviewed URS.');
+  const target = new URL(plan.target.url);
+  if (new URL(approval.target_url).href !== target.href)
+    errors.push('The candidate target differs from the authorized deployment.');
+  if (plan.target.allowed_origins.some((origin) => origin !== target.origin))
+    errors.push('The candidate uses origins outside the authorized deployment.');
+  if (approval.rehearsal_plan_sha256 !== sha256(JSON.stringify(plan)))
+    errors.push('The candidate plan differs from the rehearsed plan.');
+  const inputs = new Set([...plan.fixtures, ...plan.references]);
+  if (Object.keys(approval.rehearsal_input_hashes).some((file) => !inputs.has(file)))
+    errors.push('The rehearsal input inventory differs from the candidate.');
+  for (const input of inputs) {
+    if (!Object.hasOwn(approval.rehearsal_input_hashes, input))
+      errors.push(`The rehearsal did not record candidate input ${input}.`);
+    else if (inputHashes && approval.rehearsal_input_hashes[input] !== inputHashes[input])
+      errors.push(`Candidate input changed after rehearsal: ${input}.`);
+  }
+  return errors;
 }

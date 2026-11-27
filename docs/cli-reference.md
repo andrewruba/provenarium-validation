@@ -4,6 +4,30 @@ The CLI owns ordinary local files. `--project <directory>` selects the validatio
 project; file inputs resolve relative to that project, and output paths stay
 within it. No project initialization command is required.
 
+## Guided validation
+
+```sh
+provenarium validate --context ../application --url https://app.example.com
+```
+
+Run `validate` to draft requirements, resolve material decisions, and approve
+one reviewed URS. Approval authorizes synthetic browser tests against the
+displayed target. The CLI generates the IOQ and Playwright tests, performs a
+browser dry run, and executes the frozen package if all checks pass. It prints
+the result and report path automatically. Start from an existing requirements
+file with `provenarium validate --urs urs.yaml` and add `--url` if the project
+has no saved target.
+
+The dry run retries once when it identifies a broader locator that can be
+narrowed to a unique exact match. Expected results stay fixed. If the dry run
+fails, it records the case and failed check and saves the IOQ for investigation.
+Address the issue and rerun `validate` with the same working URS to reuse the
+saved plan. `--yes` accepts the provider preview for scripting. Approval of the
+requirements and synthetic browser execution is an interactive prompt.
+
+The commands below let teams control individual steps, including the optional
+coverage review and explicit approval of a generated IOQ.
+
 ## Requirements
 
 Start with the guided command:

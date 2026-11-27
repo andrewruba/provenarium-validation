@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added `validate` to draft and resolve requirements, obtain one approval of the
+  URS, generate the IOQ and Playwright tests, and dry-run the browser procedures.
+  On success it executes the frozen tests and renders the summary. On a dry run
+  failure it saves the IOQ and diagnostics for the next attempt.
 - Made protocol coverage review optional. `generate --review-coverage` requests
   one advisory review after local checks and any requested rehearsal. Findings
   and review errors are recorded for the human reviewer without editing or

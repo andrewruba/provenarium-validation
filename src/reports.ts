@@ -6,6 +6,7 @@ import {
   type Urs,
   type Run,
   type Observation,
+  type RequirementsApproval,
   runSchema,
   planSchema,
   observationSchema,
@@ -14,7 +15,7 @@ import {
 import { atomicWrite, exists, readJson, readYaml, safePath, sha256 } from './files.js';
 import { loadUrs, questionStatus, requirements } from './urs.js';
 import { describeAction, describeAssertion } from './compiler.js';
-import { loadProject } from './project.js';
+import { loadProject, requirementsApprovalErrors } from './project.js';
 
 export const escapeHtml = (value: unknown): string =>
   String(value ?? '').replace(
@@ -58,7 +59,18 @@ export function ursHtml(urs: Urs): string {
     }`,
   );
 }
-export function protocolHtml(plan: Plan, urs: Urs, identity: string): string {
+function requirementsApprovalHtml(approval?: RequirementsApproval): string {
+  return approval
+    ? `<p>Requirements approved ${e(approval.approved_at)} for ${e(approval.target_url)}. The generated IOQ and tests were frozen after the browser dry run.</p>`
+    : '';
+}
+
+export function protocolHtml(
+  plan: Plan,
+  urs: Urs,
+  identity: string,
+  requirementsApproval?: RequirementsApproval,
+): string {
   const decisions = plan.questions.filter((q) => q.kind !== 'execution_preparation');
   const cases = plan.cases
     .map(
@@ -85,7 +97,7 @@ export function protocolHtml(plan: Plan, urs: Urs, identity: string): string {
     .join('');
   return layout(
     plan.title,
-    `<p>IOQ protocol · Package/candidate <strong>${e(identity)}</strong> · URS ${e(urs.document.id)} revision ${e(urs.document.revision)}</p><h2>Purpose and scope</h2><p>${e(urs.document.intended_use)}</p><h2>Environment</h2>${table(['Target', 'Locale', 'Timezone', 'Viewport', 'Assertion timeout'], [[plan.target.url, plan.environment.locale, plan.environment.timezone, `${plan.environment.viewport.width} × ${plan.environment.viewport.height}`, `${plan.environment.timeout_ms} ms`]])}<p>Allowed origins: ${e(plan.target.allowed_origins.join(', '))}. Fixed Chromium procedures; whole-test retries disabled.</p><h2>Required access</h2><p>Before tests start, the CLI collects every listed account binding. Passwords and tokens are entered privately and are not included in this protocol. Roles and starting states are user declarations until tested.</p>${table(
+    `<p>IOQ protocol · Package/candidate <strong>${e(identity)}</strong> · URS ${e(urs.document.id)} revision ${e(urs.document.revision)}</p>${requirementsApprovalHtml(requirementsApproval)}<h2>Purpose and scope</h2><p>${e(urs.document.intended_use)}</p><h2>Environment</h2>${table(['Target', 'Locale', 'Timezone', 'Viewport', 'Assertion timeout'], [[plan.target.url, plan.environment.locale, plan.environment.timezone, `${plan.environment.viewport.width} × ${plan.environment.viewport.height}`, `${plan.environment.timeout_ms} ms`]])}<p>Allowed origins: ${e(plan.target.allowed_origins.join(', '))}. Fixed Chromium procedures; whole-test retries disabled.</p><h2>Required access</h2><p>Before tests start, the CLI collects every listed account binding. Passwords and tokens are entered privately and are not included in this protocol. Roles and starting states are user declarations until tested.</p>${table(
       ['Actor', 'Role / state', 'Access mode', 'Purpose', 'Cases'],
       plan.access.map((a) => [
         a.id,
@@ -193,6 +205,10 @@ export async function renderReport(
   const plan = planSchema.parse(await readJson(await safePath(packageDir, 'plan.json')));
   const urs = await loadUrs(await safePath(packageDir, 'urs.yaml'));
   const integrity: string[] = [];
+  if (approval.requirements_approval)
+    integrity.push(
+      ...requirementsApprovalErrors(approval.requirements_approval, urs, plan, approval.files),
+    );
   for (const [relative, hash] of Object.entries(approval.files)) {
     try {
       if (sha256(await readFile(await safePath(packageDir, relative))) !== hash)
@@ -298,7 +314,7 @@ export async function renderReport(
   const directory = await safePath(runDir ?? packageDir, 'reports');
   await mkdir(directory, { recursive: true });
   const htmlFile = await safePath(directory, run ? 'executed-record.html' : 'ioq.html');
-  let html = protocolHtml(plan, urs, packageId);
+  let html = protocolHtml(plan, urs, packageId, approval.requirements_approval);
   if (run) {
     const counts = Object.fromEntries(
       ['passed', 'failed', 'blocked', 'not_run', 'manual_pending'].map((s) => [
@@ -308,7 +324,7 @@ export async function renderReport(
     );
     html = layout(
       `Executed record — ${plan.title}`,
-      `<p>Run <strong>${e(run.id)}</strong> · Package ${e(packageId)}</p>${!run.complete ? '<p class="warning">INCOMPLETE RUN — execution did not finish.</p>' : ''}<p>Target: ${e(run.target_url)} · Release label: ${e(run.release_label || 'not supplied')}</p><p>Started: ${e(run.started_at)} · Ended: ${e(run.ended_at || 'not finalized')}</p>${table(['Status', 'Count'], Object.entries(counts))}${table(['Runtime', 'Version'], Object.entries(run.versions))}<h2>Account bindings</h2>${table(
+      `<p>Run <strong>${e(run.id)}</strong> · Package ${e(packageId)}</p>${requirementsApprovalHtml(approval.requirements_approval)}${!run.complete ? '<p class="warning">INCOMPLETE RUN — execution did not finish.</p>' : ''}<p>Target: ${e(run.target_url)} · Release label: ${e(run.release_label || 'not supplied')}</p><p>Started: ${e(run.started_at)} · Ended: ${e(run.ended_at || 'not finalized')}</p>${table(['Status', 'Count'], Object.entries(counts))}${table(['Runtime', 'Version'], Object.entries(run.versions))}<h2>Account bindings</h2>${table(
         ['Actor', 'Account', 'Declared role', 'Declared state'],
         Object.entries(run.accounts).map(([id, a]) => [id, a.username, a.role, a.state]),
       )}<h2>Case results</h2>${table(

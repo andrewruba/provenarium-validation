@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { planSchema, ursSchema } from '../src/schema.js';
+import { planSchema, ursSchema, type RequirementsApproval } from '../src/schema.js';
 import {
   approveCandidate,
   createCandidate,
@@ -14,6 +14,7 @@ import { applyResolutionProposal } from '../src/urs-resolution.js';
 import { parseYaml, safePath, sha256, writeJson } from '../src/files.js';
 import { compilePlan, validatePlan } from '../src/compiler.js';
 import { protocolHtml, renderReport, ursHtml } from '../src/reports.js';
+import { verifyApprovedPackage } from '../src/runtime/index.js';
 
 const roots: string[] = [];
 async function directory() {
@@ -79,6 +80,95 @@ const plan = planSchema.parse({
       ],
     },
   ],
+});
+
+function rehearsalAuthorization(fixturePlan = plan, inputHashes = {}): RequirementsApproval {
+  return {
+    approved_at: '2026-11-27T14:00:00.000Z',
+    urs_sha256: sha256(JSON.stringify(urs)),
+    target_url: new URL(fixturePlan.target.url).href,
+    rehearsal_plan_sha256: sha256(JSON.stringify(fixturePlan)),
+    rehearsal_input_hashes: inputHashes,
+  };
+}
+
+describe('execution authorized by a reviewed URS', () => {
+  it('freezes the rehearsed candidate and documents what the human approved', async () => {
+    const root = await directory();
+    const fixturePlan = { ...plan, fixtures: ['fixtures/sample.txt'] };
+    const content = 'rehearsed fixture';
+    const authorization = rehearsalAuthorization(fixturePlan, {
+      'fixtures/sample.txt': sha256(content),
+    });
+    await createCandidate(root, urs, fixturePlan, {
+      pdf: false,
+      files: { 'fixtures/sample.txt': content },
+    });
+    const approval = await approveCandidate(root, {
+      pdf: false,
+      requirementsApproval: authorization,
+    });
+    expect(approval.requirements_approval).toEqual(authorization);
+    const selected = await verifyApprovedPackage(root, approval.package_id);
+    expect(selected.plan).toEqual(fixturePlan);
+    expect(approval.files['fixtures/sample.txt']).toBe(sha256(content));
+    const report = await renderReport(root, { packageId: approval.package_id, pdf: false });
+    const detail = 'The generated IOQ and tests were frozen after the browser dry run.';
+    expect(await readFile(report.html, 'utf8')).toContain(detail);
+    expect(await readFile(path.join(selected.packageDirectory, 'ioq.html'), 'utf8')).toContain(
+      detail,
+    );
+
+    const approvalFile = path.join(selected.packageDirectory, 'approval.json');
+    await writeJson(approvalFile, {
+      ...approval,
+      requirements_approval: { ...authorization, rehearsal_plan_sha256: '0'.repeat(64) },
+    });
+    await expect(verifyApprovedPackage(root, approval.package_id)).rejects.toThrow(
+      'differs from the rehearsed plan',
+    );
+  });
+
+  it.each([
+    [{ urs_sha256: '0'.repeat(64) }, 'differ from the reviewed URS'],
+    [{ target_url: 'https://example.test/' }, 'differs from the authorized deployment'],
+    [{ rehearsal_plan_sha256: '0'.repeat(64) }, 'differs from the rehearsed plan'],
+  ])('rejects mismatched requirements, target, and plan identity', async (change, message) => {
+    const root = await directory();
+    await createCandidate(root, urs, plan, { pdf: false });
+    await expect(
+      approveCandidate(root, {
+        pdf: false,
+        requirementsApproval: { ...rehearsalAuthorization(), ...change },
+      }),
+    ).rejects.toThrow(message);
+    expect((await loadProject(root)).current_package).toBeUndefined();
+  });
+
+  it('requires the exact files used by the dry run before freezing', async () => {
+    const root = await directory();
+    const fixturePlan = { ...plan, fixtures: ['fixtures/sample.txt'] };
+    const candidate = await createCandidate(root, urs, fixturePlan, {
+      pdf: false,
+      files: { 'fixtures/sample.txt': 'before' },
+    });
+    await expect(
+      approveCandidate(root, {
+        pdf: false,
+        requirementsApproval: rehearsalAuthorization(fixturePlan),
+      }),
+    ).rejects.toThrow('rehearsal did not record candidate input fixtures/sample.txt');
+    await writeFile(path.join(candidate.directory, 'fixtures/sample.txt'), 'after');
+    await expect(
+      approveCandidate(root, {
+        pdf: false,
+        requirementsApproval: rehearsalAuthorization(fixturePlan, {
+          'fixtures/sample.txt': sha256('before'),
+        }),
+      }),
+    ).rejects.toThrow('Candidate input changed after rehearsal: fixtures/sample.txt');
+    expect((await loadProject(root)).current_package).toBeUndefined();
+  });
 });
 
 describe('requirements and approval contracts', () => {

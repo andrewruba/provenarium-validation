@@ -414,6 +414,14 @@ export const planSchema = z.strictObject({
   context_hashes: z.array(contextHashSchema).default([]),
 });
 export type Plan = z.infer<typeof planSchema>;
+export const requirementsApprovalSchema = z.strictObject({
+  approved_at: z.iso.datetime(),
+  urs_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  target_url: z.url(),
+  rehearsal_plan_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  rehearsal_input_hashes: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
+});
+export type RequirementsApproval = z.infer<typeof requirementsApprovalSchema>;
 export const approvalSchema = z.strictObject({
   schema_version: z.literal(1),
   package_id: id,
@@ -421,6 +429,7 @@ export const approvalSchema = z.strictObject({
   runtime_version: z.literal(1),
   files: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
   tests: z.array(nonempty),
+  requirements_approval: requirementsApprovalSchema.optional(),
 });
 export type Approval = z.infer<typeof approvalSchema>;
 export const statusSchema = z.enum(['passed', 'failed', 'blocked', 'not_run', 'manual_pending']);

@@ -8,7 +8,8 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { approvalSchema, planSchema, type Bindings, type Plan, type Run } from '../schema.js';
-import { loadProject, saveProject } from '../project.js';
+import { loadProject, requirementsApprovalErrors, saveProject } from '../project.js';
+import { loadUrs } from '../urs.js';
 import { prepareBindings, validateBindings } from '../credentials.js';
 import { atomicJson, containedPath, digest, readRun, redactor, type WorkerContext } from './io.js';
 
@@ -51,6 +52,16 @@ export async function verifyApprovedPackage(
   const plan = planSchema.parse(
     JSON.parse(await readFile(join(packageDirectory, 'plan.json'), 'utf8')),
   );
+  if (approval.requirements_approval) {
+    const urs = await loadUrs(await containedPath(packageDirectory, 'urs.yaml'));
+    const errors = requirementsApprovalErrors(
+      approval.requirements_approval,
+      urs,
+      plan,
+      approval.files,
+    );
+    if (errors.length) throw new Error(errors.join('\n'));
+  }
   for (const path of [...plan.fixtures, ...plan.references]) {
     if (!Object.hasOwn(approval.files, path))
       throw new Error(`Plan input is not frozen in the approval record: ${path}`);
