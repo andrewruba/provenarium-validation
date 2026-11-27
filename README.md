@@ -24,7 +24,7 @@ Use Node.js 26 and npm on macOS or Linux. From a checkout.
 ```sh
 npm ci
 npm pack
-npm install --global ./provenarium-validation-0.1.0.tgz
+npm install --global ./provenarium-validation-0.1.1.tgz
 ```
 
 The first validation installs the required Chromium build if it is missing.

@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
+import { chromium } from '@playwright/test';
 import { buildPages } from '../scripts/build-pages.mjs';
 import { validatePagesDilution } from '../scripts/validate-pages-dilution.mjs';
 
@@ -49,6 +50,39 @@ afterAll(async () => {
   }
   if (root) await rm(root, { recursive: true, force: true });
 });
+
+it.each(['correct', 'faulty'])(
+  'shows unreadable storage as unavailable in the %s build',
+  async (mode) => {
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage();
+      await page.goto(`${base}/${mode}/?workspace=unreadable-storage#records`);
+      const empty = page.locator('#empty-records');
+      const count = page.locator('#record-count');
+      expect(await empty.isVisible()).toBe(true);
+      expect(await count.innerText()).toBe('0 saved preparations');
+
+      const session = await page.context().newCDPSession(page);
+      const { identifier } = await session.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `Object.defineProperty(window, 'localStorage', {
+        get() { throw new DOMException('Storage denied', 'SecurityError'); }
+      });`,
+      });
+      await page.reload();
+      expect(await page.getByRole('alert').innerText()).toContain('Browser storage is unavailable');
+      expect(await empty.isVisible()).toBe(false);
+      expect(await count.innerText()).toBe('Saved preparations unavailable');
+
+      await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+      await page.reload();
+      expect(await empty.isVisible()).toBe(true);
+      expect(await count.innerText()).toBe('0 saved preparations');
+    } finally {
+      await browser.close();
+    }
+  },
+);
 
 it('runs both static qualification fixtures under a repository subpath', async () => {
   const comparison = await validatePagesDilution({

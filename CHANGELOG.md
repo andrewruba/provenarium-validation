@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — prerelease
+
+- Batched browser-confirmed locator repairs into one dry-run rerun while preserving
+  expected results. Alert and status checks can match visible message text.
+- Added an HTML dry-run report with expected and observed values when validation
+  stops before formal execution.
+- Fixed the hosted demo register so unreadable browser storage displays an
+  error and leaves the empty state hidden.
 
 - Made `validate` the single CLI workflow for requirements drafting and
   resolution, approval, browser dry run, execution, and reports. It retains

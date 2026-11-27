@@ -1,6 +1,6 @@
 {
   "name": "provenarium-validation",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local requirements, qualification protocols, and browser test evidence",
   "type": "module",
   "license": "MIT",

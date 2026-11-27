@@ -85,7 +85,7 @@
   function renderRecords(records) {
     const rows = document.querySelector('#record-rows');
     rows.replaceChildren();
-    for (const record of sorted(records)) {
+    for (const record of sorted(records ?? [])) {
       const row = document.createElement('tr');
       row.dataset.testid = `record-${record.sampleId}`;
       for (const value of recordCells(record)) {
@@ -95,9 +95,18 @@
       }
       rows.append(row);
     }
-    document.querySelector('#record-count').textContent =
-      `${records.length} saved preparation${records.length === 1 ? '' : 's'}`;
-    document.querySelector('#empty-records').hidden = records.length > 0;
+    document.querySelector('#record-count').textContent = records
+      ? `${records.length} saved preparation${records.length === 1 ? '' : 's'}`
+      : 'Saved preparations unavailable';
+    document.querySelector('#empty-records').hidden = !records || records.length > 0;
+  }
+  function refreshRecords() {
+    try {
+      renderRecords(loadRecords());
+    } catch (error) {
+      renderRecords();
+      message(error.message, true);
+    }
   }
   function calculate(fields, records) {
     const sampleId = (fields.sampleId ?? '').trim();
@@ -162,13 +171,7 @@
       else link.removeAttribute('aria-current');
     }
     document.title = `${records ? 'Saved preparations' : 'Prepare a dilution'} · Dilution Bench`;
-    if (records) {
-      try {
-        renderRecords(loadRecords());
-      } catch (error) {
-        message(error.message, true);
-      }
-    }
+    if (records) refreshRecords();
   }
   try {
     if (!['correct', 'faulty'].includes(mode))
@@ -241,18 +244,10 @@
     window.addEventListener('storage', (event) => {
       if (event.key === key || event.key === null) {
         result.hidden = true;
-        try {
-          renderRecords(loadRecords());
-        } catch (error) {
-          message(error.message, true);
-        }
+        refreshRecords();
       }
     });
-    try {
-      renderRecords(loadRecords());
-    } catch (error) {
-      message(error.message, true);
-    }
+    if (location.hash !== '#records') refreshRecords();
     showScreen();
     document.body.dataset.appReady = 'true';
   } catch (error) {
