@@ -38,6 +38,7 @@ import {
 import { assertSessionLocation } from '../credentials.js';
 import { boundedHttpRequest } from './http.js';
 import { csvExpectedRowsError, parseCsv } from '../csv.js';
+import { misplacedRoleSelector } from '../locator-repair.js';
 
 const MAX_ARTIFACT_BYTES = 20 * 1024 * 1024;
 const MAX_OBSERVATION_CHARS = 2 * 1024 * 1024;
@@ -160,6 +161,14 @@ export type ActionIssue = {
   operation: Action['op'];
   reason: 'locator_missing' | 'locator_ambiguous' | 'action_failed';
   exact_match_available?: true;
+  replacement_locator?: LocatorSpec;
+};
+export type AssertionIssue = {
+  case_id: string;
+  step_id: string;
+  assertion_id: string;
+  reason: 'locator_missing' | 'locator_ambiguous' | 'read_failed';
+  replacement_locator?: LocatorSpec;
 };
 type DownloadValue = {
   path: string;
@@ -213,11 +222,22 @@ export class ExecutionEngine {
     readonly plan: Plan,
     private readonly bindings: Bindings,
     private readonly onActionIssue?: (issue: ActionIssue) => void,
+    private readonly onAssertionIssue?: (issue: AssertionIssue) => void,
   ) {
     this.secrets = Object.values(bindings).flatMap((binding) =>
       [binding.password, binding.token].filter((item): item is string => Boolean(item)),
     );
     this.clean = redactor(this.secrets);
+  }
+
+  /** The caller has confirmed the original accessible-name lookup found nothing. */
+  private async proveMisplacedRoleSelector(page: Page, locator: LocatorSpec) {
+    const replacement = misplacedRoleSelector(locator);
+    if (!replacement || !locator.role) return;
+    const target = locate(page, replacement);
+    if ((await target.count()) !== 1) return;
+    if ((await target.and(page.getByRole(locator.role)).count()) !== 1) return;
+    if (await target.isVisible()) return replacement;
   }
 
   /** Diagnose the failing step without retaining Playwright errors or page contents. */
@@ -237,21 +257,58 @@ export class ExecutionEngine {
     if (!page || page.isClosed() || !('locator' in action)) return issue;
     try {
       const count = await locate(page, action.locator).count();
-      if (count === 0) issue.reason = 'locator_missing';
+      if (count === 0) {
+        issue.reason = 'locator_missing';
+        const replacement = await this.proveMisplacedRoleSelector(page, action.locator);
+        if (replacement) issue.replacement_locator = replacement;
+      }
       if (count > 1) {
         issue.reason = 'locator_ambiguous';
         if (
           error instanceof Error &&
           error.message.includes('strict mode violation') &&
           action.locator.exact === false &&
-          ['role', 'label', 'text'].includes(action.locator.by) &&
-          (await locate(page, { ...action.locator, exact: true }).count()) === 1
+          ['role', 'label', 'text'].includes(action.locator.by)
         ) {
-          issue.exact_match_available = true;
+          const exact = locate(page, { ...action.locator, exact: true });
+          if ((await exact.count()) === 1 && (await exact.isVisible()))
+            issue.exact_match_available = true;
         }
       }
     } catch {
       // A disconnected browser or invalid selector can prevent finer diagnosis.
+    }
+    return issue;
+  }
+
+  private async diagnoseAssertion(
+    assertion: Assertion,
+    actual: unknown,
+  ): Promise<AssertionIssue | undefined> {
+    const { locator, read } = assertion;
+    const page = this.page;
+    if (!locator || !page || page.isClosed()) return;
+    // A successful read that disagreed with the expected result is evidence
+    // about the app. False visibility and zero count can indicate no locator.
+    const couldBeMissing =
+      (read === 'visible' && actual === false) || (read === 'count' && actual === 0);
+    if (actual !== undefined && !couldBeMissing) return;
+    const issue: AssertionIssue = {
+      case_id: this.caseId,
+      step_id: this.stepId,
+      assertion_id: assertion.id,
+      reason: 'read_failed',
+    };
+    try {
+      const count = await locate(page, locator).count();
+      if (count === 0) {
+        issue.reason = 'locator_missing';
+        const replacement = await this.proveMisplacedRoleSelector(page, locator);
+        if (replacement) issue.replacement_locator = replacement;
+      } else if (actual !== undefined) return;
+      else if (count > 1) issue.reason = 'locator_ambiguous';
+    } catch {
+      // Keep the failure diagnostic when the selector or browser is unusable.
     }
     return issue;
   }
@@ -834,12 +891,28 @@ export class ExecutionEngine {
     } catch {
       matched = false;
     }
+    // A CSS selector in the role-name field can falsely satisfy an absence
+    // assertion. Check that known shape even when the comparison passed,
+    // within the dry run only.
+    const issue =
+      this.onAssertionIssue &&
+      (!matched || (assertion.locator && misplacedRoleSelector(assertion.locator)))
+        ? await this.diagnoseAssertion(assertion, actual)
+        : undefined;
+    if (issue) {
+      matched = false;
+      this.onAssertionIssue?.(issue);
+    }
     await this.observe({
       assertion_id: assertion.id,
       status: matched ? 'passed' : 'failed',
       expected: assertion.expected,
       actual,
-      message: matched ? undefined : 'Observed result did not satisfy the approved assertion.',
+      message: matched
+        ? undefined
+        : issue
+          ? 'The browser could not locate or read the assertion target.'
+          : 'Observed result did not satisfy the approved assertion.',
       artifacts: [],
     });
     if (!matched) throw new Error(`Assertion ${assertion.id} failed.`);

@@ -17,9 +17,10 @@ the resolved requirements and authorize synthetic browser tests at the displayed
 deployment.
 
 After approval it prepares a readable IOQ and Playwright tests. The dry run
-checks browser procedures and retries once if an ambiguous locator has a single
-exact match. When the dry run passes, the CLI freezes the checked plan and inputs,
-executes them, and prints a summary and report path. A failed dry run leaves the
+checks browser procedures and reruns once after applying confirmed locator fixes.
+It records the changed locators and preserves the expected results. When the dry
+run passes, the CLI freezes the checked plan and inputs, executes them, and
+prints a summary and report path. A failed dry run leaves the
 IOQ and diagnostics available. After addressing the failure, rerun
 `provenarium validate` to check the saved tests against the same requirements
 and deployment.

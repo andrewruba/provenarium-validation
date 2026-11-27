@@ -9,9 +9,10 @@ provenarium validate --context ../my-app --url https://app.example.com
 
 Review the proposed requirements and approve the resulting URS. Provenarium
 then writes the IOQ and tests, dry-runs them in Chromium, executes the checked
-tests, and prints the summary and report path. If the dry run finds a failure,
-it saves the IOQ and diagnostics. Run the same command after addressing the
-failure to check the saved tests.
+tests, and prints the summary and report path. The dry run applies confirmed
+locator fixes in one pass and reruns the tests with the same expected results.
+If a failure needs review, Provenarium prints the observed results and saves the
+IOQ and diagnostics. Run the same command after addressing the failure.
 
 Run `provenarium validate` in a project to use its saved inputs or enter them at
 the prompts. See the [CLI reference](docs/cli-reference.md).

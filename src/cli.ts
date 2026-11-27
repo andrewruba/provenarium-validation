@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
 import { spawn } from 'node:child_process';
 import { stringify } from 'yaml';
-import { providerSchema, type Bindings, type Plan } from './schema.js';
+import { providerSchema, type Bindings, type Observation, type Plan } from './schema.js';
 import { exists, safePath, sha256, writeJson, writeNew } from './files.js';
 import { loadUrs, checkUrsStructure, unresolvedQuestions } from './urs.js';
 import { prepareUrsInputs } from './urs-setup.js';
@@ -16,7 +16,7 @@ import { resolveUrsFile, type ResolveUrsRuntime } from './urs-resolve-cli.js';
 import { extractContext } from './context.js';
 import { auditAutomation } from './authoring/automation-policy.js';
 import { checkPlanInBrowser } from './authoring/rehearsal.js';
-import { redact, safeUrl } from './authoring/security.js';
+import { redact, redactValue, safeUrl } from './authoring/security.js';
 import { validatePlan } from './compiler.js';
 import { collectPlanInputCatalog, validateGeneratedPlanInputs } from './plan-inputs.js';
 import { loadProject, createCandidate, approveCandidate, inspectCandidate } from './project.js';
@@ -50,6 +50,14 @@ function terminal() {
 function answer<T>(value: T): Exclude<T, symbol> {
   if (typeof value === 'symbol') throw new Error('Cancelled.');
   return value as Exclude<T, symbol>;
+}
+
+function observedDifference({ case_id, assertion_id, expected, actual }: Observation): string {
+  const preview = (value: unknown) => {
+    const text = JSON.stringify(value) ?? 'no value';
+    return text.length <= 160 ? text : text.slice(0, 159) + '…';
+  };
+  return `${case_id} / ${assertion_id}: expected ${preview(expected)}, observed ${preview(actual)}.`;
 }
 
 async function ensureBrowser() {
@@ -306,20 +314,29 @@ program
         ? prior
         : await createCandidate(directory, document, finalPlan, { files, pdf: false });
     const diagnostics = await safePath(directory, `drafts/${randomUUID()}.dry-run.json`);
+    const secrets = Object.values(bindings).flatMap(({ password, token }) =>
+      [password, token].filter((item): item is string => !!item),
+    );
     await writeJson(diagnostics, {
       candidate: candidate.id,
       rehearsal: dryRun?.rehearsal,
       before_repair: dryRun?.rehearsalBeforeRepair,
+      locator_repairs: redactValue(dryRun?.locatorRepairs, secrets),
+      unreproduced_failures: dryRun?.unreproducedFailures,
       warning: rehearsalWarning,
     });
     console.log(
       `IOQ: ${path.join(candidate.directory, 'ioq.html')}\nPlaywright tests: ${path.join(candidate.directory, 'tests')}\nDry run: ${diagnostics}`,
     );
     const failed = dryRun?.rehearsal.cases.filter((item) => item.status !== 'passed') ?? [];
-    if (!dryRun || rehearsalWarning || failed.length) {
+    const earlierDifferences = dryRun?.unreproducedFailures ?? [];
+    if (!dryRun || rehearsalWarning || failed.length || earlierDifferences.length) {
       if (rehearsalWarning) console.log(`Dry run stopped: ${rehearsalWarning}`);
       for (const item of failed) {
         const action = dryRun?.rehearsal.action_issues?.find((issue) => issue.case_id === item.id);
+        const assertion = dryRun?.rehearsal.assertion_issues?.find(
+          (issue) => issue.case_id === item.id,
+        );
         const check = dryRun?.rehearsal.observations.find(
           (entry) => entry.case_id === item.id && entry.status !== 'passed',
         );
@@ -329,10 +346,26 @@ program
           );
           continue;
         }
+        if (check?.assertion_id && check.actual !== undefined) {
+          console.log(
+            `  ${observedDifference(check)}${assertion ? ` Browser diagnostic: ${assertion.reason.replaceAll('_', ' ')}.` : ''}`,
+          );
+          continue;
+        }
+        if (assertion) {
+          console.log(
+            `  ${item.id} / ${assertion.assertion_id}: ${assertion.reason.replaceAll('_', ' ')}.`,
+          );
+          continue;
+        }
         console.log(
           `  ${item.id}${check ? ` / ${check.assertion_id ?? check.step_id}` : ''}: ${check?.message ?? item.status}`,
         );
       }
+      for (const difference of earlierDifferences)
+        console.log(
+          `  Earlier dry run difference still needs review. ${observedDifference(difference)}`,
+        );
       console.log('The IOQ is saved. Run validate again after addressing the dry run results.');
       process.exitCode = 1;
       return;

@@ -14,8 +14,10 @@ project-relative path declared in the URS. Put source observations in
 ## The dry run failed
 
 Open the IOQ and dry run paths printed by `validate`. The output identifies
-the failed case and step or assertion. Check the expected and actual values in
-the retained diagnostics. If the application differs from an accepted
+the failed case and step or assertion. It displays observed differences and
+distinguishes targets that the browser could not locate or read. The dry run
+tries one rerun after applying proven locator fixes. Its record includes both
+attempts and the exact locator changes. If the application differs from an accepted
 requirement, address the application behavior or review the requirement with
 the people who own it. Rerun `provenarium validate` in the same project to check
 the saved tests. Formal execution starts after the dry run passes.

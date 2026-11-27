@@ -364,6 +364,10 @@ it('stops after a failed dry run and reuses the exact IOQ after the application 
   expect(process.exitCode).toBe(1);
   expect(provider).toHaveBeenCalledOnce();
   expect(app.saves).toEqual(['SYNTH-1']);
+  const output = vi.mocked(console.log).mock.calls.flat().join('\n');
+  expect(output).toContain('A-SAVED');
+  expect(output).toContain('Saved SYNTH-1');
+  expect(output).toContain('Save failed');
   const project = await loadProject(app.root);
   expect(project.current_candidate).toBeDefined();
   expect(project.current_package).toBeUndefined();

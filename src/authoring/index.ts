@@ -626,6 +626,8 @@ export async function generatePlan(
           'A requirement_decision is reserved for consequential missing intended behavior. Keep test setup executable.',
         id_scope:
           'Step IDs are unique within each case; different cases may each use 01, 02, etc. Address a step by case_id and step_id together. Case, assertion, evidence, actor, obligation, and question IDs must remain globally unique across the plan.',
+        locator_syntax:
+          'For by: role, set role to the browser role and value to its accessible name. For a CSS selector, use by: css and omit role.',
         source_syntax:
           'Copy an exact source from obligation_sources, such as URS-001/statement, URS-001/details/0, or URS-001/table. Read its authoritative text in the matching requirement in urs; the catalog lists bindings without duplicating their content. Do not use free-form clause labels.',
         input_references:
