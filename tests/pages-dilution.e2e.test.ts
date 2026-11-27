@@ -11,7 +11,7 @@ let server: Server;
 let base: string;
 const commit = 'a'.repeat(40);
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), 'static Pages CLI '));
+  root = await mkdtemp(join(tmpdir(), 'static Pages fixture '));
   const site = join(root, 'static site');
   await buildPages({ output: site, commit });
   server = createServer(async (request, response) => {
@@ -50,7 +50,7 @@ afterAll(async () => {
   if (root) await rm(root, { recursive: true, force: true });
 });
 
-it('validates both static variants through the main CLI under a repository subpath', async () => {
+it('runs both static qualification fixtures under a repository subpath', async () => {
   const comparison = await validatePagesDilution({
     correctUrl: `${base}/correct/`,
     faultyUrl: `${base}/faulty/`,
@@ -59,10 +59,8 @@ it('validates both static variants through the main CLI under a repository subpa
     log: () => {},
   });
   expect(comparison.complete).toBe(true);
-  expect(comparison.results.faulty.cli_exit).toBe(1);
   expect(comparison.results.faulty.passed).toBe(7);
   expect(comparison.results.faulty.failed).toHaveLength(4);
-  expect(comparison.results.correct.cli_exit).toBe(0);
   expect(comparison.results.correct.passed).toBe(11);
   expect(comparison.results.correct.failed).toEqual([]);
   expect(comparison.results.correct.package_id).not.toBe(comparison.results.faulty.package_id);
@@ -74,8 +72,6 @@ it('validates both static variants through the main CLI under a repository subpa
     expect(result.target_url).toContain(`/a-repository/${mode}/?workspace=`);
     expect(result.deployed_commit).toBe(commit);
     expect(await readFile(result.report, 'utf8')).toContain('URS-CALC-001');
-    const log = await readFile(join(result.project, 'cli.log'), 'utf8');
-    for (const command of ['generate', 'approve', 'run', 'report'])
-      expect(log).toContain(`$ provenarium ${command}`);
+    expect(await readFile(result.traceability, 'utf8')).toContain('URS-CALC-001');
   }
 }, 240000);

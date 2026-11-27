@@ -27,8 +27,7 @@ is included in the package so installations use the tested dependency versions.
 Both macOS and Ubuntu then download
 that same archive, verify its checksum, run the full test suite, and install it
 outside the checkout. Package verification exercises the approved good/defective
-workflow and the actual globally installed executable in an isolated npm prefix,
-including uninstall safeguards and preservation of unrelated data.
+workflow and the actual globally installed executable in an isolated npm prefix.
 
 Only after both jobs pass does the publish job upload the archive, `SHA256SUMS`,
 `release.json`, and installation/release notes to a draft release and publish it.

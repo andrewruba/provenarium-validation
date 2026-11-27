@@ -23,12 +23,4 @@ artifacts, HTML/PDF executed records, and CSV traceability. The approval directo
 contains the requirements, plan, compiled tests, fixtures, protocol, and recorded
 file hashes. Passwords and browser authentication storage are excluded.
 
-Regenerate the selected saved report without a provider or live application:
-
-```sh
-node bin/provenarium.mjs --project examples/evidence report
-```
-
-To execute a fresh demonstration, follow the installation guide and use the
-reviewed source plan in `examples/sample-validation`. The saved package here
-records a historical local target port and should be treated as example evidence.
+Open the retained HTML reports directly to inspect the results.

@@ -7,8 +7,7 @@ import {
   assertProviderSchemaLimits,
 } from '../src/authoring/structured-output.js';
 import { planSchema, ursSchema } from '../src/schema.js';
-import { discoveryActionSchema } from '../src/authoring/discovery.js';
-import { generatedPlanSchema, reviewSchema } from '../src/authoring/index.js';
+import { generatedPlanSchema } from '../src/authoring/index.js';
 import {
   planEditsSchema,
   planReviewEditsSchema,
@@ -54,8 +53,6 @@ describe.each(providers)('%s native schema contracts', (provider) => {
       planSchema,
       ursSchema,
       generatedPlanSchema,
-      reviewSchema,
-      discoveryActionSchema,
       planEditsSchema,
       planReviewEditsSchema,
       resolutionProposalSchema,
@@ -452,15 +449,6 @@ describe.each(providers)('%s native schema contracts', (provider) => {
     };
     const wire = result.compiled.wireSchema.parse(duplicate);
     expect(() => result.compiled.decode(wire)).toThrow(/Duplicate map key/);
-  });
-  it('uses a typed root union and rejects invented actions', () => {
-    const result = roundtrip(discoveryActionSchema, { action: 'finish' }, provider);
-    expect(result.encoded).toEqual({ result: { action: 'finish' } });
-    expect(result.decoded).toEqual({ action: 'finish' });
-    expect(
-      result.compiled.wireSchema.safeParse({ result: { action: 'evaluate', code: 'untrusted' } })
-        .success,
-    ).toBe(false);
   });
   it('retains unsupported provider constraints for local validation without sending invalid keywords', () => {
     const schema = z.strictObject({

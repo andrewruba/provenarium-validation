@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { Budget, MAX_REQUEST_BYTES, ProviderClient } from '../src/authoring/provider.js';
-import { caseRequestView, rehearsalRequestView } from '../src/authoring/request-windows.js';
+import { caseRequestView } from '../src/authoring/request-windows.js';
 import type { GeneratedPlanDocument } from '../src/authoring/plan-edits.js';
-import type { Rehearsal } from '../src/authoring/rehearsal.js';
-import { planSchema, observationSchema } from '../src/schema.js';
+import { planSchema } from '../src/schema.js';
 import { providerOutputText } from './provider-fixture.js';
 
 function candidate(): GeneratedPlanDocument {
@@ -172,58 +171,4 @@ describe('case request windows', () => {
     for (const ids of [[], ['C1', 'C1'], ['MISSING']])
       expect(() => caseRequestView(candidate(), ids)).toThrow();
   });
-});
-
-it('keeps complete rehearsal outcomes and failing evidence while explicitly counting omitted observations', () => {
-  const observations = [
-    { case_id: 'C1', status: 'passed', actual: 'large passing table'.repeat(1000) },
-    {
-      case_id: 'C1',
-      status: 'failed',
-      expected: 0,
-      actual: 1,
-      message: 'An unexpected export occurred.',
-    },
-    { case_id: 'C1', status: 'blocked', message: 'Dependent check could not run.' },
-    { case_id: 'C1', status: 'not_run', message: 'No fabricated evidence.' },
-    { case_id: 'C2', status: 'failed', expected: 'specific', actual: 'different' },
-    { case_id: 'C2', status: 'passed', actual: 'outside passing value' },
-  ].map((item, index) =>
-    observationSchema.parse({
-      run_id: 'RUN',
-      package_id: 'PLAN',
-      step_id: 'S1',
-      assertion_id: `A${index}`,
-      timestamp: '2026-11-27T12:00:00Z',
-      ...item,
-    }),
-  );
-  const rehearsal: Rehearsal = {
-    kind: 'authoring_diagnostics',
-    plan_sha256: 'a'.repeat(64),
-    cases: [
-      { id: 'C1', status: 'failed' },
-      { id: 'C2', status: 'failed' },
-    ],
-    observations,
-  };
-  const before = structuredClone(rehearsal);
-  const view = rehearsalRequestView(rehearsal, ['C1']);
-  expect(view.cases).toEqual(rehearsal.cases);
-  expect(view.observations).toEqual([observations[1], observations[2]]);
-  expect(view.observation_selection).toMatchObject({
-    total: 6,
-    included: 2,
-    omitted_passed: 2,
-    omitted_outside_scope: 1,
-    omitted_other: 1,
-  });
-  expect(rehearsalRequestView(rehearsal).observations).toEqual([
-    observations[1],
-    observations[2],
-    observations[4],
-  ]);
-  view.observations[0].actual = 'changed';
-  view.cases[0].status = 'passed';
-  expect(rehearsal).toEqual(before);
 });

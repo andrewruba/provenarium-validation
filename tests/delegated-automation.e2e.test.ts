@@ -1,3 +1,4 @@
+import { rehearsePlan } from '../src/authoring/rehearsal.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -258,22 +259,7 @@ document.querySelector('#export').onclick=()=>{if(!localStorage.getItem('records
       ],
       coverage: [{ obligation_id: 'OB-SAVE', assertion_ids: ['A-SAVED', 'A-ISOLATED'] }],
     };
-    const advice = {
-      findings: [
-        {
-          requirement: 'R-EMPTY',
-          severity: 'suggestion',
-          message: 'Also assert that the record set stays empty after the export attempt.',
-        },
-      ],
-      summary: 'Consider adding another observable state check.',
-    };
-    const outputs: unknown[] = [
-      { action: 'finish' },
-      { plan: draft, fixtures: [] },
-      { edits: [conversion] },
-      advice,
-    ];
+    const outputs: unknown[] = [{ plan: draft, fixtures: [] }, { edits: [conversion] }];
     const requests: Record<string, unknown>[] = [];
     const fetchImpl = vi.fn(async (_url: unknown, options?: RequestInit) => {
       const request = JSON.parse(String(options?.body));
@@ -301,16 +287,11 @@ document.querySelector('#export').onclick=()=>{if(!localStorage.getItem('records
       urs,
       context,
       url,
-      allowInteractions: true,
-      rehearse: true,
-      reviewCoverage: true,
       fetchImpl,
     });
     expect(result.incomplete, JSON.stringify(result.questions)).toBe(false);
     expect(outputs).toEqual([]);
-    expect(result.coverageReview).toEqual(advice);
-    expect(requests[3].rehearsal).toEqual({ cases: result.rehearsal?.cases });
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(
       requests.every((request) => (request.accepted_decisions as unknown[])?.length === 1),
     ).toBe(true);
@@ -323,11 +304,12 @@ document.querySelector('#export').onclick=()=>{if(!localStorage.getItem('records
     expect(final.cases[1]).toEqual(draft.cases[1]);
     expect(final.cases[0].prerequisites).toEqual([]);
     expect(final.cases[0].manual_expected).toBe(draft.cases[0].manual_expected);
-    expect(result.rehearsal?.cases.every((testCase) => testCase.status === 'passed')).toBe(true);
+    const rehearsal = await rehearsePlan(root, final, result.value!.fixtures);
+    expect(rehearsal.cases.every((testCase) => testCase.status === 'passed')).toBe(true);
     expect(
-      result.rehearsal?.observations.find((record) => record.assertion_id === 'A-NO-DOWNLOAD'),
+      rehearsal.observations.find((record) => record.assertion_id === 'A-NO-DOWNLOAD'),
     ).toMatchObject({ status: 'passed', expected: 0, actual: 0 });
-    expect(result.rehearsal?.plan_sha256).toBe(
+    expect(rehearsal.plan_sha256).toBe(
       createHash('sha256').update(JSON.stringify(final)).digest('hex'),
     );
     expect(JSON.stringify(result.diagnostics)).toContain('automate_case');

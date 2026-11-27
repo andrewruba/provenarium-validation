@@ -4,7 +4,7 @@ Verification recorded on 25 November 2026 UTC. Version `0.1.0` is distributed as
 GitHub prerelease; the package is not published to the npm registry. The browser-only demonstration apps
 are live on GitHub Pages; see the [deployment guide](deployment.md).
 
-## Current CI and published demos
+## Published v0.1.0 verification history
 
 Installable archives are built once and verified on macOS and Ubuntu before the
 [release workflow](../.github/workflows/release.yml) publishes them. This includes

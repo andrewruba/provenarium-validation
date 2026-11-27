@@ -5,9 +5,9 @@ import { compileStructuredOutput } from './structured-output.js';
 export type Provider = 'openai' | 'anthropic';
 export type Thoroughness = 'quick' | 'standard' | 'thorough';
 export const PRESETS = {
-  quick: { cap: 5, reviews: 1 },
-  standard: { cap: 15, reviews: 2 },
-  thorough: { cap: 40, reviews: 3 },
+  quick: { cap: 5 },
+  standard: { cap: 15 },
+  thorough: { cap: 40 },
 } as const;
 export const DEFAULT_MODELS: Record<Provider, string> = {
   openai: 'gpt-6.2-sol',

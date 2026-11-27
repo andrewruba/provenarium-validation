@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { text } from '@clack/prompts';
 import { loadProject, saveProject } from '../src/project.js';
-import { prepareUrsInputs, projectCommand } from '../src/urs-setup.js';
+import { prepareUrsInputs } from '../src/urs-setup.js';
 
 vi.mock('@clack/prompts', () => ({ text: vi.fn() }));
 
@@ -70,15 +69,6 @@ it('allows context alone when the application is not deployed yet', async () => 
   ).toEqual({ url: undefined });
   expect((await loadProject(directory)).context).toHaveLength(1);
   expect(input).not.toHaveBeenCalled();
-});
-
-it('accepts an optional brief without requiring additional prompts or context', async () => {
-  const directory = await fixture();
-  expect(await prepareUrsInputs(directory, { hasBrief: true, interactive: true })).toEqual({
-    url: undefined,
-  });
-  expect(input).not.toHaveBeenCalled();
-  expect((await loadProject(directory)).context).toEqual([]);
 });
 
 it('reuses linked context and the saved application URL in scripted authoring', async () => {
@@ -240,30 +230,3 @@ it.each(['ftp://example.com', 'https://user:password@example.com', 'not-a-url'])
     expect(input).not.toHaveBeenCalled();
   },
 );
-
-it('prints commands that preserve the project and literal filenames through a shell', async () => {
-  const directory = await fixture();
-  const bin = join(directory, 'bin');
-  await mkdir(bin);
-  await writeFile(
-    join(bin, 'provenarium'),
-    `#!/bin/sh\nexec "$URS_SETUP_TEST_NODE" -e 'console.log(JSON.stringify(process.argv.slice(1)))' -- "$@"\n`,
-    { mode: 0o700 },
-  );
-  const project = join(directory, "site's $(printf injected) project");
-  const args = ['urs', 'check', "patient's $(printf injected) requirements.yaml"];
-  const parseCommand = (command: string) =>
-    JSON.parse(
-      execFileSync('/bin/sh', ['-c', command], {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${bin}:${process.env.PATH ?? ''}`,
-          URS_SETUP_TEST_NODE: process.execPath,
-        },
-      }),
-    );
-
-  expect(parseCommand(projectCommand(project, args))).toEqual(['--project', project, ...args]);
-  expect(parseCommand(projectCommand(process.cwd(), args))).toEqual(args);
-});

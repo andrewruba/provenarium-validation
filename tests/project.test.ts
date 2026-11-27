@@ -295,7 +295,7 @@ describe('requirements and approval contracts', () => {
       },
     ];
     expect(validatePlan(plan, answered)).toContain('Resolve URS questions before approval.');
-    expect((await checkUrs(answered)).join('\n')).toContain('urs resolve');
+    expect((await checkUrs(answered)).join('\n')).toContain('provenarium validate');
     const resolved = applyResolutionProposal(answered, {
       requirements: [
         {

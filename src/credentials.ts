@@ -41,52 +41,16 @@ export async function saveStoredSecret(name: string, value: string): Promise<boo
   }
 }
 
-export async function getProviderKey(
-  provider: 'openai' | 'anthropic',
-  options: { remember?: boolean } = {},
-): Promise<string> {
+export async function getProviderKey(provider: 'openai' | 'anthropic'): Promise<string> {
   const stored = await readStoredSecret(`provider:${provider}`);
   if (stored) return stored;
   requireTerminal();
-  const value = answer(
+  return answer(
     await password({
       message: `Paste ${provider} API key`,
       validate: (value) => (value?.trim() ? undefined : 'A key is required.'),
     }),
   ).trim();
-  const remember =
-    options.remember ??
-    answer(
-      await confirm({
-        message: 'Remember this key in the operating-system credential store?',
-        initialValue: false,
-      }),
-    );
-  if (remember && !(await saveStoredSecret(`provider:${provider}`, value))) {
-    process.stderr.write(
-      'Secure credential storage is unavailable. This key will be used for this command only.\n',
-    );
-  }
-  return value;
-}
-
-export async function forgetProviderKey(provider: 'openai' | 'anthropic'): Promise<void> {
-  try {
-    (await credentialEntry(`provider:${provider}`)).deletePassword();
-  } catch (error) {
-    // Only an explicit missing entry is equivalent to successful removal.
-    // An unavailable/locked backend may still contain the credential.
-    if (
-      error instanceof Error &&
-      /no (?:matching )?(?:credential|entry|password|secret)(?: was)? found|(?:credential|entry|password|secret) (?:was )?not found|NoEntry|the specified item could not be found/i.test(
-        error.message,
-      )
-    )
-      return;
-    throw new Error(
-      `The stored ${provider} credential could not be removed. Unlock or restore the operating-system credential store and retry.`,
-    );
-  }
 }
 
 export function validateBindings(access: Access[], bindings: Bindings, plan?: Plan): void {

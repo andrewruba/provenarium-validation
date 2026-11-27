@@ -98,7 +98,7 @@ export function auditAutomation(
     if (!c.manual) continue;
     if (!options.allowManual) {
       issues.push(
-        `${c.id}: manual execution is not enabled. Convert this case to executable steps and transfer every manual obligation to its assertions; preserve the required behavior. Use --allow-manual only for an explicit URS-grounded exception.`,
+        `${c.id}: manual execution is not enabled. Convert this case to executable steps and transfer every manual obligation to its assertions; preserve the required behavior.`,
       );
       continue;
     }

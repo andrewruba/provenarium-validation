@@ -10,7 +10,7 @@ let faulty: Awaited<ReturnType<typeof startDilutionApp>>;
 let correct: Awaited<ReturnType<typeof startDilutionApp>>;
 const commit = 'a'.repeat(40);
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), 'hosted dilution CLI '));
+  root = await mkdtemp(join(tmpdir(), 'hosted dilution fixture '));
   faulty = await startDilutionApp({ port: 0, commit });
   correct = await startDilutionApp({ port: 0, defects: [], commit });
 });
@@ -20,7 +20,7 @@ afterAll(async () => {
   if (root) await rm(root, { recursive: true, force: true });
 });
 
-it('uses the actual CLI to validate two isolated hosted targets and retain their evidence', async () => {
+it('validates two isolated hosted fixtures and retains their evidence', async () => {
   const comparison = await validateHostedDilution({
     correctUrl: correct.url,
     faultyUrl: faulty.url,
@@ -29,10 +29,8 @@ it('uses the actual CLI to validate two isolated hosted targets and retain their
     log: () => {},
   });
   expect(comparison.complete).toBe(true);
-  expect(comparison.results.faulty.cli_exit).toBe(1);
   expect(comparison.results.faulty.passed).toBe(7);
   expect(comparison.results.faulty.failed).toHaveLength(4);
-  expect(comparison.results.correct.cli_exit).toBe(0);
   expect(comparison.results.correct.passed).toBe(11);
   expect(comparison.results.correct.failed).toEqual([]);
   expect(comparison.results.correct.package_id).not.toBe(comparison.results.faulty.package_id);
@@ -44,9 +42,7 @@ it('uses the actual CLI to validate two isolated hosted targets and retain their
     expect(result.target_url).toContain('/w/');
     expect(result.deployed_commit).toBe(commit);
     expect(await readFile(result.report, 'utf8')).toContain('URS-CALC-001');
-    const log = await readFile(join(result.project, 'cli.log'), 'utf8');
-    for (const command of ['generate', 'approve', 'run', 'report'])
-      expect(log).toContain(`$ provenarium ${command}`);
+    expect(await readFile(result.traceability, 'utf8')).toContain('URS-CALC-001');
     // Neither browser visitors nor the other hosted target share this run's records.
     const application = mode === 'correct' ? correct : faulty;
     expect((await (await fetch(`${application.url}/api/plans`)).json()).plans).toEqual([]);

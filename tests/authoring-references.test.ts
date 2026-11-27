@@ -101,7 +101,6 @@ function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
     );
   });
 }
-const emptyReview = { findings: [], summary: 'No further findings.' };
 function proposal(references: string[]) {
   const value = document(references).families[0].requirements[0];
   value.statement = 'Every rejected input submission shall leave all saved records unchanged.';
@@ -122,7 +121,7 @@ describe('authored requirements use the checker reference contract', () => {
         'OQ-ZERO-VOLUME',
         `Hosted observation: ${target} — Before you calculate`,
       ]);
-      const requests = transport(provider, [proposed, emptyReview]);
+      const requests = transport(provider, [proposed]);
       const result = await draftUrs({
         root,
         provider,
@@ -153,47 +152,6 @@ describe('authored requirements use the checker reference contract', () => {
       );
     },
   );
-
-  it('normalizes reference misuse introduced during the review revision as well as the initial draft', async () => {
-    const root = await temporaryProject();
-    const revised = document([
-      `Hosted observation: ${target} — Before you calculate`,
-      'OQ-ZERO-VOLUME',
-    ]);
-    revised.families[0].requirements[0].details = ['Identify Final volume in the error.'];
-    const requests = transport('openai', [
-      document(),
-      {
-        findings: [
-          {
-            requirement: 'URS-INPUT-02',
-            severity: 'suggestion',
-            message: 'Add the documented error detail.',
-          },
-        ],
-        summary: 'Add error detail.',
-      },
-      revised,
-    ]);
-    const result = await draftUrs({
-      root,
-      provider: 'openai',
-      key: 'test-key',
-      context,
-      url: target,
-      thoroughness: 'quick',
-      fetchImpl: requests,
-    });
-    expect(result.incomplete).toBe(false);
-    expect(result.reviewRounds).toBe(1);
-    expect(result.value!.families[0].requirements[0].references).toEqual([]);
-    expect(result.value!.families[0].requirements[0].citations).toHaveLength(2);
-    expect(result.value!.families[0].requirements[0].details).toEqual([
-      'Identify Final volume in the error.',
-    ]);
-    expect(await checkUrsStructure(result.value!, root)).toEqual([]);
-    expect(requests).toHaveBeenCalledTimes(3);
-  });
 
   it('retains genuine missing normative files as an incomplete diagnostic instead of converting them into citations', async () => {
     const root = await temporaryProject();
@@ -235,7 +193,6 @@ describe('authored requirements use the checker reference contract', () => {
       thoroughness: 'quick',
       fetchImpl: transport('openai', [
         document(['OQ-ZERO-VOLUME', 'references/calculation-examples.csv']),
-        emptyReview,
       ]),
     });
     expect(result.incomplete).toBe(false);

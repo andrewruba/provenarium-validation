@@ -8,7 +8,7 @@ import { receiveBindings } from './ipc.js';
 import type { WorkerContext } from './io.js';
 
 const contextPath = process.env.PROVENARIUM_RUN_CONTEXT;
-if (!contextPath) throw new Error('Use provenarium run to execute an approved package.');
+if (!contextPath) throw new Error('Start browser execution through provenarium validate.');
 const settings = JSON.parse(await readFile(contextPath, 'utf8')) as WorkerContext;
 const plan = planSchema.parse(
   JSON.parse(await readFile(join(settings.packageDirectory, 'plan.json'), 'utf8')),

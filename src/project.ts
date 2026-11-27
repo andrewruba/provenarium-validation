@@ -41,7 +41,7 @@ export async function getPackage(
   id?: string,
 ): Promise<{ directory: string; approval: Approval; plan: Plan; urs: Urs }> {
   id ??= (await loadProject(root)).current_package;
-  if (!id) throw new Error('No approved package selected. Run provenarium approve first.');
+  if (!id) throw new Error('No execution package selected. Complete provenarium validate first.');
   const directory = await safePath(root, `packages/${id}`);
   return {
     directory,
@@ -200,7 +200,7 @@ export async function inspectCandidate(
   candidate?: string,
 ): Promise<{ directory: string; id: string; urs: Urs; plan: Plan; errors: string[] }> {
   candidate ??= (await loadProject(root)).current_candidate;
-  if (!candidate) throw new Error('No candidate selected. Run provenarium generate first.');
+  if (!candidate) throw new Error('No IOQ exists yet. Start with provenarium validate.');
   const directory = await safePath(root, candidate);
   const metadata = await readJson<{ id: string; generated: Record<string, string> }>(
     await safePath(directory, 'candidate.json'),

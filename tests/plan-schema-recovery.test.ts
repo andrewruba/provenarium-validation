@@ -127,11 +127,7 @@ async function run(
     provider?: Provider;
     usage?: boolean;
     maxSpend?: number;
-    allowManual?: boolean;
     urs?: typeof urs;
-    existing?: ReturnType<typeof candidate>['plan'];
-    feedback?: string;
-    reviewCoverage?: boolean;
   } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'provenarium-schema-recovery-'));
@@ -143,11 +139,6 @@ async function run(
     provider,
     key: 'synthetic-provider-key',
     urs: options.urs ?? urs,
-    allowManual: options.allowManual,
-    existing: options.existing,
-    existingUrs: options.existing ? (options.urs ?? urs) : undefined,
-    feedback: options.feedback,
-    reviewCoverage: options.reviewCoverage,
     url: 'https://example.test/',
     thoroughness: 'quick',
     maxSpend: options.maxSpend,
@@ -229,7 +220,7 @@ it.each(['openai', 'anthropic'] as const)(
         },
       ],
     };
-    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, edit], {
+    const { result, fetchImpl } = await run([draft, edit], {
       provider,
     });
     expect(result.incomplete).toBe(false);
@@ -244,10 +235,9 @@ it.each(['openai', 'anthropic'] as const)(
     expect(result.value?.plan.questions).toEqual([]);
     expect(result.value?.plan.cases[1].prerequisites).toEqual([]);
     expect(result.questions).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    const input = inputAt(fetchImpl, 1, provider);
-    expect(input.runtime_contract.question_kinds).toContain('execution_preparation');
-    expect(input.runtime_contract.question_kinds).toContain('does not complete');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const input = inputAt(fetchImpl, 0, provider);
+    expect(input.runtime_contract.question_kinds).toContain('requirement_decision');
   },
 );
 
@@ -274,12 +264,12 @@ it.each(['openai', 'anthropic'] as const)(
       testCase.steps.flatMap((step) => step.assertions.map((assertion) => assertion.id)),
     );
     const original = structuredClone(draft);
-    const { result, fetchImpl } = await run([{ action: 'finish' }, draft], { provider });
+    const { result, fetchImpl } = await run([draft], { provider });
 
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(original);
     expect(result.diagnostics ?? []).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(browser.perform).not.toHaveBeenCalled();
   },
 );
@@ -289,15 +279,15 @@ it.each(['openai', 'anthropic'] as const)(
   async (provider) => {
     const malformed = candidate();
     malformed.plan.cases[0].steps[0].assertions[0].comparison = 'approximately' as never;
-    const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate()], {
+    const { result, fetchImpl } = await run([malformed, candidate()], {
       provider,
     });
 
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(candidate());
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(browser.perform).not.toHaveBeenCalled();
-    const retry = inputAt(fetchImpl, 2, provider);
+    const retry = inputAt(fetchImpl, 1, provider);
     expect(retry.rejected_output.kind).toBe('document_schema');
     expect(retry.rejected_output.candidate.plan.cases[0].steps[0].assertions[0].comparison).toBe(
       'approximately',
@@ -320,41 +310,23 @@ it.each(['missing field', 'unknown field'] as const)(
     const malformed = JSON.parse(JSON.stringify(candidate()));
     if (kind === 'missing field') delete malformed.plan.cases[0].steps[0].instruction;
     if (kind === 'unknown field') malformed.plan.cases[0].steps[0].execute = 'not-executed';
-    const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate()]);
+    const { result, fetchImpl } = await run([malformed, candidate()]);
 
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(candidate());
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(browser.perform).not.toHaveBeenCalled();
   },
 );
 
-it('repairs malformed discovery output before executing any browser action', async () => {
-  const { result, fetchImpl } = await run([
-    { action: 'unsupported-action', target: 'not-executed' },
-    { action: 'finish' },
-    candidate(),
-  ]);
-
-  expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(3);
-  expect(browser.perform).not.toHaveBeenCalled();
-  const retry = inputAt(fetchImpl, 1, 'openai');
-  expect(retry.rejected_output.kind).toBe('document_schema');
-  expect(retry.validation_errors.join('\n')).toContain('/action');
-  expect(result).toHaveProperty('diagnostics', [
-    expect.objectContaining({ operation: 'discovery' }),
-  ]);
-});
-
 it('normalizes native nullable placeholders for omitted optional fields without a repair call', async () => {
   const nullable = JSON.parse(JSON.stringify(candidate()));
   nullable.plan.cases[0].actor = null;
-  const { result, fetchImpl } = await run([{ action: 'finish' }, nullable]);
+  const { result, fetchImpl } = await run([nullable]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value).toEqual(candidate());
-  expect(fetchImpl).toHaveBeenCalledTimes(2);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
   expect(result.diagnostics).toBeUndefined();
 });
 
@@ -371,12 +343,12 @@ it('repairs malformed document JSON while retaining the rejected text as diagnos
       ],
     }),
   );
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate()]);
+  const { result, fetchImpl } = await run([malformed, candidate()]);
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
   expect(browser.perform).not.toHaveBeenCalled();
-  const retry = inputAt(fetchImpl, 2, 'openai');
+  const retry = inputAt(fetchImpl, 1, 'openai');
   expect(retry.rejected_output).toMatchObject({ kind: 'document_json', raw: '{"plan":' });
   expect(result).toHaveProperty('diagnostics', [
     expect.objectContaining({ operation: 'protocol draft', kind: 'document_json' }),
@@ -386,13 +358,12 @@ it('repairs malformed document JSON while retaining the rejected text as diagnos
 it('retains schema diagnostics and stops after two unsuccessful corrections', async () => {
   const malformed = candidate();
   malformed.plan.cases[0].classification = 'PQ' as never;
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, malformed, malformed]);
+  const { result, fetchImpl } = await run([malformed, malformed, malformed]);
 
   expect(result.incomplete).toBe(true);
   expect(result.value).toBeUndefined();
-  expect(result.reviewRounds).toBe(0);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
-  expect(result.spend.calls).toBe(4);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(result.spend.calls).toBe(3);
   expect(result).toHaveProperty(
     'diagnostics',
     expect.arrayContaining([
@@ -411,184 +382,32 @@ it('shares the same two corrections between schema and structural failures', asy
   schemaInvalid.plan.cases[0].classification = 'PQ' as never;
   const structuralInvalid = candidate();
   structuralInvalid.plan.obligations[0].source = 'An unbound prose label';
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    schemaInvalid,
-    structuralInvalid,
-    schemaInvalid,
-  ]);
+  const { result, fetchImpl } = await run([schemaInvalid, structuralInvalid, schemaInvalid]);
 
   expect(result.incomplete).toBe(true);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
-  expect(result.reviewRounds).toBe(0);
-  expect(inputAt(fetchImpl, 2, 'openai')).toHaveProperty('rejected_output');
-  expect(inputAt(fetchImpl, 3, 'openai').validation_errors.join('\n')).toMatch(/source/i);
-});
-
-it('keeps the draft when advisory review returns malformed output without retrying', async () => {
-  const draft = candidate();
-  const { result, fetchImpl } = await run(
-    [{ action: 'finish' }, draft, { findings: null, summary: 'Malformed review' }],
-    { reviewCoverage: true },
-  );
-
-  expect(result.incomplete).toBe(false);
-  expect(result.value).toEqual(draft);
-  expect(result.reviewRounds).toBe(0);
-  expect(result.coverageReviewWarning).toMatch(/schema/i);
   expect(fetchImpl).toHaveBeenCalledTimes(3);
-  expect(result.diagnostics).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        kind: 'document_schema',
-        issues: expect.arrayContaining([expect.objectContaining({ path: '/findings' })]),
-      }),
-    ]),
-  );
-});
-
-it('rejects an explicit edit that tries to change a protected expectation after schema recovery', async () => {
-  const malformed = { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01' }] };
-  const forbidden = { edits: [{ op: 'repair_assertion', assertion_id: 'A-01', expected: false }] };
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, forbidden, forbidden], {
-    existing: candidate().plan,
-    feedback: 'Clarify instruction.',
-  });
-
-  expect(result.incomplete).toBe(true);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
-  expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
-  expect(result.questions.join('\n')).toMatch(/review|protect|assertion/i);
-  expect(result.diagnostics?.some((diagnostic) => diagnostic.kind === 'document_schema')).toBe(
-    true,
-  );
+  expect(inputAt(fetchImpl, 1, 'openai')).toHaveProperty('rejected_output');
+  expect(inputAt(fetchImpl, 2, 'openai').validation_errors.join('\n')).toMatch(/source/i);
 });
 
 it.each(['delete_case', 'replace_case'] as const)(
   'rejects the unsupported %s operation instead of replacing existing checks',
   async (op) => {
     const forbidden = { edits: [{ op, case_id: 'IQ-01', manual: true }] };
-    const { result, fetchImpl } = await run(
-      [{ action: 'finish' }, forbidden, forbidden, forbidden],
-      { existing: candidate().plan, feedback: 'Clarify instruction.' },
-    );
+    const invalid = candidate();
+    invalid.plan.obligations[0].source = 'An unbound prose label';
+    const { result, fetchImpl } = await run([invalid, forbidden, forbidden]);
 
     expect(result.incomplete).toBe(true);
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
-    expect(result.value?.plan.cases).toEqual(candidate().plan.cases);
-    expect(result.diagnostics?.every((diagnostic) => diagnostic.kind === 'document_schema')).toBe(
-      true,
-    );
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(result.value?.plan).toEqual(invalid.plan);
+    expect(result.diagnostics?.map(({ kind }) => kind)).toEqual([
+      'document_structure',
+      'document_schema',
+      'document_schema',
+    ]);
   },
 );
-
-it('uses the remaining correction for a scoped instruction edit after a rejected expectation edit', async () => {
-  const malformed = { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01' }] };
-  const forbidden = { edits: [{ op: 'repair_assertion', assertion_id: 'A-01', expected: false }] };
-  const instruction = 'Open the form and inspect its labeled Sample ID entry.';
-  const { result, fetchImpl } = await run(
-    [
-      { action: 'finish' },
-      malformed,
-      forbidden,
-      { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01', instruction }] },
-    ],
-    { existing: candidate().plan, feedback: 'Clarify instruction.' },
-  );
-
-  expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
-  expect(result.value?.plan.cases[0].steps[0].instruction).toBe(instruction);
-  expect(result.value?.plan.cases[0].steps[0].assertions).toEqual(
-    candidate().plan.cases[0].steps[0].assertions,
-  );
-  expect(result.questions).toEqual([]);
-  const correction = inputAt(fetchImpl, 3, 'openai');
-  expect(correction.validation_errors.join('\n')).toContain('/edits/0/op');
-  expect(correction.rejected_output.candidate.edits[0].op).toBe('repair_assertion');
-  expect(correction.feedback).toBe('Clarify instruction.');
-});
-
-it('allows an explicit scoped edit to add automated cases while retaining existing checks', async () => {
-  const initial = candidate();
-  const additional = structuredClone(initial.plan.cases[0]);
-  additional.id = 'IQ-02';
-  additional.steps[0].id = 'S-02';
-  additional.steps[0].assertions[0].id = 'A-02';
-  additional.steps[0].evidence[0].id = 'E-02';
-  const { result, fetchImpl } = await run(
-    [{ action: 'finish' }, { edits: [{ op: 'add_case', value: additional }] }],
-    { existing: initial.plan, feedback: 'Add another relevant check.' },
-  );
-
-  expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(2);
-  expect(result.value?.plan.cases[0]).toEqual(initial.plan.cases[0]);
-  expect(result.value?.plan.cases[1]).toEqual(additional);
-  expect(result.value?.plan.obligations).toEqual(initial.plan.obligations);
-  const reviewRequest = JSON.parse(String(fetchImpl.mock.calls[1][1]?.body));
-  expect(reviewRequest.text.format.schema.properties).toHaveProperty('edits');
-  expect(reviewRequest.text.format.schema.properties).not.toHaveProperty('plan');
-});
-
-it('retains A16 and manual expected text verbatim while an explicit revision adds coverage', async () => {
-  const manualUrs = structuredClone(urs);
-  const explicitHumanRequirement =
-    'A human must inspect the physical workstation display to verify the saved record remains SYNTHETIC-1 with value 1.250 after application restart.';
-  manualUrs.families[0].requirements[0].details = [explicitHumanRequirement];
-  const initial = candidate();
-  initial.plan.cases[0].steps[0].assertions[0].id = 'A16';
-  initial.plan.obligations[0].assertion_ids = ['A16'];
-  const manual = {
-    id: 'OQ-04',
-    title: 'Restart persistence',
-    classification: 'OQ' as const,
-    requirements: ['URS-001'],
-    prerequisites: [],
-    manual: true,
-    manual_procedure: 'Restart the application and inspect the saved synthetic record.',
-    manual_expected: 'The record remains SYNTHETIC-1 with value 1.250. Do not re-enter it.',
-    manual_reason: {
-      kind: 'explicit_manual_requirement' as const,
-      requirement_id: 'URS-001',
-      source: 'URS-001/details/0',
-      supporting_quote: explicitHumanRequirement,
-      dependency: 'physical workstation display',
-      explanation:
-        'This reviewed requirement explicitly requests a human inspection of the physical display.',
-    },
-    steps: [],
-    citations: [],
-  };
-  initial.plan.cases.push(manual);
-  initial.plan.obligations[0].manual_case_ids.push(manual.id);
-  const additional = structuredClone(initial.plan.cases[0]);
-  additional.id = 'OQ-05';
-  additional.steps[0].id = 'S-05';
-  additional.steps[0].assertions[0].id = 'A-05';
-  additional.steps[0].evidence[0].id = 'E-05';
-  const { result, fetchImpl } = await run(
-    [{ action: 'finish' }, { edits: [{ op: 'add_case', value: additional }] }],
-    {
-      allowManual: true,
-      urs: manualUrs,
-      existing: initial.plan,
-      feedback: 'Add a boundary check.',
-    },
-  );
-
-  expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(2);
-  expect(result.value?.plan.cases.slice(0, 2)).toEqual(initial.plan.cases);
-  expect(result.value?.plan.cases[0].steps[0].assertions[0]).toMatchObject({
-    id: 'A16',
-    expected: true,
-  });
-  expect(
-    result.value?.plan.cases.find((testCase) => testCase.id === 'OQ-04')?.manual_expected,
-  ).toBe(manual.manual_expected);
-  expect(result.value?.plan.obligations).toEqual(initial.plan.obligations);
-});
 
 it('retains the original structure errors while repairing a schema-invalid technical correction', async () => {
   const structuralInvalid = candidate();
@@ -597,7 +416,6 @@ it('retains the original structure errors while repairing a schema-invalid techn
     edits: [{ op: 'repair_obligation_source', obligation_id: 'OB-01', source: null }],
   };
   const { result, fetchImpl } = await run([
-    { action: 'finish' },
     structuralInvalid,
     schemaInvalid,
     {
@@ -609,8 +427,8 @@ it('retains the original structure errors while repairing a schema-invalid techn
 
   expect(result.incomplete).toBe(false);
   expect(result.value).toEqual(candidate());
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
-  const finalCorrection = inputAt(fetchImpl, 3, 'openai');
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  const finalCorrection = inputAt(fetchImpl, 2, 'openai');
   expect(finalCorrection.validation_errors.join('\n')).toContain(
     'OB-01: source must point to existing text or a table in its requirement.',
   );
@@ -632,48 +450,32 @@ it.each(['network', 'refusal', 'incomplete'] as const)(
               ],
             }),
           );
-    const { result, fetchImpl } = await run([{ action: 'finish' }, failed]);
+    const { result, fetchImpl } = await run([failed]);
 
     expect(result.incomplete).toBe(true);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(result.value).toBeUndefined();
     expect(result).not.toHaveProperty('diagnostics');
   },
 );
 
-it('keeps the draft when the remaining spending cap cannot cover advisory review', async () => {
-  const draft = candidate();
-  const probe = await run([{ action: 'finish' }, draft], { usage: false });
-  const { result, fetchImpl } = await run([{ action: 'finish' }, draft], {
-    usage: false,
-    maxSpend: probe.result.spend.reserved + 0.01,
-    reviewCoverage: true,
-  });
-  expect(result.incomplete).toBe(false);
-  expect(result.value).toEqual(draft);
-  expect(result.questions).toEqual([]);
-  expect(result.reviewRounds).toBe(0);
-  expect(result.coverageReviewWarning).toMatch(/spending cap/i);
-  expect(fetchImpl).toHaveBeenCalledTimes(2);
-});
-
 it('does not dispatch a correction when uncertain reservations consume the remaining cap', async () => {
-  const probe = await run([{ action: 'finish' }, candidate()]);
+  const probe = await run([candidate()]);
   const reservation = (index: number) => {
     const body = String(probe.fetchImpl.mock.calls[index][1]?.body);
     const request = JSON.parse(body);
     return ((Buffer.byteLength(body) + 32768) * 5 + request.max_output_tokens * 15) / 1e6;
   };
-  const cap = reservation(0) + reservation(1) + 0.01;
+  const cap = reservation(0) + 0.01;
   const malformed = candidate();
   malformed.plan.cases[0].steps[0].assertions[0].comparison = 'approximately' as never;
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed], {
+  const { result, fetchImpl } = await run([malformed], {
     usage: false,
     maxSpend: cap,
   });
 
   expect(result.incomplete).toBe(true);
-  expect(fetchImpl).toHaveBeenCalledTimes(2);
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
   expect(result.spend.reserved).toBeGreaterThan(0);
   expect(result.questions.join('\n')).toMatch(/spending cap/i);
   expect(result).toHaveProperty('diagnostics', expect.any(Array));

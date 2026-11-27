@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { parseDocument, stringify } from 'yaml';
 import { z } from 'zod';
 import type { AuthoringResult } from './authoring/index.js';
-import { atomicWrite, exists, parseYaml, safePath, sha256, writeNew } from './files.js';
+import { atomicWrite, exists, parseYaml, safePath, sha256, writeJson, writeNew } from './files.js';
 import { ursSchema, type ResolutionDecision, type Urs } from './schema.js';
 import {
   pendingAnsweredQuestions,
@@ -21,7 +21,6 @@ import {
   validateResolutionProposal,
   type UrsResolutionProposal,
 } from './urs-resolution.js';
-import { projectCommand } from './urs-setup.js';
 import {
   isDelegatedAnswer,
   ursAnswerSuggestionsSchema,
@@ -29,13 +28,6 @@ import {
 } from './urs-answers.js';
 import { citationSchema, questionSchema } from './schema.js';
 
-const savedProposalV1Schema = z.strictObject({
-  schema_version: z.literal(1),
-  created_at: z.iso.datetime(),
-  source: z.string(),
-  source_sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  proposal: resolutionProposalSchema,
-});
 const reviewedAnswerSchema = z.strictObject({
   question_id: questionSchema.shape.id,
   answer: z.string().trim().min(1),
@@ -44,29 +36,24 @@ const reviewedAnswerSchema = z.strictObject({
   citations: z.array(citationSchema),
 });
 type ReviewedAnswer = z.infer<typeof reviewedAnswerSchema>;
-const savedRecommendationsSchema = savedProposalV1Schema.omit({ proposal: true }).extend({
+const savedRecommendationsSchema = z.strictObject({
   schema_version: z.literal(2),
+  created_at: z.iso.datetime(),
+  source: z.string(),
+  source_sha256: z.string().regex(/^[a-f0-9]{64}$/),
   answers: z.array(reviewedAnswerSchema),
   deferred_question_ids: z.array(questionSchema.shape.id).default([]),
   recommendations: ursAnswerSuggestionsSchema,
 });
-const savedProposalSchema = z.union([
-  savedProposalV1Schema,
-  savedRecommendationsSchema.extend({
-    proposal: resolutionProposalSchema,
-  }),
-]);
+const pendingReviewSchema = savedRecommendationsSchema.extend({
+  proposal: resolutionProposalSchema.optional(),
+});
 
 export interface ResolveUrsOptions {
   root: string;
   file: string;
-  answersOnly?: boolean;
-  apply?: string;
-  resume?: string;
-  url?: string;
-  yes?: boolean;
-  questions?: string[];
 }
+
 export interface ResolveUrsRuntime {
   isTTY?: boolean;
   text?: (options: { message: string; initialValue?: string }) => Promise<string | symbol>;
@@ -138,12 +125,6 @@ export async function resolveUrsFile(
   options: ResolveUrsOptions,
   runtime: ResolveUrsRuntime,
 ): Promise<void> {
-  if (options.answersOnly && options.apply)
-    throw new Error('--answers-only cannot be combined with --apply.');
-  if (options.apply && options.questions?.length)
-    throw new Error('--question cannot be combined with --apply.');
-  if (options.resume && (options.apply || options.answersOnly || options.questions?.length))
-    throw new Error('--resume cannot be combined with --apply, --answers-only, or --question.');
   const root = path.resolve(options.root);
   const file = await editableFile(root, options.file);
   const log = runtime.log ?? console.log;
@@ -153,8 +134,7 @@ export async function resolveUrsFile(
   let raw = await readFile(file, 'utf8');
   let document = ursSchema.parse(parseYaml(raw));
   const artifact = async (name: string) => safePath(root, `.provenarium/resolutions/${name}`);
-  const command = (args: string[] = []) =>
-    projectCommand(root, ['urs', 'resolve', path.relative(root, file), ...args]);
+  const pendingReview = await artifact(`pending-${sha256(file).slice(0, 16)}.json`);
   const assertCurrent = async () => {
     await editableFile(root, file);
     if ((await readFile(file, 'utf8')) !== raw)
@@ -173,62 +153,16 @@ export async function resolveUrsFile(
     document = next;
     return backup;
   };
-  const summary = (nextStep?: string) => {
+  const summary = () => {
     const unresolved = unresolvedQuestions(document);
     log(
-      `${document.open_questions.length - unresolved.length} resolved; ${pendingAnsweredQuestions(document).length} saved answers awaiting review; ${unresolved.filter((question) => questionStatus(document, question) === 'unanswered').length} unanswered.`,
-    );
-    log(
-      nextStep ??
-        (unresolved.length
-          ? `Continue recommendations review: ${command()}`
-          : `Generate the qualification protocol and tests: ${projectCommand(root, ['generate', '--urs', path.relative(root, file), '--url', options.url ?? '<app-url>'])}`),
+      `${document.open_questions.length - unresolved.length} resolved, ${unresolved.length} pending.`,
     );
   };
-  const selected = options.questions ?? [];
-  if (selected.some((id) => !document.open_questions.some((question) => question.id === id)))
-    throw new Error('Unknown question ID. Use an ID from this URS.');
-  if (selected.length && (!interactive || options.yes))
-    throw new Error(
-      '--question needs an interactive terminal. Edit answer fields in YAML for scripted use.',
-    );
-
-  // Explicit offline answer entry remains available; generated recommendations never use it.
-  if (options.answersOnly) {
-    if (interactive && !options.yes) {
-      const ids = document.open_questions
-        .filter((question) =>
-          selected.length
-            ? selected.includes(question.id)
-            : questionStatus(document, question) === 'unanswered',
-        )
-        .map((question) => question.id);
-      for (const id of ids) {
-        const question = document.open_questions.find((item) => item.id === id)!;
-        log(`${id}: ${question.question}`);
-        const answer = await ask({
-          message: 'Your answer (Enter to keep it; Ctrl+C to save and stop)',
-          initialValue: question.answer ?? undefined,
-        });
-        if (typeof answer === 'symbol') {
-          log(`Stopped. Answers already entered are saved in ${file}.`);
-          summary();
-          return;
-        }
-        if (!answer.trim() || answer.trim() === question.answer?.trim()) continue;
-        const next = structuredClone(document);
-        next.open_questions.find((item) => item.id === id)!.answer = answer.trim();
-        await save(next, 'answer');
-        log(`Saved answer for ${id}.`);
-      }
-    }
-    summary(`Review these answers and their requirement changes: ${command()}`);
-    return;
-  }
   const structuralErrors = await checkUrsStructure(document, root);
   if (structuralErrors.length)
     throw new Error(
-      `This working URS has structural issues that must be corrected before AI resolution. For generated source-reference formatting issues, run ${projectCommand(root, ['urs', 'check', path.relative(root, file), '--fix-references'])}.\n${structuralErrors.join('\n')}`,
+      `Update the working requirements before resolving their questions.\n${structuralErrors.join('\n')}`,
     );
 
   let staged = structuredClone(document);
@@ -256,14 +190,10 @@ export async function resolveUrsFile(
     citations: [],
   });
   for (const question of staged.open_questions)
-    if (
-      (questionStatus(staged, question) !== 'resolved' || selected.includes(question.id)) &&
-      question.answer?.trim()
-    )
+    if (questionStatus(staged, question) !== 'resolved' && question.answer?.trim())
       answers.set(question.id, humanAnswer(question.id, question.answer.trim()));
 
   let proposal: UrsResolutionProposal = { requirements: [], unresolved: [] };
-  let reviewFile: string | undefined;
   let diffFile: string | undefined;
   const source = () => ({ source: file, source_sha256: sha256(raw) });
   const acceptedDecisions = (): Map<string, ResolutionDecision> =>
@@ -323,30 +253,26 @@ export async function resolveUrsFile(
       (item) => answers.get(item.question_id)?.basis !== 'human',
     ),
   });
+  const savedReview = (pendingIds?: Set<string>) => ({
+    schema_version: 2,
+    created_at: new Date().toISOString(),
+    ...source(),
+    answers: [...answers.values()].filter(
+      (item) => !pendingIds || pendingIds.has(item.question_id),
+    ),
+    deferred_question_ids: [...deferred].filter((id) => !pendingIds || pendingIds.has(id)),
+    recommendations: {
+      suggestions: recommendations.suggestions.filter(
+        (item) => !pendingIds || pendingIds.has(item.question_id),
+      ),
+    },
+  });
   const persistUnapproved = async (pendingIds?: Set<string>) => {
     await assertCurrent();
+    const value = savedReview(pendingIds);
+    await writeJson(pendingReview, value);
     const draftFile = await artifact(`${randomUUID()}.recommendations.json`);
-    await writeNew(
-      draftFile,
-      JSON.stringify(
-        {
-          schema_version: 2,
-          created_at: new Date().toISOString(),
-          ...source(),
-          answers: [...answers.values()].filter(
-            (item) => !pendingIds || pendingIds.has(item.question_id),
-          ),
-          deferred_question_ids: [...deferred].filter((id) => !pendingIds || pendingIds.has(id)),
-          recommendations: {
-            suggestions: recommendations.suggestions.filter(
-              (item) => !pendingIds || pendingIds.has(item.question_id),
-            ),
-          },
-        },
-        null,
-        2,
-      ) + '\n',
-    );
+    await writeNew(draftFile, JSON.stringify(value, null, 2) + '\n');
     return draftFile;
   };
   const fullReview = () =>
@@ -356,25 +282,11 @@ export async function resolveUrsFile(
   const persistReview = async () => {
     await assertCurrent();
     const id = randomUUID();
-    reviewFile = await artifact(`${id}.proposal.json`);
+    const value = { ...savedReview(), proposal };
     diffFile = await artifact(`${id}.diff.txt`);
-    await writeNew(
-      reviewFile,
-      JSON.stringify(
-        {
-          schema_version: 2,
-          created_at: new Date().toISOString(),
-          ...source(),
-          answers: [...answers.values()],
-          deferred_question_ids: [...deferred],
-          recommendations,
-          proposal,
-        },
-        null,
-        2,
-      ) + '\n',
-    );
+    await writeNew(await artifact(`${id}.proposal.json`), JSON.stringify(value, null, 2) + '\n');
     await writeNew(diffFile, fullReview() + '\n');
+    await writeJson(pendingReview, value);
   };
   const prepareProposal = async (): Promise<boolean> => {
     await assertCurrent();
@@ -390,9 +302,7 @@ export async function resolveUrsFile(
           log(
             `A reviewable proposal could not be prepared. Your working requirements are unchanged. Unapproved answers and recommendations are retained: ${draft}`,
           );
-          summary(
-            `Resume retained recommendations: ${command(['--resume', path.relative(root, draft)])}`,
-          );
+          summary();
           return false;
         }
         proposal = validateResolutionProposal(staged, result.value);
@@ -409,9 +319,7 @@ export async function resolveUrsFile(
       log(
         `The proposal could not be completed. Unapproved answers and edits are retained: ${draft}`,
       );
-      summary(
-        `Resume retained recommendations: ${command(['--resume', path.relative(root, draft)])}`,
-      );
+      summary();
       throw error;
     }
     await persistReview();
@@ -438,36 +346,26 @@ export async function resolveUrsFile(
     }
     applyAnswers(saved.answers);
   };
-  if (options.apply) {
-    const saved = savedProposalSchema.parse(
-      JSON.parse(await readFile(path.resolve(root, options.apply), 'utf8')),
-    );
-    if (saved.source !== file || saved.source_sha256 !== sha256(raw))
-      throw new Error(
-        'This proposal does not match the current URS. Reopen recommendations review against the current file.',
+  let saved;
+  if (await exists(pendingReview)) {
+    try {
+      const candidate = pendingReviewSchema.parse(
+        JSON.parse(await readFile(pendingReview, 'utf8')),
       );
-    if (saved.schema_version === 2) {
-      restoreRecommendations(saved);
+      if (candidate.source === file && candidate.source_sha256 === sha256(raw)) saved = candidate;
+    } catch {
+      // A damaged snapshot does not prevent reopening the current requirements.
     }
-    proposal = validateResolutionProposal(staged, saved.proposal);
-    reviewFile = path.resolve(root, options.apply);
-    const errors = await checkUrsStructure(applyResolutionProposal(staged, proposal), root);
-    if (errors.length)
-      throw new Error(
-        `The proposed requirements failed structural validation; no changes were applied.\n${errors.join('\n')}`,
-      );
-  } else if (options.resume) {
-    const saved = savedRecommendationsSchema.parse(
-      JSON.parse(await readFile(path.resolve(root, options.resume), 'utf8')),
-    );
-    if (saved.source !== file || saved.source_sha256 !== sha256(raw))
-      throw new Error('Saved recommendations were created for a different URS or revision.');
+  }
+  if (saved) {
     restoreRecommendations(saved);
-    if (!(await prepareProposal())) return;
+    if (saved.proposal) {
+      proposal = validateResolutionProposal(staged, saved.proposal);
+      const errors = await checkUrsStructure(reviewedDocument(), root);
+      if (errors.length) throw new Error(errors.join('\n'));
+    } else if (!(await prepareProposal())) return;
   } else {
-    const reviewIds = selected.length
-      ? selected
-      : unresolvedQuestions(staged).map((question) => question.id);
+    const reviewIds = unresolvedQuestions(staged).map((question) => question.id);
     if (!reviewIds.length) {
       log('All retained questions are resolved.');
       summary();
@@ -475,9 +373,7 @@ export async function resolveUrsFile(
     }
     const recommendationIds = reviewIds.filter((id) => {
       const question = staged.open_questions.find((item) => item.id === id)!;
-      return (
-        selected.includes(id) || !question.answer?.trim() || isDelegatedAnswer(question.answer)
-      );
+      return !question.answer?.trim() || isDelegatedAnswer(question.answer);
     });
     for (const id of recommendationIds) {
       const question = staged.open_questions.find((item) => item.id === id)!;
@@ -494,7 +390,7 @@ export async function resolveUrsFile(
         log(
           'Recommendations could not be prepared. Your working requirements and saved answers are unchanged.',
         );
-        summary(`Resume recommendations review: ${command()}`);
+        summary();
         return;
       }
       recommendations = result.value;
@@ -590,33 +486,24 @@ export async function resolveUrsFile(
     if (pendingIds.size) {
       const continuation = await persistUnapproved(pendingIds);
       log(`Pending recommendations and edits remain unapproved and are retained: ${continuation}`);
-      summary(
-        `Resume pending recommendations: ${command(['--resume', path.relative(root, continuation)])}`,
-      );
+      summary();
     } else summary();
   };
   const saveForLater = () => {
-    log('Review saved for later. Your working requirements and saved answers are unchanged.');
-    summary(
-      `Review this saved proposal without another AI call: ${command(['--apply', path.relative(root, reviewFile!)])}`,
-    );
+    log('Review saved. Run validate again to continue.');
+    summary();
   };
   let edits = 0;
   while (true) {
     showReview();
     const hasChanges = proposal.requirements.length > 0 || Boolean(proposal.document);
-    if (options.apply && options.yes) {
-      if (hasChanges) await apply();
-      else summary();
-      return;
-    }
-    if (!interactive || options.yes) {
+    if (!interactive) {
       saveForLater();
       return;
     }
     const action = await choose({
       message: 'Review recommendations and requirement changes',
-      initialValue: hasChanges ? 'accept' : options.apply || edits >= 2 ? 'details' : 'edit',
+      initialValue: hasChanges ? 'accept' : edits >= 2 ? 'details' : 'edit',
       options: [
         ...(hasChanges
           ? [
@@ -628,7 +515,7 @@ export async function resolveUrsFile(
               },
             ]
           : []),
-        ...(!options.apply && edits < 2 ? [{ value: 'edit', label: 'Edit selected items' }] : []),
+        ...(edits < 2 ? [{ value: 'edit', label: 'Edit selected items' }] : []),
         { value: 'details', label: 'View full changes' },
         { value: 'later', label: 'Save for later' },
       ],
@@ -645,8 +532,7 @@ export async function resolveUrsFile(
       await apply();
       return;
     }
-    if (action !== 'edit' || options.apply || edits >= 2)
-      throw new Error('Unknown review selection.');
+    if (action !== 'edit' || edits >= 2) throw new Error('Unknown review selection.');
     let changed = false;
     while (true) {
       const editable = staged.open_questions.filter(
@@ -654,7 +540,7 @@ export async function resolveUrsFile(
           questionStatus(
             document,
             document.open_questions.find((item) => item.id === question.id)!,
-          ) !== 'resolved' || selected.includes(question.id),
+          ) !== 'resolved',
       );
       const selectedId = await choose({
         message: 'Choose an item to edit; finish editing to update the review',
@@ -670,7 +556,7 @@ export async function resolveUrsFile(
       if (typeof selectedId === 'symbol') {
         const draft = await persistUnapproved();
         log(`Stopped. Working requirements are unchanged; unapproved edits are retained: ${draft}`);
-        summary(`Resume retained edits: ${command(['--resume', path.relative(root, draft)])}`);
+        summary();
         return;
       }
       if (selectedId === 'done') break;
@@ -684,7 +570,7 @@ export async function resolveUrsFile(
       if (typeof edited === 'symbol') {
         const draft = await persistUnapproved();
         log(`Stopped. Working requirements are unchanged; unapproved edits are retained: ${draft}`);
-        summary(`Resume retained edits: ${command(['--resume', path.relative(root, draft)])}`);
+        summary();
         return;
       }
       if (!edited.trim() || edited.trim() === proposed.trim()) continue;

@@ -113,11 +113,11 @@ export async function checkUrs(urs: Urs, root?: string): Promise<string[]> {
     const status = questionStatus(urs, question);
     if (status === 'unanswered')
       errors.push(
-        `${question.id}: ${question.question} Answer beside the question in YAML or run provenarium urs resolve <file>.`,
+        `${question.id}: ${question.question} Answer beside the question in YAML or run provenarium validate.`,
       );
     else if (status === 'answered')
       errors.push(
-        `${question.id}: answer recorded but requirement changes need review. Run provenarium urs resolve <file>.`,
+        `${question.id}: answer recorded but requirement changes need review. Run provenarium validate.`,
       );
   }
   return errors;

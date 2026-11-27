@@ -146,7 +146,10 @@ const directories: string[] = [];
 const servers: Server[] = [];
 const argv = process.argv;
 const exitCode = process.exitCode;
-const isTTY = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+const terminals = [process.stdin, process.stdout].map((stream) => ({
+  stream,
+  isTTY: Object.getOwnPropertyDescriptor(stream, 'isTTY'),
+}));
 let signalListeners: Set<NodeJS.SignalsListener>;
 
 beforeEach(() => {
@@ -154,7 +157,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
-  Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+  for (const { stream } of terminals)
+    Object.defineProperty(stream, 'isTTY', { configurable: true, value: true });
   process.exitCode = undefined;
   signalListeners = new Set(process.listeners('SIGINT'));
   prompts.getProviderKey.mockResolvedValue('synthetic-provider-key');
@@ -167,8 +171,10 @@ beforeEach(() => {
 afterEach(async () => {
   process.argv = argv;
   process.exitCode = exitCode;
-  if (isTTY) Object.defineProperty(process.stdin, 'isTTY', isTTY);
-  else delete (process.stdin as { isTTY?: boolean }).isTTY;
+  for (const { stream, isTTY } of terminals) {
+    if (isTTY) Object.defineProperty(stream, 'isTTY', isTTY);
+    else delete (stream as { isTTY?: boolean }).isTTY;
+  }
   for (const listener of process.listeners('SIGINT'))
     if (!signalListeners.has(listener)) process.removeListener('SIGINT', listener);
   vi.unstubAllGlobals();
@@ -251,10 +257,6 @@ async function validate({ root, url }: { root: string; url: string }) {
     url,
     '--context',
     'design.md',
-    '--provider',
-    'openai',
-    '--yes',
-    '--no-pdf',
   ];
   await import('../src/cli.js');
 }
@@ -271,22 +273,29 @@ it('drafts, resolves and approves the URS before creating, dry-running and execu
       return generated(app.url, '2', false);
     },
   ]);
-  prompts.confirm.mockImplementationOnce(async ({ message }) => {
-    expect(message).toMatch(/approve.*requirements/i);
-    expect(provider).toHaveBeenCalledTimes(3);
-    const saved = await loadUrs(join(app.root, 'urs.yaml'));
-    expect(questionStatus(saved, saved.open_questions[0])).toBe('resolved');
-    expect(app.saves).toEqual([]);
-    stageApproved = true;
-    return true;
-  });
+  prompts.confirm
+    .mockImplementationOnce(async ({ message }) => {
+      expect(message).toMatch(/provider|authoring/i);
+      expect(provider).not.toHaveBeenCalled();
+      return true;
+    })
+    .mockImplementationOnce(async ({ message }) => {
+      expect(message).toMatch(/approve.*requirements/i);
+      expect(provider).toHaveBeenCalledTimes(3);
+      const saved = await loadUrs(join(app.root, 'urs.yaml'));
+      expect(questionStatus(saved, saved.open_questions[0])).toBe('resolved');
+      expect(app.saves).toEqual([]);
+      stageApproved = true;
+      return true;
+    });
   await validate(app);
 
   expect(console.error).not.toHaveBeenCalled();
   expect(process.exitCode).toBeUndefined();
   expect(provider).toHaveBeenCalledTimes(4);
   expect(prompts.getProviderKey).toHaveBeenCalledOnce();
-  expect(prompts.confirm).toHaveBeenCalledOnce();
+  expect(prompts.getProviderKey).toHaveBeenCalledWith('openai');
+  expect(prompts.confirm).toHaveBeenCalledTimes(2);
   expect(prompts.text).not.toHaveBeenCalled();
   expect(app.saves).toEqual(['SYNTH-1', 'SYNTH-1']);
 
@@ -332,7 +341,7 @@ it('drafts, resolves and approves the URS before creating, dry-running and execu
 it('stops after a failed dry run and reuses the exact IOQ after the application is fixed', async () => {
   const app = await fixture({ defective: true, existing: true });
   const provider = mockProvider([() => generated(app.url, '1')]);
-  prompts.confirm.mockResolvedValueOnce(true);
+  prompts.confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
   await validate(app);
 
   expect(process.exitCode).toBe(1);
@@ -367,6 +376,7 @@ it('stops after a failed dry run and reuses the exact IOQ after the application 
   expect(process.exitCode).toBeUndefined();
   expect(console.error).not.toHaveBeenCalled();
   expect(provider).toHaveBeenCalledOnce();
+  expect(prompts.confirm).toHaveBeenCalledTimes(3);
   expect(prompts.getProviderKey).toHaveBeenCalledOnce();
   expect(app.saves).toEqual(['SYNTH-1', 'SYNTH-1', 'SYNTH-1']);
   expect(complete.current_candidate).toBe(project.current_candidate);
@@ -374,7 +384,7 @@ it('stops after a failed dry run and reuses the exact IOQ after the application 
   expect(complete.last_run).toBeDefined();
 });
 
-it('requires explicit approval of existing requirements even with provider consent supplied', async () => {
+it('stops when the user declines requirements approval', async () => {
   const app = await fixture({ existing: true });
   const provider = mockProvider([]);
   prompts.confirm.mockResolvedValueOnce(false);

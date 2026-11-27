@@ -90,7 +90,6 @@ function runtime(isTTY = true) {
       incomplete: false,
       questions: [],
       spend: { cap: 15, actual: 0, reserved: 0, calls: 0 },
-      reviewRounds: 0,
     })),
   };
 }
@@ -117,7 +116,6 @@ function suggestionRuntime(isTTY = true) {
         incomplete: false,
         questions: [],
         spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
-        reviewRounds: 0,
       }),
     ),
   };
@@ -142,37 +140,6 @@ function partial(urs: Urs): UrsResolutionProposal {
   return value;
 }
 
-it('keeps explicit --answers-only offline, preserves comments, and saves each human answer', async () => {
-  const f = await fixture();
-  const ui = suggestionRuntime();
-  ui.text.mockResolvedValueOnce(answer).mockResolvedValueOnce('');
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', answersOnly: true }, ui);
-  const saved = await loadUrs(f.file);
-  expect(saved.open_questions[0].answer).toBe(answer);
-  expect(questionStatus(saved, saved.open_questions[0])).toBe('answered');
-  expect(saved.families).toEqual(f.urs.families);
-  expect(ui.suggest).not.toHaveBeenCalled();
-  expect(ui.propose).not.toHaveBeenCalled();
-  expect(ui.select).not.toHaveBeenCalled();
-  expect(ui.confirm).not.toHaveBeenCalled();
-  expect(await readFile(f.file, 'utf8')).toContain('# Keep this human note.');
-  const snapshots = await Promise.all(
-    (await artifacts(f.root, '.before.yaml')).map((name) => readFile(name, 'utf8')),
-  );
-  expect(snapshots).toContain(f.original);
-});
-it('retains earlier manual answers on cancellation and resumes only unanswered questions', async () => {
-  const f = await fixture();
-  const first = runtime();
-  first.text.mockResolvedValueOnce(answer).mockResolvedValueOnce(Symbol('cancel'));
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', answersOnly: true }, first);
-  expect((await loadUrs(f.file)).open_questions[0].answer).toBe(answer);
-  const resumed = runtime();
-  resumed.text.mockResolvedValueOnce(clearAnswer);
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', answersOnly: true }, resumed);
-  expect(resumed.text).toHaveBeenCalledOnce();
-  expect(resumed.logs[0]).toMatch(/^Q-CLEAR:/);
-});
 it('accepts recommendations and their requirement changes in one review with no questionnaire', async () => {
   const f = await fixture();
   const ui = suggestionRuntime();
@@ -180,7 +147,7 @@ it('accepts recommendations and their requirement changes in one review with no 
     expect(await readFile(f.file, 'utf8')).toBe(f.original);
     return 'accept';
   });
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', url: 'https://example.test/app' }, ui);
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
   expect(ui.suggest).toHaveBeenCalledOnce();
   expect(ui.propose).toHaveBeenCalledOnce();
   expect(ui.select).toHaveBeenCalledOnce();
@@ -220,8 +187,7 @@ it('accepts recommendations and their requirement changes in one review with no 
     basis: 'decision',
     answer: clearAnswer,
   });
-  expect(ui.logs.at(-1)).toContain('generate --urs urs.yaml --url');
-  expect(ui.logs.at(-1)).toContain('https://example.test/app');
+  expect(ui.logs.at(-1)).toBe('2 resolved, 0 pending.');
   expect(ui.logs.at(-1)).not.toContain('urs check');
 });
 it.each(['later', Symbol('cancel')])(
@@ -232,7 +198,7 @@ it.each(['later', Symbol('cancel')])(
     ui.select.mockResolvedValueOnce(selection);
     await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
     expect(await readFile(f.file, 'utf8')).toBe(f.original);
-    expect(ui.logs.at(-1)).toMatch(/without another AI call:.*--apply/);
+    expect(ui.logs.join('\n')).toContain('Run validate again to continue.');
     expect(ui.logs.join('\n')).not.toContain('Check requirements:');
     const artifact = JSON.parse(await readFile(await savedProposal(f.root), 'utf8'));
     expect(artifact.answers.map((record: { answer: string }) => record.answer)).toEqual([
@@ -244,15 +210,15 @@ it.each(['later', Symbol('cancel')])(
     expect(diff).not.toContain('authority: delegated');
   },
 );
-it('applies a saved V2 recommendation review offline without another API request', async () => {
+it('reopens a saved recommendation review on retry without another API request', async () => {
   const f = await fixture();
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, suggestionRuntime());
-  const apply = await savedProposal(f.root);
-  const ui = suggestionRuntime(false);
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, ui);
+  const ui = suggestionRuntime();
+  ui.select.mockResolvedValueOnce('accept');
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
   expect(ui.suggest).not.toHaveBeenCalled();
   expect(ui.propose).not.toHaveBeenCalled();
-  expect(ui.select).not.toHaveBeenCalled();
+  expect(ui.select).toHaveBeenCalledOnce();
   const saved = await loadUrs(f.file);
   expect(saved.open_questions.map((q) => questionStatus(saved, q))).toEqual([
     'resolved',
@@ -263,44 +229,6 @@ it('applies a saved V2 recommendation review offline without another API request
     'delegated',
     'delegated',
   ]);
-});
-it('retains backwards-compatible offline application of V1 saved proposals', async () => {
-  const f = await fixture(true);
-  const { sha256 } = await import('../src/files.js');
-  const apply = join(f.root, 'legacy.json');
-  await writeFile(
-    apply,
-    JSON.stringify({
-      schema_version: 1,
-      created_at: new Date().toISOString(),
-      source: f.file,
-      source_sha256: sha256(f.original),
-      proposal: proposal(f.urs),
-    }),
-  );
-  const ui = runtime(false);
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, ui);
-  expect(ui.propose).not.toHaveBeenCalled();
-  const saved = await loadUrs(f.file);
-  expect(questionStatus(saved, saved.open_questions[0])).toBe('resolved');
-});
-it('treats an offline-edited recommendation as a user decision without inherited agent evidence', async () => {
-  const f = await fixture();
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, suggestionRuntime());
-  const apply = await savedProposal(f.root);
-  const artifact = JSON.parse(await readFile(apply, 'utf8'));
-  artifact.answers[0].answer = 'Disable empty exports.';
-  artifact.proposal.requirements[0].value.statement = 'Disable empty exports.';
-  await writeFile(apply, JSON.stringify(artifact));
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, runtime(false));
-  const saved = await loadUrs(f.file);
-  expect(saved.open_questions[0].resolution?.decision).toEqual({
-    authority: 'user',
-    basis: 'human',
-    rationale: 'Answer edited in the saved review.',
-    citations: [],
-  });
-  expect(saved.open_questions[1].resolution?.decision?.authority).toBe('delegated');
 });
 it('edits selected recommendations as a batch and regenerates once before acceptance', async () => {
   const f = await fixture();
@@ -413,37 +341,6 @@ it('recognizes delegated judgment and proposes a concrete default instead of kee
     original_answer: 'choose something reasonable',
   });
 });
-it('permits an explicitly selected resolved answer to be revisited without replacing other accepted answers', async () => {
-  const f = await fixture(true);
-  f.urs.open_questions[1].answer = clearAnswer;
-  const resolved = applyResolutionProposal(f.urs, proposal(f.urs));
-  await writeFile(f.file, stringify(resolved));
-  const ui = suggestionRuntime();
-  ui.suggest.mockResolvedValueOnce({
-    value: {
-      suggestions: [
-        {
-          question_id: 'Q-CSV',
-          answer: 'Do not download when empty.',
-          basis: 'decision',
-          explanation: 'Proposed revision.',
-          citations: [],
-          choices: [],
-        },
-      ],
-    },
-    incomplete: false,
-    questions: [],
-    spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
-    reviewRounds: 0,
-  });
-  ui.select.mockResolvedValueOnce('accept');
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', questions: ['Q-CSV'] }, ui);
-  expect(ui.suggest.mock.calls[0][1]).toEqual(['Q-CSV']);
-  const saved = await loadUrs(f.file);
-  expect(saved.open_questions[1]).toEqual(resolved.open_questions[1]);
-  expect(saved.open_questions[0].answer).toBe('Do not download when empty.');
-});
 it('shows a genuine missing decision inline while accepting independent ready changes without more questions', async () => {
   const f = await fixture();
   const ui = suggestionRuntime();
@@ -488,17 +385,21 @@ it('keeps delegated null recommendations pending without passing delegation as a
   expect(menu.options.find((item) => item.value === 'accept')!.label).toBe(
     'Accept ready recommendations and changes',
   );
-  const apply = await savedProposal(f.root);
-  const artifact = JSON.parse(await readFile(apply, 'utf8'));
+  const apply = (await readdir(join(f.root, '.provenarium', 'resolutions'))).find((name) =>
+    name.startsWith('pending-'),
+  )!;
+  const pending = join(f.root, '.provenarium', 'resolutions', apply);
+  const artifact = JSON.parse(await readFile(pending, 'utf8'));
   expect(artifact.deferred_question_ids).toEqual(['Q-CLEAR']);
-  const offline = runtime(false);
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, offline);
+  const continuation = runtime();
+  continuation.select.mockResolvedValueOnce('accept');
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, continuation);
+  expect(continuation.propose).not.toHaveBeenCalled();
   const saved = await loadUrs(f.file);
   expect(saved.open_questions[1]).toEqual(f.urs.open_questions[1]);
   expect(questionStatus(saved, saved.open_questions[0])).toBe('resolved');
-  const resume = (await artifacts(f.root, '.recommendations.json'))[0];
   const resumed = suggestionRuntime();
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', resume }, resumed);
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, resumed);
   expect(resumed.suggest).not.toHaveBeenCalled();
   expect(resumed.propose).not.toHaveBeenCalled();
   expect(resumed.logs.join('\n')).toContain('Needs specific evidence');
@@ -515,7 +416,6 @@ it('retains unresolved concrete answers after accepting a partial proposal witho
     incomplete: false,
     questions: [],
     spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
-    reviewRounds: 0,
   }));
   ui.select.mockResolvedValueOnce('accept');
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
@@ -537,7 +437,6 @@ it('accepts only ready answers when an AI recommendation remains unresolved in t
     incomplete: false,
     questions: [],
     spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
-    reviewRounds: 0,
   }));
   ui.select.mockResolvedValueOnce('accept');
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
@@ -555,7 +454,6 @@ it('resumes pending human edits after partial acceptance against the new revisio
     incomplete: false,
     questions: [],
     spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
-    reviewRounds: 0,
   }));
   ui.select
     .mockResolvedValueOnce('edit')
@@ -581,11 +479,9 @@ it('resumes pending human edits after partial acceptance against the new revisio
     retained.recommendations.suggestions.map((item: { question_id: string }) => item.question_id),
   ).toEqual(['Q-CLEAR']);
   expect(firstAccepted.open_questions[1]).toEqual(f.urs.open_questions[1]);
-  expect(ui.logs.at(-1)).toContain('--resume');
-  expect(ui.logs.at(-1)).toContain(resume.split('/').at(-1));
   const resumed = suggestionRuntime();
   resumed.select.mockResolvedValueOnce('accept');
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', resume }, resumed);
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, resumed);
   expect(resumed.suggest).not.toHaveBeenCalled();
   expect(resumed.propose).toHaveBeenCalledOnce();
   const staged = resumed.propose.mock.calls[0][0];
@@ -608,8 +504,6 @@ it('resumes pending human edits after partial acceptance against the new revisio
     'resolved',
     'resolved',
   ]);
-  expect(resumed.logs.at(-1)).toContain('generate --urs urs.yaml --url');
-  expect(resumed.logs.at(-1)).toContain('<app-url>');
 });
 
 it('does not ask blank-page questions or spend on a proposal when every recommendation needs evidence', async () => {
@@ -639,7 +533,6 @@ it('stops after failed recommendations with saved answers unchanged instead of f
     incomplete: true,
     questions: ['Provider unavailable.'],
     spend: { cap: 15, actual: 0, reserved: 1, calls: 1 },
-    reviewRounds: 0,
   });
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
   expect(ui.text).not.toHaveBeenCalled();
@@ -656,7 +549,6 @@ it('retains unapproved recommendations when proposal generation fails without ch
     incomplete: true,
     questions: ['Budget exceeded.'],
     spend: { cap: 15, actual: 0, reserved: 1, calls: 1 },
-    reviewRounds: 0,
   });
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
   expect(await readFile(f.file, 'utf8')).toBe(f.original);
@@ -680,25 +572,21 @@ it('retains edited draft answers if regeneration fails and never applies the sta
       incomplete: false,
       questions: [],
       spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
-      reviewRounds: 0,
     }))
     .mockResolvedValueOnce({
       value: undefined as unknown as UrsResolutionProposal,
       incomplete: true,
       questions: ['Budget exceeded.'],
       spend: { cap: 15, actual: 0, reserved: 1, calls: 2 },
-      reviewRounds: 0,
     });
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui);
   expect(await readFile(f.file, 'utf8')).toBe(f.original);
   const resume = (await artifacts(f.root, '.recommendations.json'))[0];
   const retained = JSON.parse(await readFile(resume, 'utf8'));
   expect(retained.answers[1]).toMatchObject({ answer: 'A new clearing decision.', basis: 'human' });
-  expect(ui.logs.at(-1)).toContain('--resume');
-  expect(ui.logs.at(-1)).toContain(resume.split('/').at(-1));
   const resumed = suggestionRuntime();
   resumed.select.mockResolvedValueOnce('accept');
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', resume }, resumed);
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, resumed);
   expect(resumed.suggest).not.toHaveBeenCalled();
   expect(resumed.propose).toHaveBeenCalledOnce();
   expect(resumed.propose.mock.calls[0][0].open_questions[1].answer).toBe(
@@ -726,61 +614,16 @@ it('retains edited draft answers when editing is cancelled', async () => {
     await readFile((await artifacts(f.root, '.recommendations.json'))[0], 'utf8'),
   );
   expect(retained.answers[1].answer).toBe('My pending edit.');
-  expect(ui.logs.at(-1)).toContain('--resume');
 });
-it('rejects stale retained recommendations before any provider request or review', async () => {
+it('refreshes a saved review when the working requirements change', async () => {
   const f = await fixture();
-  const ui = suggestionRuntime();
-  ui.propose.mockRejectedValueOnce(new Error('Request budget exhausted.'));
-  await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui)).rejects.toThrow(
-    /budget exhausted/,
-  );
-  const resume = (await artifacts(f.root, '.recommendations.json'))[0];
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, suggestionRuntime());
   const edited = f.original + '\n# A later human edit\n';
   await writeFile(f.file, edited);
   const resumed = suggestionRuntime();
-  await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml', resume }, resumed)).rejects.toThrow(
-    /different URS or revision/,
-  );
-  expect(resumed.suggest).not.toHaveBeenCalled();
-  expect(resumed.propose).not.toHaveBeenCalled();
-  expect(resumed.select).not.toHaveBeenCalled();
-  expect(await readFile(f.file, 'utf8')).toBe(edited);
-});
-it('prepares a resumed review with --yes without silently accepting retained edits', async () => {
-  const f = await fixture();
-  const ui = suggestionRuntime();
-  ui.propose.mockRejectedValueOnce(new Error('Temporary provider failure.'));
-  await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui)).rejects.toThrow(/Temporary/);
-  const resume = (await artifacts(f.root, '.recommendations.json'))[0];
-  const resumed = suggestionRuntime(false);
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', resume, yes: true }, resumed);
-  expect(resumed.suggest).not.toHaveBeenCalled();
+  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, resumed);
+  expect(resumed.suggest).toHaveBeenCalledOnce();
   expect(resumed.propose).toHaveBeenCalledOnce();
-  expect(resumed.select).not.toHaveBeenCalled();
-  expect(await readFile(f.file, 'utf8')).toBe(f.original);
-  expect(resumed.logs.at(-1)).toContain('--apply');
-});
-it('prepares an unattended review with --yes without accepting generated answers', async () => {
-  const f = await fixture();
-  const ui = suggestionRuntime(false);
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml', yes: true }, ui);
-  expect(ui.suggest).toHaveBeenCalledOnce();
-  expect(ui.propose).toHaveBeenCalledOnce();
-  expect(ui.select).not.toHaveBeenCalled();
-  expect(ui.text).not.toHaveBeenCalled();
-  expect(await readFile(f.file, 'utf8')).toBe(f.original);
-  expect(await savedProposal(f.root)).toBeTruthy();
-});
-it('rejects a stale saved review without overwriting later human edits', async () => {
-  const f = await fixture();
-  await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, suggestionRuntime());
-  const apply = await savedProposal(f.root);
-  const edited = f.original + '\n# Later human edit\n';
-  await writeFile(f.file, edited);
-  await expect(
-    resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, runtime(false)),
-  ).rejects.toThrow(/current URS/);
   expect(await readFile(f.file, 'utf8')).toBe(edited);
 });
 it('preserves concurrent edits made during suggestion generation', async () => {
@@ -822,7 +665,6 @@ it('rejects invented requirement IDs without changing saved answers', async () =
       incomplete: false,
       questions: [],
       spend: { cap: 15, actual: 0, reserved: 0, calls: 1 },
-      reviewRounds: 0,
     };
   });
   await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml', yes: true }, ui)).rejects.toThrow(
@@ -841,21 +683,6 @@ it('skips already resolved questions without another request', async () => {
   expect(ui.propose).not.toHaveBeenCalled();
   expect(ui.select).not.toHaveBeenCalled();
   expect((await loadUrs(f.file)).open_questions).toEqual(resolved.open_questions);
-});
-it('supports explicit offline revision of a resolved answer', async () => {
-  const f = await fixture(true);
-  f.urs.open_questions = [f.urs.open_questions[0]];
-  const resolved = applyResolutionProposal(f.urs, proposal(f.urs));
-  await writeFile(f.file, stringify(resolved));
-  const ui = runtime();
-  ui.text.mockResolvedValueOnce('No empty download.');
-  await resolveUrsFile(
-    { root: f.root, file: 'urs.yaml', questions: ['Q-CSV'], answersOnly: true },
-    ui,
-  );
-  const saved = await loadUrs(f.file);
-  expect(questionStatus(saved, saved.open_questions[0])).toBe('answered');
-  expect(saved.families).toEqual(resolved.families);
 });
 it.each(['packages/pkg-1/urs.yaml', 'candidates/candidate-1/urs.yaml', '.provenarium/urs.yaml'])(
   'refuses immutable/internal target %s',
@@ -906,7 +733,7 @@ it('rejects malformed working requirements before any provider request', async (
   await writeFile(f.file, original);
   const ui = suggestionRuntime();
   await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui)).rejects.toThrow(
-    /structural issues.*before AI resolution/s,
+    /Update the working requirements/,
   );
   expect(ui.suggest).not.toHaveBeenCalled();
   expect(ui.propose).not.toHaveBeenCalled();
@@ -915,14 +742,17 @@ it('rejects malformed working requirements before any provider request', async (
 it('does not apply a saved review that introduces an invalid normative reference', async () => {
   const f = await fixture();
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, suggestionRuntime());
-  const apply = await savedProposal(f.root);
-  const artifact = JSON.parse(await readFile(apply, 'utf8'));
+  const apply = (await readdir(join(f.root, '.provenarium', 'resolutions'))).find((name) =>
+    name.startsWith('pending-'),
+  )!;
+  const pending = join(f.root, '.provenarium', 'resolutions', apply);
+  const artifact = JSON.parse(await readFile(pending, 'utf8'));
   artifact.proposal.requirements[0].value.references = ['../outside-project.csv'];
-  await writeFile(apply, JSON.stringify(artifact));
+  await writeFile(pending, JSON.stringify(artifact));
   const ui = suggestionRuntime(false);
-  await expect(
-    resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, ui),
-  ).rejects.toThrow(/failed structural validation/);
+  await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml' }, ui)).rejects.toThrow(
+    /outside-project/,
+  );
   expect(ui.suggest).not.toHaveBeenCalled();
   expect(ui.propose).not.toHaveBeenCalled();
   expect(await readFile(f.file, 'utf8')).toBe(f.original);
@@ -930,12 +760,15 @@ it('does not apply a saved review that introduces an invalid normative reference
 it('validates saved staged answer IDs instead of mutating arbitrary question records', async () => {
   const f = await fixture();
   await resolveUrsFile({ root: f.root, file: 'urs.yaml' }, suggestionRuntime());
-  const apply = await savedProposal(f.root);
-  const artifact = JSON.parse(await readFile(apply, 'utf8'));
+  const apply = (await readdir(join(f.root, '.provenarium', 'resolutions'))).find((name) =>
+    name.startsWith('pending-'),
+  )!;
+  const pending = join(f.root, '.provenarium', 'resolutions', apply);
+  const artifact = JSON.parse(await readFile(pending, 'utf8'));
   artifact.answers[0].question_id = 'UNKNOWN';
-  await writeFile(apply, JSON.stringify(artifact));
-  await expect(
-    resolveUrsFile({ root: f.root, file: 'urs.yaml', apply, yes: true }, runtime(false)),
-  ).rejects.toThrow(/unknown question/);
+  await writeFile(pending, JSON.stringify(artifact));
+  await expect(resolveUrsFile({ root: f.root, file: 'urs.yaml' }, runtime(false))).rejects.toThrow(
+    /unknown question/,
+  );
   expect(await readFile(f.file, 'utf8')).toBe(f.original);
 });

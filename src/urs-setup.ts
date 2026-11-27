@@ -31,7 +31,6 @@ async function contextLocation(directory: string, location: string) {
 export interface UrsInputOptions {
   locations?: string[];
   url?: string;
-  hasBrief?: boolean;
   interactive?: boolean;
 }
 
@@ -56,7 +55,7 @@ export async function prepareUrsInputs(
   for (const location of options.locations ?? []) await add(location);
 
   let url = options.url ?? project.target_url;
-  const explicit = options.locations?.length || options.url !== undefined || options.hasBrief;
+  const explicit = options.locations?.length || options.url !== undefined;
   if (options.interactive && !explicit) {
     console.log(
       'Add the application source or documents and its deployed URL. AI will read them and draft the requirements; any unresolved decisions will appear as specific questions.',
@@ -106,7 +105,7 @@ export async function prepareUrsInputs(
   }
   url = url?.trim() || undefined;
   if (url) safeUrl(url);
-  if (!project.context.length && !url && !options.hasBrief)
+  if (!project.context.length && !url)
     throw new Error(
       'Add application context with --context <path> or provide --url <application-url> to draft requirements.',
     );
@@ -116,12 +115,4 @@ export async function prepareUrsInputs(
   }
   if (changed) await saveProject(directory, project);
   return { url };
-}
-
-/** Show copyable next steps, including the selected project and paths with spaces. */
-export function projectCommand(directory: string, args: string[]): string {
-  const quote = (value: string) =>
-    /^[A-Za-z0-9_./:-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
-  const project = path.resolve(directory) === process.cwd() ? [] : ['--project', directory];
-  return ['provenarium', ...project, ...args].map(quote).join(' ');
 }

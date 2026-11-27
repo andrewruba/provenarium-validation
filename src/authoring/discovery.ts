@@ -1,68 +1,21 @@
-import {
-  chromium,
-  type Browser,
-  type BrowserContext,
-  type Locator,
-  type Page,
-} from '@playwright/test';
-import { z } from 'zod';
-import { readFile, realpath } from 'node:fs/promises';
-import path from 'node:path';
-import { locatorSchema, type Bindings, type LocatorSpec } from '../schema.js';
+import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { assertAllowedUrl, redact, redactValue, safeUrl } from './security.js';
 import type { ContextHash } from '../context.js';
 import { matchDeployedScripts } from './source-correspondence.js';
 
-export const discoveryActionSchema = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('inspect') }),
-  z.strictObject({ action: z.literal('navigate'), url: z.string() }),
-  z.strictObject({ action: z.literal('click'), locator: locatorSchema }),
-  z.strictObject({
-    action: z.literal('fill'),
-    locator: locatorSchema,
-    value: z.string().max(1024),
-  }),
-  z.strictObject({
-    action: z.literal('select'),
-    locator: locatorSchema,
-    value: z.string().max(1024),
-  }),
-  z.strictObject({ action: z.literal('fillSecret'), locator: locatorSchema, binding: z.string() }),
-  z.strictObject({ action: z.literal('finish') }),
-]);
-export type DiscoveryAction = z.infer<typeof discoveryActionSchema>;
 export type PageObservation = {
   url: string;
   title: string;
   text: string;
   controls: unknown[];
   links: unknown[];
-  warning?: string;
 };
-export type DiscoveryOptions = {
-  root?: string;
+type DiscoveryOptions = {
   url: string;
-  allowedOrigins?: string[];
-  bindings?: Bindings;
-  discoveryActor?: string;
-  allowInteractions?: boolean;
   signal?: AbortSignal;
 };
 
-function locator(page: Page, spec: LocatorSpec): Locator {
-  if (spec.by === 'role')
-    return page.getByRole((spec.role ?? 'button') as Parameters<Page['getByRole']>[0], {
-      name: spec.value,
-      exact: spec.exact,
-    });
-  if (spec.by === 'label') return page.getByLabel(spec.value, { exact: spec.exact });
-  if (spec.by === 'text') return page.getByText(spec.value, { exact: spec.exact });
-  if (spec.by === 'testId') return page.getByTestId(spec.value);
-  return page.locator(spec.value);
-}
-
-/** Only these compiler-owned browser actions can be requested during discovery.
- * No provider content is evaluated as code or passed to filesystem/shell tools. */
+/** Observe the app through a read-only browser session before drafting. */
 export class Discovery {
   private browser?: Browser;
   private context?: BrowserContext;
@@ -75,63 +28,23 @@ export class Discovery {
   };
   constructor(options: DiscoveryOptions) {
     this.options = options;
-    const target = safeUrl(options.url);
-    this.origins = [
-      ...new Set([target.origin, ...(options.allowedOrigins ?? []).map((x) => safeUrl(x).origin)]),
-    ];
-    this.secrets = Object.values(options.bindings ?? {}).flatMap((b) =>
-      [b.password, b.token].filter((s): s is string => Boolean(s)),
-    );
+    this.origins = [safeUrl(options.url).origin];
+    this.secrets = [];
   }
   async open(): Promise<PageObservation> {
     this.options.signal?.throwIfAborted();
-    let storageState: string | undefined;
-    const sessions = Object.entries(this.options.bindings ?? {}).filter(
-      ([, binding]) => binding.storageState,
-    );
-    if (sessions.length > 1 && !this.options.discoveryActor)
-      throw new Error(
-        'Several discovery sessions are available. Select a discovery actor explicitly.',
-      );
-    const selected = this.options.discoveryActor
-      ? sessions.find(([id]) => id === this.options.discoveryActor)
-      : sessions[0];
-    if (this.options.discoveryActor && !selected)
-      throw new Error('The selected discovery actor has no reusable session.');
-    if (selected) {
-      if (!this.options.root)
-        throw new Error('A project root is required for authenticated discovery.');
-      const directory = await realpath(path.join(this.options.root, '.provenarium', 'auth'));
-      storageState = await realpath(path.resolve(this.options.root, selected[1].storageState!));
-      if (!storageState.startsWith(directory + path.sep))
-        throw new Error('Discovery session must remain in the local authentication directory.');
-      const state = z
-        .object({
-          cookies: z.array(z.object({ value: z.string() })),
-          origins: z.array(z.object({ localStorage: z.array(z.object({ value: z.string() })) })),
-        })
-        .parse(JSON.parse(await readFile(storageState, 'utf8')));
-      this.secrets.push(
-        ...state.cookies.map((cookie) => cookie.value),
-        ...state.origins.flatMap((origin) => origin.localStorage.map((item) => item.value)),
-      );
-    }
     this.browser = await chromium.launch({ headless: true });
     this.context = await this.browser.newContext({
       locale: 'en-US',
       timezoneId: 'UTC',
       viewport: { width: 1280, height: 800 },
-      storageState,
       serviceWorkers: 'block',
       acceptDownloads: false,
     });
     await this.context.route('**/*', async (route) => {
       try {
         assertAllowedUrl(route.request().url(), this.options.url, this.origins);
-        if (
-          !this.options.allowInteractions &&
-          !['GET', 'HEAD', 'OPTIONS'].includes(route.request().method())
-        )
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(route.request().method()))
           return route.abort('blockedbyclient');
         return route.continue();
       } catch {
@@ -148,7 +61,7 @@ export class Discovery {
     await this.page.goto(this.options.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
     return this.snapshot();
   }
-  async snapshot(): Promise<PageObservation> {
+  private async snapshot(): Promise<PageObservation> {
     this.options.signal?.throwIfAborted();
     if (!this.page) throw new Error('Discovery is not open.');
     const url = assertAllowedUrl(this.page.url(), this.options.url, this.origins);
@@ -229,44 +142,6 @@ export class Discovery {
     return matchDeployedScripts(scripts, hashes, this.options.url, this.origins, {
       signal: this.options.signal,
     });
-  }
-  async perform(raw: DiscoveryAction): Promise<PageObservation> {
-    this.options.signal?.throwIfAborted();
-    const action = discoveryActionSchema.parse(raw);
-    if (!this.page) throw new Error('Discovery is not open.');
-    if (action.action === 'finish' || action.action === 'inspect') return this.snapshot();
-    if (action.action === 'navigate') {
-      await this.page.goto(assertAllowedUrl(action.url, this.options.url, this.origins), {
-        waitUntil: 'domcontentloaded',
-        timeout: 20000,
-      });
-    } else {
-      if (!this.options.allowInteractions)
-        throw new Error(
-          'Interactive discovery was not authorized. Use read-only navigation or retain an open question.',
-        );
-      const target = locator(this.page, action.locator);
-      if (action.action === 'click') await target.click();
-      else if (action.action === 'select') await target.selectOption(action.value);
-      else if (action.action === 'fill') {
-        if (
-          (await target.getAttribute('type')) === 'password' ||
-          /token|password|secret/i.test((await target.getAttribute('name')) ?? '')
-        )
-          throw new Error('Secret fields require a named credential binding.');
-        await target.fill(action.value);
-      } else if (action.action === 'fillSecret') {
-        const [actor, field, ...rest] = action.binding.split('.');
-        if (rest.length || !['username', 'password', 'token'].includes(field ?? ''))
-          throw new Error('Unsupported credential binding.');
-        const binding = this.options.bindings?.[actor];
-        const value = binding?.[field as 'username' | 'password' | 'token'];
-        if (!value) throw new Error('The requested credential binding is unavailable.');
-        await target.fill(value);
-      }
-      await this.page.waitForLoadState('domcontentloaded').catch(() => undefined);
-    }
-    return this.snapshot();
   }
   async close(): Promise<void> {
     this.options.signal?.removeEventListener('abort', this.abort);

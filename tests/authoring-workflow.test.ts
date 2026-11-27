@@ -2,8 +2,7 @@ import { providerOutputText } from './provider-fixture.js';
 import { resolutionProviderValue } from './resolution-fixture.js';
 import { describe, expect, it, vi } from 'vitest';
 import { planSchema, ursSchema } from '../src/schema.js';
-import { draftUrs, generatePlan, proposeUrsResolution, reviewUrs } from '../src/authoring/index.js';
-import { blankUrs } from '../src/urs.js';
+import { draftUrs, generatePlan, proposeUrsResolution } from '../src/authoring/index.js';
 import { applyResolutionProposal } from '../src/urs-resolution.js';
 
 vi.mock('../src/authoring/discovery.js', async (importOriginal) => {
@@ -113,23 +112,21 @@ function transport(provider: 'openai' | 'anthropic', values: unknown[]) {
   });
 }
 
-it('drafts guided requirements in one request before human review', async () => {
+it('drafts requirements in one request before human review', async () => {
   const fetchImpl = transport('openai', [urs]);
   const result = await draftUrs({
     root: process.cwd(),
     provider: 'openai',
     key: 'synthetic-key',
     url: plan.target.url,
-    guided: true,
     fetchImpl,
   });
   expect(result.incomplete).toBe(false);
   expect(result.value).toEqual(urs);
-  expect(result.reviewRounds).toBe(0);
   expect(fetchImpl).toHaveBeenCalledOnce();
 });
 
-it('authors guided protocol directly from browser observations and approved requirements', async () => {
+it('authors the protocol directly from browser observations and approved requirements', async () => {
   const fetchImpl = transport('openai', [{ plan, fixtures: [] }]);
   const result = await generatePlan({
     root: process.cwd(),
@@ -137,12 +134,10 @@ it('authors guided protocol directly from browser observations and approved requ
     key: 'synthetic-key',
     urs,
     url: plan.target.url,
-    guided: true,
     fetchImpl,
   });
   expect(result.incomplete).toBe(false);
   expect(result.value?.plan.cases).toEqual(plan.cases);
-  expect(result.reviewRounds).toBe(0);
   expect(fetchImpl).toHaveBeenCalledOnce();
   const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
   const input = JSON.parse(request.input[0].content[0].text);
@@ -278,7 +273,7 @@ describe('answer-based requirements authoring', () => {
     expect(result.questions.join()).toContain('spending cap');
   });
 
-  it('removes invented answers and resolution claims from both drafts and revisions', async () => {
+  it('removes invented answers and resolution claims from the draft', async () => {
     const proposed = answeredUrs();
     proposed.open_questions[0].resolution = {
       answer_hash: 'a'.repeat(64),
@@ -291,16 +286,7 @@ describe('answer-based requirements authoring', () => {
         citations: [],
       },
     };
-    const requests = transport('openai', [
-      proposed,
-      {
-        findings: [
-          { requirement: 'URS-001', severity: 'suggestion', message: 'Keep the question.' },
-        ],
-        summary: 'Review',
-      },
-      proposed,
-    ]);
+    const requests = transport('openai', [proposed]);
     const result = await draftUrs({
       root: '/tmp',
       provider: 'openai',
@@ -314,29 +300,6 @@ describe('answer-based requirements authoring', () => {
       question: proposed.open_questions[0].question,
       answer: null,
     });
-    const reviewRequest = JSON.parse(String(requests.mock.calls[1][1]?.body));
-    const reviewedQuestion = JSON.parse(reviewRequest.input[0].content[0].text).urs
-      .open_questions[0];
-    expect(reviewedQuestion.answer).toBeNull();
-    expect(reviewedQuestion).not.toHaveProperty('resolution');
-  });
-
-  it('preserves the original answered question and its accepted resolution during redrafting', async () => {
-    const answered = answeredUrs();
-    const existing = applyResolutionProposal(answered, answerProposal(answered));
-    const proposed = structuredClone(existing);
-    proposed.open_questions[0].question = 'May the model replace the decision?';
-    proposed.open_questions[0].answer = 'Model replacement';
-    delete proposed.open_questions[0].resolution;
-    const result = await draftUrs({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      existing,
-      fetchImpl: transport('openai', [proposed, { findings: [], summary: 'Reviewed' }]),
-    });
-    expect(result.value?.open_questions).toEqual(existing.open_questions);
-    expect(result.questions).toEqual([]);
   });
 
   it('keeps resolved URS history out of unresolved plan questions while retaining new conflicts', async () => {
@@ -360,11 +323,7 @@ describe('answer-based requirements authoring', () => {
         key: 'test-key',
         urs: resolved,
         url: 'http://localhost:3210',
-        fetchImpl: transport('openai', [
-          { action: 'finish' },
-          { plan: proposedPlan, fixtures: [] },
-          { findings: [], summary: 'Reviewed' },
-        ]),
+        fetchImpl: transport('openai', [{ plan: proposedPlan, fixtures: [] }]),
       });
       expect(result.incomplete).toBe(false);
       expect(result.value?.plan.questions).toEqual(newConflict ? proposedPlan.questions : []);
@@ -380,42 +339,18 @@ describe('answer-based requirements authoring', () => {
       key: 'test-key',
       urs: answeredUrs(),
       url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [{ action: 'finish' }, { plan, fixtures: [] }]),
+      fetchImpl: transport('openai', [{ plan, fixtures: [] }]),
     });
     expect(result.value?.plan.questions[0]).toEqual({
       id: 'Q-ACCESS',
       requirement: 'URS-001',
-      question: 'Answer recorded; run provenarium urs resolve to review its requirement changes.',
+      question: 'Answer recorded; continue validation to review its requirement changes.',
     });
     expect(result.questions.join()).toContain('Resolve URS questions');
   });
 });
 
 describe('authoring workflows', () => {
-  it.each(['openai', 'anthropic'] as const)(
-    'drafts and reviews with %s while preserving human edits',
-    async (provider) => {
-      const changed = structuredClone(urs);
-      changed.families[0].requirements[0].statement = 'Model changed a human requirement';
-      changed.document.title = 'Model changed a human title';
-      changed.document.intended_use = 'Model changed intended use';
-      const result = await draftUrs({
-        root: '/tmp',
-        provider,
-        key: 'test-key',
-        brief: 'Receipt register',
-        existing: urs,
-        thoroughness: 'quick',
-        fetchImpl: transport(provider, [changed, { findings: [], summary: 'Reviewed' }]),
-      });
-      expect(result.incomplete).toBe(false);
-      expect(result.reviewRounds).toBe(1);
-      expect(result.value?.families[0].requirements[0].statement).toBe(
-        urs.families[0].requirements[0].statement,
-      );
-      expect(result.value?.document).toEqual(urs.document);
-    },
-  );
   it.each(['openai', 'anthropic'] as const)(
     'drafts with %s from context and the app without requiring an interview brief',
     async (provider) => {
@@ -440,16 +375,7 @@ describe('authoring workflows', () => {
           answer: null,
         },
       ];
-      const requests = transport(provider, [
-        urs,
-        {
-          findings: [
-            { requirement: 'URS-001', severity: 'suggestion', message: 'Cite the design source.' },
-          ],
-          summary: 'Clarify duplicate handling without guessing.',
-        },
-        revised,
-      ]);
+      const requests = transport(provider, [revised]);
       const result = await draftUrs({
         root: '/tmp',
         provider,
@@ -465,7 +391,7 @@ describe('authoring workflows', () => {
       expect(result.questions).toEqual([
         'Q-DUPLICATE: Should a duplicate Sample ID be rejected or update the existing sample?',
       ]);
-      expect(requests).toHaveBeenCalledTimes(3);
+      expect(requests).toHaveBeenCalledTimes(1);
       for (const [, options] of requests.mock.calls) {
         const request = JSON.parse(String(options?.body));
         const payload = JSON.parse(
@@ -481,79 +407,8 @@ describe('authoring workflows', () => {
       }
     },
   );
-  it('fills an untouched blank template without freezing its empty document fields', async () => {
-    const existing = structuredClone(blankUrs);
-    const requests = transport('openai', [urs, { findings: [], summary: 'Reviewed' }]);
-    const result = await draftUrs({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      existing,
-      url: 'http://localhost:3210',
-      thoroughness: 'quick',
-      fetchImpl: requests,
-    });
-
-    expect(result.incomplete).toBe(false);
-    expect(result.value).toEqual(urs);
-    expect(existing).toEqual(blankUrs);
-    const request = JSON.parse(String(requests.mock.calls[0][1]?.body));
-    expect(JSON.parse(request.input[0].content[0].text)).not.toHaveProperty('existing');
-  });
-  it('retains the completed draft after a later request fails', async () => {
-    const result = await draftUrs({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      brief: 'Receipt register',
-      fetchImpl: transport('openai', [urs, new Error('Transport failure')]),
-    });
-    expect(result.incomplete).toBe(true);
-    expect(result.value).toEqual(urs);
-    expect(result.spend.reserved).toBeGreaterThan(0);
-    expect(result.questions.join()).toContain('reservation');
-  });
-  it.each([
-    ['quick', 1],
-    ['standard', 2],
-    ['thorough', 3],
-  ] as const)('%s performs at most %i relevant review passes', async (thoroughness, count) => {
-    const values = [];
-    for (let i = 0; i < count; i++)
-      values.push({
-        findings: [
-          { requirement: 'URS-001', severity: 'suggestion', message: `Review point ${i}` },
-        ],
-        summary: 'Review',
-      });
-    const result = await reviewUrs({
-      root: '/tmp',
-      provider: 'anthropic',
-      key: 'test-key',
-      urs,
-      thoroughness,
-      fetchImpl: transport('anthropic', values),
-    });
-    expect(result.reviewRounds).toBe(count);
-    expect(result.value?.findings).toHaveLength(count);
-    expect(result.incomplete).toBe(false);
-  });
-  it('stops deeper review early when no actionable findings remain', async () => {
-    const requests = transport('openai', [{ findings: [], summary: 'No additional findings' }]);
-    const result = await reviewUrs({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      urs,
-      thoroughness: 'thorough',
-      fetchImpl: requests,
-    });
-    expect(result.reviewRounds).toBe(1);
-    expect(requests).toHaveBeenCalledTimes(1);
-    expect(result.spend.actual).toBeLessThan(40);
-  });
   it.each(['openai', 'anthropic'] as const)(
-    'authors typed %s tests from bounded discovery',
+    'authors typed %s tests from a read-only browser snapshot',
     async (provider) => {
       const result = await generatePlan({
         root: '/tmp',
@@ -562,7 +417,7 @@ describe('authoring workflows', () => {
         urs,
         url: 'http://localhost:3210',
         thoroughness: 'quick',
-        fetchImpl: transport(provider, [{ action: 'finish' }, { plan, fixtures: [] }]),
+        fetchImpl: transport(provider, [{ plan, fixtures: [] }]),
       });
       expect(result.incomplete).toBe(false);
       expect(result.value?.plan.target.url).toBe('http://localhost:3210/');
@@ -578,7 +433,7 @@ describe('authoring workflows', () => {
       key: 'test-key',
       urs,
       url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [{ action: 'finish' }, { plan: changed, fixtures: [] }]),
+      fetchImpl: transport('openai', [{ plan: changed, fixtures: [] }]),
     });
     expect(result.incomplete).toBe(true);
     expect(result.questions.join()).toContain('expand allowed origins');
@@ -595,32 +450,12 @@ describe('authoring workflows', () => {
         urs,
         url: 'http://localhost:3210',
         fetchImpl: transport('openai', [
-          { action: 'finish' },
           { plan: changed, fixtures: [{ path: filename, content: 'malicious' }] },
         ]),
       });
       expect(result.incomplete).toBe(true);
       expect(result.questions.join()).toContain('fixture path');
     }
-  });
-  it('does not change expected outcomes to make rehearsal or feedback pass', async () => {
-    const forbidden = { edits: [{ op: 'revise_assertion', assertion_id: 'A-1', expected: false }] };
-    const result = await generatePlan({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      urs,
-      url: 'http://localhost:3210',
-      existing: plan,
-      feedback: 'Make it pass',
-      fetchImpl: transport('openai', [
-        { action: 'finish' },
-        ...Array.from({ length: 3 }, () => forbidden),
-      ]),
-    });
-    expect(result.incomplete).toBe(true);
-    expect(result.questions.join()).toMatch(/expected|reviewed|requirement|protect/i);
-    expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
   });
   it('keeps unknown requirements explicit in generated candidates', async () => {
     const unresolved = structuredClone(urs);
@@ -633,47 +468,10 @@ describe('authoring workflows', () => {
       key: 'test-key',
       urs: unresolved,
       url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [{ action: 'finish' }, { plan, fixtures: [] }]),
+      fetchImpl: transport('openai', [{ plan, fixtures: [] }]),
     });
     expect(result.value?.plan.questions).toContainEqual(unresolved.open_questions[0]);
     expect(result.questions.join()).toContain('Resolve URS questions');
-  });
-  it('allows reviewed expectation changes only for requirements changed in a new URS revision', async () => {
-    const revisedUrs = structuredClone(urs);
-    revisedUrs.document.revision = '2';
-    revisedUrs.families[0].requirements[0].statement =
-      'The sample receipt form shall hide Sample ID.';
-    const revision = { edits: [{ op: 'revise_assertion', assertion_id: 'A-1', expected: false }] };
-    const result = await generatePlan({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      urs: revisedUrs,
-      existingUrs: urs,
-      existing: plan,
-      url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [{ action: 'finish' }, revision]),
-    });
-    expect(result.incomplete).toBe(false);
-    expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(false);
-    revisedUrs.families[0].requirements[0].statement = urs.families[0].requirements[0].statement;
-    revisedUrs.families[0].requirements[0].title = 'Cosmetic title revision';
-    const unchanged = await generatePlan({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      urs: revisedUrs,
-      existingUrs: urs,
-      existing: plan,
-      url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [
-        { action: 'finish' },
-        ...Array.from({ length: 3 }, () => revision),
-      ]),
-    });
-    expect(unchanged.incomplete).toBe(true);
-    expect(unchanged.questions.join()).toMatch(/expected|reviewed|requirement|protect/i);
-    expect(unchanged.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
   });
   it('rejects unsupported executable provider actions before executing anything', async () => {
     const requests = transport(
@@ -697,23 +495,5 @@ describe('authoring workflows', () => {
     expect(result.questions.join()).toContain('correction limit');
     expect(result.diagnostics).toHaveLength(3);
     expect(requests).toHaveBeenCalledTimes(3);
-  });
-  it('retains an explicit approval blocker when bounded discovery never finishes', async () => {
-    const result = await generatePlan({
-      root: '/tmp',
-      provider: 'openai',
-      key: 'test-key',
-      urs,
-      url: 'http://localhost:3210',
-      thoroughness: 'quick',
-      fetchImpl: transport('openai', [
-        ...Array.from({ length: 4 }, () => ({ action: 'inspect' })),
-        { plan, fixtures: [] },
-        { findings: [], summary: 'Reviewed' },
-      ]),
-    });
-    expect(result.incomplete).toBe(true);
-    expect(result.value?.plan.questions.some((q) => q.id === 'Q-DISCOVERY-LIMIT')).toBe(true);
-    expect(result.questions.join()).toContain('action limit');
   });
 });

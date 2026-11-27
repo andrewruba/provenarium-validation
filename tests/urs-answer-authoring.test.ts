@@ -257,7 +257,7 @@ describe('context-based answer suggestions', () => {
     });
     expect(result.incomplete).toBe(false);
     expect(browser.options).toHaveBeenCalledWith(
-      expect.objectContaining({ allowInteractions: false }),
+      expect.objectContaining({ url: 'https://example.test/' }),
     );
     expect(browser.open).toHaveBeenCalledOnce();
     expect(browser.close).toHaveBeenCalledOnce();
@@ -265,7 +265,7 @@ describe('context-based answer suggestions', () => {
     expect(JSON.parse(request.input[0].content[0].text).observation.text).toBe('Download CSV');
   });
 
-  it('continues from supplied context when optional application inspection fails', async () => {
+  it('continues from supplied context when application inspection fails', async () => {
     browser.open.mockRejectedValueOnce(new Error('Browser unavailable'));
     const result = await suggestUrsAnswers({
       root: '/tmp',
@@ -277,7 +277,7 @@ describe('context-based answer suggestions', () => {
       fetchImpl: transport('openai', [suggestions()]),
     });
     expect(result.value).toEqual(suggestions());
-    expect(result.questions.join()).toContain('Optional application inspection unavailable');
+    expect(result.questions.join()).toContain('Application inspection unavailable');
     expect(browser.close).toHaveBeenCalledOnce();
   });
 

@@ -41,11 +41,6 @@
     "demo": "tsx examples/sample-app/server.ts",
     "demo:dilution": "tsx examples/dilution-app/server.ts",
     "demo:pages": "npm run build:pages && node scripts/serve-pages.mjs",
-    "validate:dilution": "npm run build && node scripts/validate-dilution.mjs",
-    "prepare:dilution": "node scripts/prepare-dilution.mjs",
-    "validate:dilution:hosted": "npm run build && node scripts/validate-hosted-dilution.mjs",
-    "prepare:dilution:pages": "node scripts/prepare-pages-dilution.mjs",
-    "validate:dilution:pages": "npm run build && node scripts/validate-pages-dilution.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {

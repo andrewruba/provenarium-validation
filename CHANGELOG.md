@@ -2,36 +2,12 @@
 
 ## Unreleased
 
-- Added `validate` to draft and resolve requirements, obtain one approval of the
-  URS, generate the IOQ and Playwright tests, and dry-run the browser procedures.
-  On success it executes the frozen tests and renders the summary. On a dry run
-  failure it saves the IOQ and diagnostics for the next attempt.
-- Made protocol coverage review optional. `generate --review-coverage` requests
-  one advisory review after local checks and any requested rehearsal. Findings
-  and review errors are recorded for the human reviewer without editing or
-  blocking the candidate. Browser rehearsal records failures directly.
-- Added `generate --resume <draft-file>` to package verified completed
-  conversions without a provider call. A normal matching retry can do the same
-  automatically. Add `--rehearse` to test the recovered procedures before human
-  approval.
-- Converted manual cases one at a time, retaining each valid result without
-  treating the remaining cases as technical failures. Growing plans use bounded
-  case views for edits. Every edit is validated against the complete plan and
-  existing expectations.
-- Added automatic reuse of completed conversions when retrying a matching
-  incomplete generation. Input fingerprints and strict edit replay reject stale
-  work; legacy records require exact replay with unchanged inputs. The CLI prints
-  the resumed count, and reused work still requires review and explicit approval.
-- Removed duplicated prior plans and repeated requirement/decision/catalog text
-  from protocol revision requests. Requests retain the complete URS, context,
-  current candidate, and fixtures, with explicit references for repeated text.
-  Local size failures now retain a byte breakdown and identify request assembly
-  as the cause, without dispatching or reserving budget for that step.
-- Persisted accepted delegated decisions with their authority, rationale, sources,
-  and scope, and supplied them to subsequent protocol authoring. Default generation
-  now requires automated coverage; manual exceptions require `--allow-manual` and
-  an exact supporting requirement. Existing manual cases can be converted with
-  typed, audited edits that transfer every obligation and retain expected results.
+- Made `validate` the single CLI workflow for requirements drafting and
+  resolution, approval, browser dry run, execution, and reports. It retains
+  the IOQ on a failed dry run and reuses matching saved tests on retry.
+- Removed alternate CLI commands, optional authoring review, and separate demo
+  setup commands. Validation provisions Chromium when it is missing.
+
 - Added trusted browser tabs, disposable persistent profiles and actual browser
   restarts, dialog decisions, storage denial, negative-download observation, and
   byte-level download metadata. Table snapshots wait for the table to appear.

@@ -133,27 +133,24 @@ export async function prepareRelease({
   const installation = `# Install Provenarium Validation ${packageInfo.version}
 
 This npm package archive supports macOS and Linux with Node.js 26 and npm.
-Dependencies are downloaded by npm during installation. Chromium is installed
-separately. Download the named .tgz asset, not GitHub's source-code archives.
+npm downloads the package dependencies. Validation provisions Chromium when
+it is missing. Download the named .tgz asset.
 
-Download the .tgz asset and SHA256SUMS into one directory and verify the archive:
+Download the .tgz asset and SHA256SUMS into one directory and verify the archive.
 
 \`\`\`sh
 shasum -a 256 -c SHA256SUMS
 npm install --global ./${filename}
 provenarium --version
-provenarium browser install
+provenarium validate --help
 \`\`\`
 
 On Linux, \`sha256sum -c SHA256SUMS\` can also verify the files. The archive URL is
 ${download}/${filename}.
 
-To uninstall the global CLI, run \`provenarium uninstall\`. Use
-\`provenarium uninstall --yes\` for an unattended removal. The fallback is
-\`npm uninstall --global ${packageName}\` using the same npm installation/prefix.
-Validation projects, stored credentials, and shared browser caches are retained.
-Remove stored provider keys first with \`provenarium auth forget --provider openai\`
-and \`provenarium auth forget --provider anthropic\` if desired.
+Remove the global CLI with \`npm uninstall --global ${packageName}\` using the same npm
+installation. Validation projects and shared browser caches stay in their own
+locations.
 
 This is a prerelease. Live-provider authoring-quality evaluations remain pending.
 See RELEASE_NOTES.md and the packaged installation guide for usage and limits.

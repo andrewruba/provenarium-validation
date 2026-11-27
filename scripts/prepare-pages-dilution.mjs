@@ -1,9 +1,7 @@
-#!/usr/bin/env node
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parseArgs } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 export const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const example = join(repository, 'examples', 'dilution-pages-validation');
@@ -100,36 +98,4 @@ export async function preparePagesDilution({ url, project, workspace = randomUUI
     throw error;
   }
   return { project: directory, target, plan };
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  try {
-    const { values } = parseArgs({
-      options: {
-        url: { type: 'string' },
-        project: { type: 'string' },
-        workspace: { type: 'string' },
-        help: { type: 'boolean' },
-      },
-    });
-    if (values.help) {
-      console.log(
-        'Usage: node scripts/prepare-pages-dilution.mjs --url <variant-directory-url> --project <new-directory> [--workspace <id>]',
-      );
-    } else {
-      const prepared = await preparePagesDilution(values);
-      console.log(
-        `Prepared project: ${prepared.project}\nWorkspace: ${prepared.target.target_url}`,
-      );
-      console.log('No network requests, model calls, or approvals were performed.');
-      console.log('Next use the main CLI with --project set to this directory:');
-      console.log('  generate --urs urs.yaml --plan plan.json\n  approve\n  run\n  report');
-      console.log(
-        'Read target.json for the workspace URL. Clear preparations there before repeating a run.',
-      );
-    }
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  }
 }

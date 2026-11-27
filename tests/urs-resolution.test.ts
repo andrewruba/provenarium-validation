@@ -292,7 +292,7 @@ it.each([undefined, null, '', '   '])(
     expect(questionStatus(urs, urs.open_questions[0])).toBe('unanswered');
     expect(pendingAnsweredQuestions(urs)).toEqual([]);
     expect(unresolvedQuestions(urs)).toHaveLength(1);
-    expect((await checkUrs(urs)).join('\n')).toContain('provenarium urs resolve');
+    expect((await checkUrs(urs)).join('\n')).toContain('provenarium validate');
   },
 );
 

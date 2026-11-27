@@ -146,9 +146,7 @@ export async function renderPdf(html: string, file: string): Promise<void> {
   try {
     browser = await chromium.launch({ headless: true });
   } catch {
-    throw new Error(
-      'Chromium is unavailable. Run provenarium browser install before rendering PDF documents.',
-    );
+    throw new Error('Chromium is unavailable for PDF rendering.');
   }
   try {
     const page = await browser.newPage();
@@ -190,10 +188,7 @@ export async function renderReport(
     ? runSchema.parse(await readJson(await safePath(runDir, 'run.json')))
     : undefined;
   const packageId = options.packageId ?? run?.package_id ?? project.current_package;
-  if (!packageId)
-    throw new Error(
-      'No approved package or run selected. Approve a candidate first, or pass --package.',
-    );
+  if (!packageId) throw new Error('No execution package or run was found.');
   if (run && run.package_id !== packageId)
     throw new Error('Selected run belongs to a different package.');
   const packageDir = await safePath(root, `packages/${packageId}`);

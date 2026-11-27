@@ -36,7 +36,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - name: Validate both hosted versions using the CLI
+      - name: Verify both hosted fixtures
         env:
           CORRECT_URL: ${{ inputs.correct_url }}
           FAULTY_URL: ${{ inputs.faulty_url }}

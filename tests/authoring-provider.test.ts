@@ -281,11 +281,11 @@ describe('provider transport and budget', () => {
     expect(budget.snapshot().actual).toBe((600 * 4 + 20 * 15) / 1e6);
     expect(budget.snapshot().reserved).toBe(0);
   });
-  it('defines independent cap and review-round defaults', () => {
+  it('defines caps and supported models', () => {
     expect(PRESETS).toEqual({
-      quick: { cap: 5, reviews: 1 },
-      standard: { cap: 15, reviews: 2 },
-      thorough: { cap: 40, reviews: 3 },
+      quick: { cap: 5 },
+      standard: { cap: 15 },
+      thorough: { cap: 40 },
     });
     expect(Object.keys(MODEL_CATALOG)).toHaveLength(2);
   });
