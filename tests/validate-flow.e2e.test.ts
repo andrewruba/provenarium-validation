@@ -368,15 +368,16 @@ it('stops after a failed dry run and reuses the exact IOQ after the application 
   expect(output).toContain('A-SAVED');
   expect(output).toContain('Saved SYNTH-1');
   expect(output).toContain('Save failed');
+  expect(output).toContain('Dry-run report:');
   const project = await loadProject(app.root);
   expect(project.current_candidate).toBeDefined();
   expect(project.current_package).toBeUndefined();
   expect(project.last_run).toBeUndefined();
   const reports = await readdir(join(app.root, 'drafts'));
   const records = await Promise.all(
-    reports.map(async (report) =>
-      JSON.parse(await readFile(join(app.root, 'drafts', report), 'utf8')),
-    ),
+    reports
+      .filter((report) => report.endsWith('.json'))
+      .map(async (report) => JSON.parse(await readFile(join(app.root, 'drafts', report), 'utf8'))),
   );
   expect(
     records.some((record) =>
@@ -386,6 +387,11 @@ it('stops after a failed dry run and reuses the exact IOQ after the application 
       ),
     ),
   ).toBe(true);
+  const [report] = reports.filter((file) => file.endsWith('.dry-run.html'));
+  expect(report).toBeDefined();
+  const dryRunHtml = await readFile(join(app.root, 'drafts', report), 'utf8');
+  expect(dryRunHtml).toContain('Validation stopped before formal execution.');
+  expect(dryRunHtml).toContain('<td>A-SAVED</td><td>Saved SYNTH-1</td><td>Save failed</td>');
 
   app.fixApplication();
   vi.resetModules();

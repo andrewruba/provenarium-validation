@@ -20,7 +20,7 @@ import { redact, redactValue, safeUrl } from './authoring/security.js';
 import { validatePlan } from './compiler.js';
 import { collectPlanInputCatalog, validateGeneratedPlanInputs } from './plan-inputs.js';
 import { loadProject, createCandidate, approveCandidate, inspectCandidate } from './project.js';
-import { renderReport, renderUrs } from './reports.js';
+import { renderDryRunReport, renderReport, renderUrs } from './reports.js';
 import { executePackage } from './runtime/index.js';
 import { getProviderKey, prepareBindings } from './credentials.js';
 import {
@@ -317,14 +317,15 @@ program
     const secrets = Object.values(bindings).flatMap(({ password, token }) =>
       [password, token].filter((item): item is string => !!item),
     );
-    await writeJson(diagnostics, {
+    const dryRunRecord = {
       candidate: candidate.id,
       rehearsal: dryRun?.rehearsal,
       before_repair: dryRun?.rehearsalBeforeRepair,
       locator_repairs: redactValue(dryRun?.locatorRepairs, secrets),
       unreproduced_failures: dryRun?.unreproducedFailures,
       warning: rehearsalWarning,
-    });
+    };
+    await writeJson(diagnostics, dryRunRecord);
     console.log(
       `IOQ: ${path.join(candidate.directory, 'ioq.html')}\nPlaywright tests: ${path.join(candidate.directory, 'tests')}\nDry run: ${diagnostics}`,
     );
@@ -366,6 +367,9 @@ program
         console.log(
           `  Earlier dry run difference still needs review. ${observedDifference(difference)}`,
         );
+      const report = diagnostics.replace(/\.json$/, '.html');
+      await renderDryRunReport(report, dryRunRecord);
+      console.log(`Dry-run report: ${report}`);
       console.log('The IOQ is saved. Run validate again after addressing the dry run results.');
       process.exitCode = 1;
       return;

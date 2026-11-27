@@ -204,8 +204,10 @@ export const locatorSchema = z
       ])
       .optional(),
     exact: z.boolean().default(true),
+    match: z.literal('text').optional(),
   })
-  .refine((l) => l.by !== 'role' || Boolean(l.role), 'Role locators require a valid role');
+  .refine((l) => l.by !== 'role' || Boolean(l.role), 'Role locators require a valid role')
+  .refine((l) => !l.match || l.by === 'role', 'Text matching is only available for role locators');
 export type LocatorSpec = z.infer<typeof locatorSchema>;
 const json: z.ZodType<unknown> = z.lazy(() =>
   z.union([
@@ -217,56 +219,63 @@ const json: z.ZodType<unknown> = z.lazy(() =>
     z.record(z.string(), json),
   ]),
 );
-export const actionSchema = z.discriminatedUnion('op', [
-  z.strictObject({ op: z.literal('navigate'), url: nonempty }),
-  z.strictObject({ op: z.literal('session'), actor: id }),
-  z.strictObject({ op: z.literal('fill'), locator: locatorSchema, value: z.string() }),
-  z.strictObject({ op: z.literal('fillSecret'), locator: locatorSchema, binding: nonempty }),
-  z.strictObject({ op: z.literal('select'), locator: locatorSchema, value: z.string() }),
-  z.strictObject({ op: z.literal('click'), locator: locatorSchema }),
-  z.strictObject({ op: z.literal('upload'), locator: locatorSchema, path: nonempty }),
-  z.strictObject({ op: z.literal('download'), locator: locatorSchema, save_as: id }),
-  z.strictObject({
-    op: z.literal('browser'),
-    command: z.enum([
-      'open_tab',
-      'select_tab',
-      'open_profile',
-      'select_profile',
-      'restart_profile',
-    ]),
-    name: id,
-    url: nonempty.optional(),
-  }),
-  z.strictObject({
-    op: z.literal('dialog'),
-    locator: locatorSchema,
-    response: z.enum(['accept', 'dismiss', 'none']),
-    as: id,
-    timeout_ms: z.number().int().min(100).max(10000).optional(),
-  }),
-  z.strictObject({
-    op: z.literal('observe_download'),
-    locator: locatorSchema,
-    as: id,
-    timeout_ms: z.number().int().min(100).max(10000).optional(),
-  }),
-  z.strictObject({ op: z.literal('storage'), mode: z.enum(['denied', 'normal']) }),
-  z.strictObject({
-    op: z.literal('read'),
-    locator: locatorSchema,
-    as: id,
-    read: z.enum(['text', 'value', 'count', 'table']),
-  }),
-  z.strictObject({
-    op: z.literal('request'),
-    url: nonempty,
-    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
-    body: json.optional(),
-    auth_binding: z.string().optional(),
-    as: id,
-  }),
-]);
+export const actionSchema = z
+  .discriminatedUnion('op', [
+    z.strictObject({ op: z.literal('navigate'), url: nonempty }),
+    z.strictObject({ op: z.literal('session'), actor: id }),
+    z.strictObject({ op: z.literal('fill'), locator: locatorSchema, value: z.string() }),
+    z.strictObject({ op: z.literal('fillSecret'), locator: locatorSchema, binding: nonempty }),
+    z.strictObject({ op: z.literal('select'), locator: locatorSchema, value: z.string() }),
+    z.strictObject({ op: z.literal('click'), locator: locatorSchema }),
+    z.strictObject({ op: z.literal('upload'), locator: locatorSchema, path: nonempty }),
+    z.strictObject({ op: z.literal('download'), locator: locatorSchema, save_as: id }),
+    z.strictObject({
+      op: z.literal('browser'),
+      command: z.enum([
+        'open_tab',
+        'select_tab',
+        'open_profile',
+        'select_profile',
+        'restart_profile',
+      ]),
+      name: id,
+      url: nonempty.optional(),
+    }),
+    z.strictObject({
+      op: z.literal('dialog'),
+      locator: locatorSchema,
+      response: z.enum(['accept', 'dismiss', 'none']),
+      as: id,
+      timeout_ms: z.number().int().min(100).max(10000).optional(),
+    }),
+    z.strictObject({
+      op: z.literal('observe_download'),
+      locator: locatorSchema,
+      as: id,
+      timeout_ms: z.number().int().min(100).max(10000).optional(),
+    }),
+    z.strictObject({ op: z.literal('storage'), mode: z.enum(['denied', 'normal']) }),
+    z.strictObject({
+      op: z.literal('read'),
+      locator: locatorSchema,
+      as: id,
+      read: z.enum(['text', 'value', 'count', 'table']),
+    }),
+    z.strictObject({
+      op: z.literal('request'),
+      url: nonempty,
+      method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
+      body: json.optional(),
+      auth_binding: z.string().optional(),
+      as: id,
+    }),
+  ])
+  .refine(
+    (action) =>
+      !('locator' in action && action.locator.match === 'text') ||
+      (action.op === 'read' && (action.read === 'text' || action.read === 'count')),
+    'Role text matching in actions requires reading text or a count',
+  );
 export type Action = z.infer<typeof actionSchema>;
 export const assertionSchema = z
   .strictObject({
@@ -301,6 +310,14 @@ export const assertionSchema = z
   .refine(
     (a) => Boolean(a.locator) !== Boolean(a.variable),
     'Assertion needs exactly one locator or variable',
+  )
+  .refine(
+    (a) =>
+      a.locator?.match !== 'text' ||
+      a.read === 'text' ||
+      a.read === 'count' ||
+      a.read === 'visible',
+    'Role text matching in assertions requires text, count, or visibility',
   );
 export type Assertion = z.infer<typeof assertionSchema>;
 export const evidenceSchema = z.strictObject({

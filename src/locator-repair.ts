@@ -7,8 +7,20 @@ const literalRoleSelector =
 
 /** A possible replacement. The browser must still prove it resolves uniquely. */
 export function misplacedRoleSelector(locator: LocatorSpec): LocatorSpec | undefined {
-  if (locator.by !== 'role') return;
+  if (locator.by !== 'role' || locator.match) return;
   const match = literalRoleSelector.exec(locator.value);
   if (!match || (match[1] ?? match[2] ?? match[3]) !== locator.role) return;
   return { by: 'css', value: locator.value, exact: true };
+}
+
+/** Live message roles are often unnamed, even when their content is visible. */
+export function misplacedRoleText(locator: LocatorSpec): LocatorSpec | undefined {
+  if (
+    locator.by !== 'role' ||
+    locator.match ||
+    (locator.role !== 'alert' && locator.role !== 'status') ||
+    misplacedRoleSelector(locator)
+  )
+    return;
+  return { ...locator, match: 'text' };
 }

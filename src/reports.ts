@@ -16,6 +16,7 @@ import { atomicWrite, exists, readJson, readYaml, safePath, sha256 } from './fil
 import { loadUrs, questionStatus, requirements } from './urs.js';
 import { describeAction, describeAssertion } from './compiler.js';
 import { loadProject, requirementsApprovalErrors } from './project.js';
+import type { LocatorRepair, Rehearsal } from './authoring/rehearsal.js';
 
 export const escapeHtml = (value: unknown): string =>
   String(value ?? '').replace(
@@ -172,6 +173,58 @@ export async function renderUrs(urs: Urs, base: string, pdf = true): Promise<voi
   await atomicWrite(`${base}.html`, html);
   if (pdf) await renderPdf(html, `${base}.pdf`);
 }
+
+export async function renderDryRunReport(
+  file: string,
+  record: {
+    candidate: string;
+    rehearsal?: Rehearsal;
+    locator_repairs?: readonly LocatorRepair[];
+    unreproduced_failures?: readonly Observation[];
+    warning?: string;
+  },
+): Promise<void> {
+  const { rehearsal } = record;
+  const cases = rehearsal?.cases ?? [];
+  const issues = [...(rehearsal?.action_issues ?? []), ...(rehearsal?.assertion_issues ?? [])];
+  const failureRows = (observations: readonly Observation[]) =>
+    observations.map((observation) => [
+      observation.case_id,
+      observation.step_id,
+      observation.assertion_id,
+      observation.expected,
+      observation.actual === undefined ? 'Unavailable' : observation.actual,
+      observation.message,
+    ]);
+  const failures = rehearsal?.observations.filter((observation) => observation.status === 'failed');
+  const columns = ['Case', 'Step', 'Assertion', 'Expected', 'Observed', 'Details'];
+  const earlier = record.unreproduced_failures ?? [];
+  const html = layout(
+    'Dry-run report',
+    `<p>IOQ candidate <strong>${e(record.candidate)}</strong></p><p class="warning">Validation stopped before formal execution.</p>${record.warning ? `<p>${e(record.warning)}</p>` : ''}${
+      cases.length
+        ? `<h2>Case results</h2>${table(
+            ['Case', 'Result'],
+            cases.map((item) => [item.id, item.status.replaceAll('_', ' ')]),
+          )}`
+        : ''
+    }${record.locator_repairs?.length ? `<p>Confirmed locator repairs: ${record.locator_repairs.length}</p>` : ''}${failures?.length ? `<h2>Dry-run failures</h2>${table(columns, failureRows(failures))}` : ''}${
+      issues.length
+        ? `<h2>Browser diagnostics</h2>${table(
+            ['Case', 'Step', 'Check', 'Diagnostic'],
+            issues.map((issue) => [
+              issue.case_id,
+              issue.step_id,
+              'assertion_id' in issue ? issue.assertion_id : `Action ${issue.action_index + 1}`,
+              issue.reason.replaceAll('_', ' '),
+            ]),
+          )}`
+        : ''
+    }${earlier.length ? `<h2>Earlier differences needing review</h2>${table(columns, failureRows(earlier))}` : ''}`,
+  );
+  await atomicWrite(file, html);
+}
+
 function csvCell(v: unknown) {
   let s = String(v ?? '');
   if (/^[=+@-]/.test(s)) s = "'" + s;

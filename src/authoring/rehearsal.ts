@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { chromium, type Browser } from '@playwright/test';
 import { ExecutionEngine, type ActionIssue, type AssertionIssue } from '../runtime/engine.js';
 import { safePath } from '../files.js';
-import { misplacedRoleSelector } from '../locator-repair.js';
+import { misplacedRoleSelector, misplacedRoleText } from '../locator-repair.js';
 import type { Bindings, LocatorSpec, Observation, Plan, Run } from '../schema.js';
 import { redactValue } from './security.js';
 
@@ -17,6 +17,7 @@ export type Rehearsal = {
   observations: Observation[];
   action_issues?: ActionIssue[];
   assertion_issues?: AssertionIssue[];
+  role_text_probes?: number;
 };
 
 export type LocatorRepair = {
@@ -38,7 +39,7 @@ export async function rehearsePlan(
   files: RehearsalFile[],
   bindings: Bindings = {},
   signal?: AbortSignal,
-  diagnoseLocators = false,
+  locatorCheck?: 'probe' | 'diagnose',
 ): Promise<Rehearsal> {
   signal?.throwIfAborted();
   const temporary = await mkdtemp(path.join(tmpdir(), 'provenarium-authoring-'));
@@ -79,8 +80,13 @@ export async function rehearsePlan(
       { projectRoot: root, packageDirectory, runDirectory, tests: [], socketPath: '' },
       plan,
       bindings,
-      diagnoseLocators ? (issue) => actionIssues.push(issue) : undefined,
-      diagnoseLocators ? (issue) => assertionIssues.push(issue) : undefined,
+      locatorCheck
+        ? {
+            action: (issue) => actionIssues.push(issue),
+            assertion: (issue) => assertionIssues.push(issue),
+            probeRoleText: locatorCheck === 'probe',
+          }
+        : undefined,
     );
     await engine.setBrowser(browser);
     for (const item of plan.cases) {
@@ -106,17 +112,23 @@ export async function rehearsePlan(
     const secrets = Object.values(bindings).flatMap((b) =>
       [b.password, b.token].filter((v): v is string => Boolean(v)),
     );
-    return redactValue(
-      {
-        kind: 'authoring_diagnostics' as const,
-        plan_sha256: createHash('sha256').update(JSON.stringify(plan)).digest('hex'),
-        cases: updated.cases,
-        observations: observations.map((o) => ({ ...o, artifacts: [] })),
-        ...(actionIssues.length ? { action_issues: actionIssues } : {}),
-        ...(assertionIssues.length ? { assertion_issues: assertionIssues } : {}),
-      },
-      secrets,
-    );
+    const roleTextProbes = assertionIssues.filter(
+      (issue) => issue.replacement_locator?.match === 'text',
+    ).length;
+    return {
+      ...redactValue(
+        {
+          kind: 'authoring_diagnostics' as const,
+          plan_sha256: createHash('sha256').update(JSON.stringify(plan)).digest('hex'),
+          cases: updated.cases,
+          observations: observations.map((o) => ({ ...o, artifacts: [] })),
+          ...(actionIssues.length ? { action_issues: actionIssues } : {}),
+          ...(assertionIssues.length ? { assertion_issues: assertionIssues } : {}),
+        },
+        secrets,
+      ),
+      ...(roleTextProbes ? { role_text_probes: roleTextProbes } : {}),
+    };
   } finally {
     signal?.removeEventListener('abort', abort);
     await browser?.close().catch(() => undefined);
@@ -140,13 +152,14 @@ export async function checkPlanInBrowser(
   locatorRepairs?: LocatorRepair[];
   unreproducedFailures?: Observation[];
 }> {
-  const first = await rehearsePlan(root, plan, files, bindings, signal, true);
+  const first = await rehearsePlan(root, plan, files, bindings, signal, 'probe');
   const actionFixes =
     first.action_issues?.filter(
       (issue) => issue.exact_match_available || issue.replacement_locator,
     ) ?? [];
   const assertionFixes = first.assertion_issues?.filter((issue) => issue.replacement_locator) ?? [];
-  if (!actionFixes.length && !assertionFixes.length) return { plan, rehearsal: first };
+  if (!actionFixes.length && !assertionFixes.length && !first.role_text_probes)
+    return { plan, rehearsal: first };
   const corrected = structuredClone(plan);
   const stepFor = (issue: { case_id: string; step_id: string }) =>
     corrected.cases
@@ -154,7 +167,7 @@ export async function checkPlanInBrowser(
       ?.steps.find((step) => step.id === issue.step_id);
   const locatorRepairs: LocatorRepair[] = [];
   const provedReplacement = (before: LocatorSpec, evidence: LocatorSpec) => {
-    const intended = misplacedRoleSelector(before);
+    const intended = misplacedRoleSelector(before) ?? misplacedRoleText(before);
     return isDeepStrictEqual(evidence, intended) ? intended : undefined;
   };
   for (const issue of actionFixes) {
@@ -189,20 +202,32 @@ export async function checkPlanInBrowser(
       after,
     });
   }
+  if (
+    locatorRepairs.filter((repair) => repair.after.match === 'text').length <
+    (first.role_text_probes ?? 0)
+  )
+    return {
+      plan,
+      rehearsal: first,
+      rehearsalWarning:
+        'The dry run could not retain enough evidence to apply every alert locator repair safely.',
+    };
   if (!locatorRepairs.length) return { plan, rehearsal: first };
   onProgress?.(
     `Repaired ${locatorRepairs.length} confirmed locator ${locatorRepairs.length === 1 ? 'issue' : 'issues'}. Rerunning the dry run once.`,
   );
   try {
-    const rehearsal = await rehearsePlan(root, corrected, files, bindings, signal, true);
+    const rehearsal = await rehearsePlan(root, corrected, files, bindings, signal, 'diagnose');
     const assertionKey = ({
       case_id,
       step_id,
       assertion_id,
     }: Pick<Observation, 'case_id' | 'step_id' | 'assertion_id'>) =>
       `${case_id}/${step_id}/${assertion_id}`;
-    const repairedAssertions = new Set(
-      locatorRepairs.filter((repair) => repair.assertion_id).map(assertionKey),
+    const unprobedAssertions = new Set(
+      locatorRepairs
+        .filter((repair) => repair.assertion_id && repair.after.match !== 'text')
+        .map(assertionKey),
     );
     const differences = (result: Rehearsal) =>
       result.observations.filter(
@@ -212,7 +237,7 @@ export async function checkPlanInBrowser(
     // Rerunning unrelated cases must not hide an intermittent observed mismatch.
     const unreproducedFailures = differences(first).filter((entry) => {
       const key = assertionKey(entry);
-      return !repairedAssertions.has(key) && !repeatedFailures.has(key);
+      return !unprobedAssertions.has(key) && !repeatedFailures.has(key);
     });
     return {
       plan: corrected,

@@ -38,20 +38,39 @@ import {
 import { assertSessionLocation } from '../credentials.js';
 import { boundedHttpRequest } from './http.js';
 import { csvExpectedRowsError, parseCsv } from '../csv.js';
-import { misplacedRoleSelector } from '../locator-repair.js';
+import { misplacedRoleSelector, misplacedRoleText } from '../locator-repair.js';
 
 const MAX_ARTIFACT_BYTES = 20 * 1024 * 1024;
 const MAX_OBSERVATION_CHARS = 2 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 class ConcealedEvidenceError extends Error {}
 
+function roleElements(page: Page, locator: LocatorSpec, name?: string): Locator {
+  return page.getByRole(locator.role as Parameters<Page['getByRole']>[0], {
+    name,
+    exact: locator.exact,
+  });
+}
+
+function messagePattern(locator: LocatorSpec): RegExp {
+  const text = locator.value
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s+');
+  return locator.exact ? new RegExp('^\\s*' + text + '\\s*$') : new RegExp(text, 'i');
+}
+
+async function matchingRoleTexts(elements: Locator, locator: LocatorSpec): Promise<string[]> {
+  const pattern = messagePattern(locator);
+  const texts = await elements.filter({ visible: true }).allInnerTexts();
+  return texts.filter((text) => pattern.test(text));
+}
+
 export function locate(page: Page, locator: LocatorSpec): Locator {
   switch (locator.by) {
     case 'role':
-      return page.getByRole(locator.role as Parameters<Page['getByRole']>[0], {
-        name: locator.value,
-        exact: locator.exact,
-      });
+      return roleElements(page, locator, locator.value);
     case 'label':
       return page.getByLabel(locator.value, { exact: locator.exact });
     case 'text':
@@ -170,6 +189,11 @@ export type AssertionIssue = {
   reason: 'locator_missing' | 'locator_ambiguous' | 'read_failed';
   replacement_locator?: LocatorSpec;
 };
+type LocatorDiagnostics = {
+  action: (issue: ActionIssue) => void;
+  assertion: (issue: AssertionIssue) => void;
+  probeRoleText: boolean;
+};
 type DownloadValue = {
   path: string;
   text?: string;
@@ -221,8 +245,7 @@ export class ExecutionEngine {
     private readonly options: WorkerContext,
     readonly plan: Plan,
     private readonly bindings: Bindings,
-    private readonly onActionIssue?: (issue: ActionIssue) => void,
-    private readonly onAssertionIssue?: (issue: AssertionIssue) => void,
+    private readonly locatorDiagnostics?: LocatorDiagnostics,
   ) {
     this.secrets = Object.values(bindings).flatMap((binding) =>
       [binding.password, binding.token].filter((item): item is string => Boolean(item)),
@@ -238,6 +261,19 @@ export class ExecutionEngine {
     if ((await target.count()) !== 1) return;
     if ((await target.and(page.getByRole(locator.role)).count()) !== 1) return;
     if (await target.isVisible()) return replacement;
+  }
+
+  private async proveMisplacedRoleText(
+    page: Page,
+    original: LocatorSpec,
+    replacement: LocatorSpec,
+  ) {
+    if ((await locate(page, original).count()) !== 0) return false;
+    const role = original.role!;
+    const elements = roleElements(page, original);
+    if ((await matchingRoleTexts(elements, replacement)).length !== 1) return false;
+    const unnamed = elements.and(page.getByRole(role, { name: '', exact: true }));
+    return (await matchingRoleTexts(unnamed, replacement)).length === 1;
   }
 
   /** Diagnose the failing step without retaining Playwright errors or page contents. */
@@ -300,7 +336,10 @@ export class ExecutionEngine {
       reason: 'read_failed',
     };
     try {
-      const count = await locate(page, locator).count();
+      const count =
+        locator.match === 'text'
+          ? (await matchingRoleTexts(roleElements(page, locator), locator)).length
+          : await locate(page, locator).count();
       if (count === 0) {
         issue.reason = 'locator_missing';
         const replacement = await this.proveMisplacedRoleSelector(page, locator);
@@ -576,6 +615,14 @@ export class ExecutionEngine {
   }
 
   private async read(locator: LocatorSpec, kind: Assertion['read']): Promise<unknown> {
+    if (locator.match === 'text' && (kind === 'count' || kind === 'visible' || kind === 'text')) {
+      const matching = await matchingRoleTexts(roleElements(this.page!, locator), locator);
+      if (kind === 'count') return matching.length;
+      if (kind === 'visible' && matching.length === 0) return false;
+      if (matching.length !== 1)
+        throw new Error('Rendered role text did not identify one element.');
+      return kind === 'text' ? matching[0] : true;
+    }
     const selected = locate(this.page!, locator);
     switch (kind) {
       case 'text':
@@ -868,10 +915,31 @@ export class ExecutionEngine {
   private async assertion(assertion: Assertion): Promise<void> {
     let actual: unknown;
     let matched = false;
-    const getActual = async () =>
-      assertion.locator
-        ? this.read(assertion.locator, assertion.read)
-        : variableValue(this.variables, assertion.variable!);
+    let probe: AssertionIssue | undefined;
+    const locator = assertion.locator;
+    const diagnostics = this.locatorDiagnostics;
+    const probeRead =
+      assertion.read === 'text' || assertion.read === 'count' || assertion.read === 'visible';
+    const replacement =
+      diagnostics?.probeRoleText && probeRead && locator && misplacedRoleText(locator);
+    const getActual = async () => {
+      if (!locator) return variableValue(this.variables, assertion.variable!);
+      // Test the proposed locator in place so later assertions in this case can
+      // be diagnosed during the same pass. The original expectation still decides.
+      if (
+        !probe &&
+        replacement &&
+        (await this.proveMisplacedRoleText(this.page!, locator, replacement))
+      )
+        probe = {
+          case_id: this.caseId,
+          step_id: this.stepId,
+          assertion_id: assertion.id,
+          reason: 'locator_missing',
+          replacement_locator: replacement,
+        };
+      return this.read(probe?.replacement_locator ?? locator, assertion.read);
+    };
     try {
       if (assertion.locator) {
         await expect
@@ -895,13 +963,13 @@ export class ExecutionEngine {
     // assertion. Check that known shape even when the comparison passed,
     // within the dry run only.
     const issue =
-      this.onAssertionIssue &&
-      (!matched || (assertion.locator && misplacedRoleSelector(assertion.locator)))
+      probe ??
+      (diagnostics && (!matched || (locator && misplacedRoleSelector(locator)))
         ? await this.diagnoseAssertion(assertion, actual)
-        : undefined;
+        : undefined);
     if (issue) {
-      matched = false;
-      this.onAssertionIssue?.(issue);
+      if (!probe) matched = false;
+      diagnostics?.assertion(issue);
     }
     await this.observe({
       assertion_id: assertion.id,
@@ -910,7 +978,7 @@ export class ExecutionEngine {
       actual,
       message: matched
         ? undefined
-        : issue
+        : issue && !probe
           ? 'The browser could not locate or read the assertion target.'
           : 'Observed result did not satisfy the approved assertion.',
       artifacts: [],
@@ -1005,8 +1073,7 @@ export class ExecutionEngine {
             try {
               await this.action(action);
             } catch (error) {
-              if (this.onActionIssue)
-                this.onActionIssue(await this.diagnoseAction(action, index, error));
+              this.locatorDiagnostics?.action(await this.diagnoseAction(action, index, error));
               throw error;
             }
           }

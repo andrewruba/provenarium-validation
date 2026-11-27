@@ -19,6 +19,13 @@ const correctAlert: LocatorSpec = { by: 'css', value: encodedAlert.value, exact:
 const expectedDuplicate = 'Sample ID already exists.';
 const duplicateMarkup = (message = expectedDuplicate) =>
   `<div id="messages"><p role="alert">${message}</p></div>`;
+const volumeMessage = 'Final volume must be a finite number.';
+const namedVolumeAlert: LocatorSpec = {
+  by: 'role',
+  role: 'alert',
+  value: 'final VOLUME',
+  exact: false,
+};
 
 const saveCase: CaseInput = {
   id: 'OQ-SAVE',
@@ -73,6 +80,21 @@ function alertCase(id: string, route: string, locator = encodedAlert): CaseInput
       },
     ],
   };
+}
+
+function visibleAlertStep(
+  id: string,
+  route: string,
+  assertionId: string,
+  locator: LocatorSpec,
+  expected = true,
+) {
+  return {
+    id,
+    instruction: 'Check the validation message.',
+    actions: [{ op: 'navigate', url: route }],
+    assertions: [{ id: assertionId, locator, read: 'visible', comparison: 'equals', expected }],
+  } satisfies CaseInput['steps'][number];
 }
 
 async function withBrowserFixture(
@@ -242,6 +264,184 @@ it('leaves the plan intact when a locator repair has no unique visible witness',
           actual: 'Wrong alert text',
         }),
       );
+    },
+  );
+});
+
+it('repairs visible message text across steps in one rerun and preserves a real mismatch', async () => {
+  const stockMessage = 'Stock concentration must be positive.';
+  const namedStockStatus = {
+    ...namedVolumeAlert,
+    role: 'status',
+    value: stockMessage,
+    exact: true,
+  } satisfies LocatorSpec;
+  const wrongMessage = 'Final volume is outside the allowed range.';
+  const wrongResult = alertCase('OQ-WRONG-TEXT', '/wrong-volume', namedVolumeAlert);
+  const wrongAssertion = wrongResult.steps[0].assertions[0];
+  wrongAssertion.comparison = 'equals';
+  wrongAssertion.expected = volumeMessage;
+  await withBrowserFixture(
+    {
+      '/volume': `<p role="alert">${volumeMessage}</p><p role="alert">An unrelated warning.</p>`,
+      '/stock': `<p role="status">${stockMessage}</p>`,
+      '/wrong-volume': duplicateMarkup(wrongMessage),
+      '/unexpected-volume': duplicateMarkup(volumeMessage),
+    },
+    async ({ root, url, visits }) => {
+      const plan = testPlan(url, [
+        {
+          ...alertCase('OQ-ALERTS', '/volume'),
+          steps: [
+            visibleAlertStep('01', '/volume', 'A-VOLUME', namedVolumeAlert),
+            visibleAlertStep('02', '/stock', 'A-STOCK', namedStockStatus),
+          ],
+        },
+        wrongResult,
+        {
+          ...alertCase('OQ-UNEXPECTED-ALERT', '/unexpected-volume'),
+          steps: [
+            visibleAlertStep('01', '/unexpected-volume', 'A-UNEXPECTED', namedVolumeAlert, false),
+          ],
+        },
+      ]);
+      const original = structuredClone(plan);
+      const expected = structuredClone(plan);
+      for (const item of expected.cases) {
+        for (const step of item.steps) {
+          const assertion = step.assertions[0];
+          assertion.locator = { ...assertion.locator!, match: 'text' };
+        }
+      }
+
+      const result = await checkPlanInBrowser(root, plan, []);
+
+      expect(plan).toEqual(original);
+      expect(result.plan).toEqual(expected);
+      expect(visits).toEqual({
+        '/volume': 2,
+        '/stock': 2,
+        '/wrong-volume': 2,
+        '/unexpected-volume': 2,
+      });
+      expect(
+        result.rehearsalBeforeRepair?.assertion_issues?.map((issue) => issue.assertion_id),
+      ).toEqual(['A-VOLUME', 'A-STOCK', 'A-OQ-WRONG-TEXT', 'A-UNEXPECTED']);
+      expect(result.locatorRepairs?.map((repair) => repair.assertion_id)).toEqual([
+        'A-VOLUME',
+        'A-STOCK',
+        'A-OQ-WRONG-TEXT',
+        'A-UNEXPECTED',
+      ]);
+      expect(result.rehearsal.cases.map(({ status }) => status)).toEqual([
+        'passed',
+        'failed',
+        'failed',
+      ]);
+      expect(result.rehearsal.observations).toContainEqual(
+        expect.objectContaining({
+          assertion_id: 'A-OQ-WRONG-TEXT',
+          status: 'failed',
+          expected: volumeMessage,
+          actual: wrongMessage,
+        }),
+      );
+      expect(result.rehearsal.observations).toContainEqual(
+        expect.objectContaining({
+          assertion_id: 'A-UNEXPECTED',
+          status: 'failed',
+          expected: false,
+          actual: true,
+        }),
+      );
+    },
+  );
+});
+
+it('keeps alert names when visible text does not prove a single match', async () => {
+  await withBrowserFixture(
+    {
+      '/multiple-volume': `<p role="alert">${volumeMessage}</p><p role="alert">${volumeMessage}</p>`,
+      '/hidden-volume': `<p role="alert" hidden>${volumeMessage}</p>`,
+      '/hidden-alert-text': `<p role="alert">Other warning<span hidden>${volumeMessage}</span></p>`,
+      '/case-sensitive-volume': duplicateMarkup('Final Volume'),
+      '/named-volume': `<p role="alert" aria-label="Final volume">Wrong alert text</p>${duplicateMarkup(volumeMessage)}`,
+      '/unrelated-name': `<p role="alert" aria-label="Other alert">${volumeMessage}</p>`,
+      '/no-volume': duplicateMarkup('An unrelated alert.'),
+    },
+    async ({ root, url, visits }) => {
+      const wrongName = alertCase('OQ-NAMED-VOLUME', '/named-volume', namedVolumeAlert);
+      wrongName.steps[0].assertions[0].expected = volumeMessage;
+      const plan = testPlan(url, [
+        alertCase('OQ-MULTIPLE-VOLUME', '/multiple-volume', namedVolumeAlert),
+        alertCase('OQ-HIDDEN-VOLUME', '/hidden-volume', namedVolumeAlert),
+        alertCase('OQ-HIDDEN-TEXT', '/hidden-alert-text', namedVolumeAlert),
+        alertCase('OQ-EXACT-VOLUME', '/case-sensitive-volume', {
+          ...namedVolumeAlert,
+          exact: true,
+        }),
+        wrongName,
+        alertCase('OQ-UNRELATED-NAME', '/unrelated-name', namedVolumeAlert),
+        {
+          ...alertCase('OQ-ABSENT-VOLUME', '/no-volume'),
+          steps: [visibleAlertStep('01', '/no-volume', 'A-ABSENT', namedVolumeAlert, false)],
+        },
+      ]);
+
+      const result = await checkPlanInBrowser(root, plan, []);
+
+      expect(result.plan).toBe(plan);
+      expect(result.locatorRepairs).toBeUndefined();
+      expect(result.rehearsalBeforeRepair).toBeUndefined();
+      expect(visits).toEqual({
+        '/multiple-volume': 1,
+        '/hidden-volume': 1,
+        '/hidden-alert-text': 1,
+        '/case-sensitive-volume': 1,
+        '/named-volume': 1,
+        '/unrelated-name': 1,
+        '/no-volume': 1,
+      });
+      expect(result.rehearsal.cases.map(({ status }) => status)).toEqual([
+        'failed',
+        'failed',
+        'failed',
+        'failed',
+        'failed',
+        'failed',
+        'passed',
+      ]);
+      expect(result.rehearsal.observations).toContainEqual(
+        expect.objectContaining({
+          assertion_id: 'A-OQ-NAMED-VOLUME',
+          status: 'failed',
+          expected: volumeMessage,
+          actual: 'Wrong alert text',
+        }),
+      );
+    },
+  );
+});
+
+it('stops when a provisional alert repair cannot be retained safely', async () => {
+  await withBrowserFixture(
+    { '/volume': duplicateMarkup(volumeMessage) },
+    async ({ root, url, visits }) => {
+      const plan = testPlan(url, [
+        {
+          ...alertCase('OQ-VOLUME', '/volume'),
+          steps: [visibleAlertStep('01', '/volume', 'A-VOLUME', namedVolumeAlert, true)],
+        },
+      ]);
+      const result = await checkPlanInBrowser(root, plan, [], {
+        synthetic: { password: namedVolumeAlert.value },
+      });
+
+      expect(result.plan).toBe(plan);
+      expect(result.rehearsal.role_text_probes).toBe(1);
+      expect(result.rehearsalWarning).toContain('could not retain enough evidence');
+      expect(result.locatorRepairs).toBeUndefined();
+      expect(visits).toEqual({ '/volume': 1 });
     },
   );
 });

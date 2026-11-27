@@ -112,6 +112,7 @@ describe('provider protocol contract examples', () => {
       expected: [['Example header'], ['Example input']],
     });
     expect(assertions.find((assertion) => assertion.id === 'EX-MESSAGE')).toMatchObject({
+      locator: { by: 'role', role: 'status', match: 'text', value: 'Example record' },
       comparison: 'contains_any',
       expected: ['Example record saved', 'Example record created'],
     });

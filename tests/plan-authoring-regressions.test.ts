@@ -224,6 +224,7 @@ it('supplies exact source bindings and runtime rules and normalizes an unambiguo
   expect(JSON.stringify(input.obligation_sources)).toContain('URS-001/details/0');
   expect(input.available_reference_files).toEqual([]);
   expect(input.runtime_contract).toHaveProperty('source_syntax');
+  expect(input.runtime_contract.locator_syntax).toContain('match: text');
   expect(input.runtime_contract).toHaveProperty('anonymous_access');
   expect(input.runtime_contract).toHaveProperty('artifact_rules');
 });

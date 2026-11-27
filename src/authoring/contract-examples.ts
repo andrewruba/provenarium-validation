@@ -6,6 +6,7 @@ export const protocolContractExamples = {
     'These examples demonstrate JSON shape only. Use actual requirement IDs, observed locators, and independently justified expected values from this task; do not copy example labels or values.',
     'Objects are strict: do not add fields. Omit unused optional fields instead of setting them to null. Null is allowed only where the supplied schema explicitly permits it.',
     'An assertion has exactly one locator or variable, never both or neither. A role locator must include both role and value.',
+    'A role locator filters by accessible name unless match: text is set. Use match: text to locate an alert or status by its visible message text.',
     'A read action supports text, value, count, or table. To check visible, enabled, or checked, use an assertion with a locator and the corresponding read value; do not create a read action for them.',
     'Observation variable names are declared by action.as or download.save_as. Dot paths select fields or array cells afterward: records.1.0, export.text, or response.status. Do not use dots in declared variable names.',
     'Screenshot evidence has kind screenshot; download evidence names the preceding download variable. Evidence items are objects with IDs, not filenames or strings.',
@@ -59,7 +60,13 @@ export const protocolContractExamples = {
       },
       {
         id: 'EX-MESSAGE',
-        locator: { by: 'role', role: 'status', value: 'Example status' },
+        locator: {
+          by: 'role',
+          role: 'status',
+          value: 'Example record',
+          match: 'text',
+          exact: false,
+        },
         comparison: 'contains_any',
         expected: ['Example record saved', 'Example record created'],
       },
