@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { planSchema, ursSchema } from '../src/schema.js';
 import { applyPlanEdits, type PlanEdits } from '../src/authoring/plan-edits.js';
-import { automationCheckpoint, findAutomationResume } from '../src/authoring/automation-resume.js';
+import {
+  automationCheckpoint,
+  findAutomationResume,
+  loadAutomationResume,
+} from '../src/authoring/automation-resume.js';
 import type { ProviderOutputDiagnostic } from '../src/authoring/index.js';
 
 const roots: string[] = [];
@@ -109,6 +113,75 @@ const options = {
   contextHashes: [],
   inputsModifiedAt: 0,
 };
+
+it('loads the selected completed checkpoint and ignores later advisory edits', async () => {
+  const checkpoint = automationCheckpoint({
+    ...options,
+    proposals: [proposal('A'), proposal('B')],
+  })!;
+  const root = await project({
+    incomplete: true,
+    generation_resume: checkpoint,
+    value: options.base,
+  });
+  await writeFile(join(root, 'drafts', 'other.json'), JSON.stringify({ incomplete: true }));
+  const resumed = await loadAutomationResume({ ...options, root, file: 'drafts/retained.json' });
+  expect(resumed.file).toBe('drafts/retained.json');
+  expect(resumed.converted).toBe(2);
+  expect(resumed.value).toEqual(checkpoint.checkpoint);
+  expect(resumed.value.plan.cases.every((c) => !c.manual)).toBe(true);
+});
+
+it('loads a completed legacy conversion only if its saved plan matches replay', async () => {
+  const proposals = [proposal('A'), proposal('B')];
+  const value = automationCheckpoint({ ...options, proposals })!.checkpoint;
+  const root = await project({ incomplete: true, value, diagnostics: proposals.map(diagnostic) });
+  const result = await loadAutomationResume({ ...options, root, file: 'drafts/retained.json' });
+  expect(result.value).toEqual(value);
+  expect(result.converted).toBe(2);
+});
+
+it('rejects incomplete conversion work for offline recovery', async () => {
+  const checkpoint = automationCheckpoint({ ...options, proposals: [proposal('A')] })!;
+  const root = await project({ incomplete: true, generation_resume: checkpoint });
+  await expect(
+    loadAutomationResume({ ...options, root, file: 'drafts/retained.json' }),
+  ).rejects.toThrow(/Manual cases remain: B/);
+});
+
+it('refuses fallback to another record when the exact selected checkpoint is stale', async () => {
+  const completed = automationCheckpoint({
+    ...options,
+    proposals: [proposal('A'), proposal('B')],
+  })!;
+  const stale = { ...completed, base_sha256: 'different candidate' };
+  const root = await project({ incomplete: true, generation_resume: stale });
+  await writeFile(
+    join(root, 'drafts', 'other.json'),
+    JSON.stringify({ incomplete: true, generation_resume: completed }),
+  );
+  await expect(
+    loadAutomationResume({ ...options, root, file: 'drafts/retained.json' }),
+  ).rejects.toThrow(/do not match the current candidate/);
+  await expect(
+    loadAutomationResume({ ...options, root, file: 'drafts/missing.json' }),
+  ).rejects.toThrow(/Authoring record not found/);
+  await expect(
+    loadAutomationResume({ ...options, root, file: '../retained.json' }),
+  ).rejects.toThrow(/project-relative JSON authoring record/);
+});
+
+it('rejects a selected checkpoint whose plan differs from the validated conversions', async () => {
+  const checkpoint = automationCheckpoint({
+    ...options,
+    proposals: [proposal('A'), proposal('B')],
+  })!;
+  checkpoint.checkpoint.plan.cases[0].steps[0].assertions[0].expected = 'Altered';
+  const root = await project({ incomplete: true, generation_resume: checkpoint });
+  await expect(
+    loadAutomationResume({ ...options, root, file: 'drafts/retained.json' }),
+  ).rejects.toThrow(/Replayed conversions differ/);
+});
 
 it('replays the exact completed conversions from a legacy failure without adopting unverified edits', async () => {
   const p = proposal('A');

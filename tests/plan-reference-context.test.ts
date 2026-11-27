@@ -136,11 +136,7 @@ it.each(['openai', 'anthropic'] as const)(
     const reference = 'references/independent-values.csv';
     const csv = 'Stock,Target,Final,Expected stock,Expected diluent\n10,2,10,2.000,8.000\n';
     await writeFile(join(root, reference), csv);
-    const requests = transport(provider, [
-      { action: 'finish' },
-      candidate([reference]),
-      { findings: [], summary: 'Complete.' },
-    ]);
+    const requests = transport(provider, [{ action: 'finish' }, candidate([reference])]);
     const result = await generatePlan({
       root,
       provider,
@@ -181,11 +177,7 @@ it('keeps generated derivation fixtures usable as declared plan references', asy
     [reference],
     [{ path: reference, content: 'stock,target,final,expected\n10,2,10,2.000\n' }],
   );
-  const requests = transport('openai', [
-    { action: 'finish' },
-    generated,
-    { findings: [], summary: 'Complete.' },
-  ]);
+  const requests = transport('openai', [{ action: 'finish' }, generated]);
   const result = await generatePlan({
     root,
     provider: 'openai',

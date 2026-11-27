@@ -30,25 +30,21 @@ human-readable Installation and Operational Qualification (IOQ) protocol and
 deterministic Playwright tests.
 
 Authoring sends the document's typed schema to the provider's structured-output
-API. Protocol reviews return named edits, such as adding a test or clarifying a
-step, instead of rewriting the entire plan. The CLI applies those edits locally;
-existing checks, identifiers, and protected expectations are preserved.
-Semantic review can correct the first draft's provisional expectations and
-calculation fixtures against the URS and accepted decisions, with before/after
-records. Expectations and fixture contents from a prior candidate stay protected.
+API. Corrections and revisions requested through feedback use named edits. The
+CLI validates those edits locally and protects existing checks, identifiers,
+and expected results.
 
 When revising manual cases, generation converts one case at a time and keeps each
-successful conversion. Remaining manual cases are unfinished work, not malformed
-output that consumes the technical-correction allowance. As a plan grows, edits,
-coverage review, and rehearsal diagnostics use bounded case views; the complete
-plan stays local and every edit is checked against it. The request-size bound and
-command spending ceiling stay unchanged.
+successful conversion. The technical correction allowance covers malformed
+output and invalid edits. As a plan grows, revisions use bounded case views.
+The complete plan stays local for validation.
 
-Retrying the normal `generate` command can reuse completed conversions from a
-matching incomplete authoring record. The CLI verifies the current requirements,
-candidate, target, and context, replays the retained edits, and prints how many
-conversions it resumed. Reused work still receives review and optional rehearsal;
-it is never automatically approved.
+Retrying `generate` with the same inputs reuses matching saved conversions. If
+all conversions are complete, the CLI can package an unapproved candidate
+without a provider call. Use `generate --urs urs.yaml --resume drafts/<record>.json`
+to select a specific record from the project and add `--rehearse` to run its
+candidate procedures. The CLI verifies the original candidate, reviewed URS,
+target URL, and source hashes before replaying the retained edits.
 
 Protocol generation checks requirement links, actor declarations, and required
 files before creating a candidate. It corrects unambiguous source notation and
@@ -87,9 +83,12 @@ name a genuine external dependency; the case must cite that requirement.
 The tool must preserve real application failures and cannot invent new product
 obligations to make a test possible or remove a blocker.
 
-Optional `generate --rehearse` runs the final proposed procedures after coverage
-review, so its diagnostics refer to the final plan. It authorizes synthetic
-interactions and does not replace your approval or the qualification run.
+`generate` performs local checks and then presents the candidate for human
+review. `--rehearse` authorizes synthetic browser procedures before review. The
+authoring record shows their results and any errors starting the rehearsal.
+Add `--review-coverage` to request one advisory AI review after any requested
+rehearsal. Its findings and errors appear separately from approval blockers.
+The candidate is ready for human review with or without AI findings.
 
 Generated drafts are checked for structural defects before being written as a
 working URS. Source observations belong in citations; file references must name

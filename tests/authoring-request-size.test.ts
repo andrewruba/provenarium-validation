@@ -203,7 +203,6 @@ it.each(scenarios)(
       { action: 'finish' },
       ...(correction ? [rejectedProposal] : []),
       { edits: [] },
-      { findings: [], summary: 'All reviewed criteria remain intact.' },
     ];
     const requests: { bytes: number; input: Record<string, unknown> }[] = [];
     const fetchImpl = vi.fn(async (_url: unknown, options?: RequestInit) => {
@@ -251,7 +250,7 @@ it.each(scenarios)(
       fetchImpl,
     });
     expect(result.incomplete, result.questions.join('\n')).toBe(false);
-    expect(fetchImpl).toHaveBeenCalledTimes(correction ? 4 : 3);
+    expect(fetchImpl).toHaveBeenCalledTimes(correction ? 3 : 2);
     expect(outputs).toEqual([]);
     expect(requests.every((request) => request.bytes <= 200000)).toBe(true);
     expect(Buffer.byteLength(JSON.stringify(fixture.plan))).toBeGreaterThan(45000);

@@ -27,7 +27,7 @@ import {
 import { Discovery, discoveryActionSchema, type PageObservation } from './discovery.js';
 import { redact, redactValue, safeUrl } from './security.js';
 import { rehearsePlan, type Rehearsal } from './rehearsal.js';
-import { caseRequestView, rehearsalRequestView } from './request-windows.js';
+import { caseRequestView } from './request-windows.js';
 import { protocolContractExamples } from './contract-examples.js';
 import { acceptedDecisionLedger } from '../decisions.js';
 import { auditAutomation, automationCapabilities } from './automation-policy.js';
@@ -107,6 +107,9 @@ export type AuthoringResult<T> = {
   spend: Spend;
   reviewRounds: number;
   rehearsal?: Rehearsal;
+  rehearsalWarning?: string;
+  coverageReview?: Review;
+  coverageReviewWarning?: string;
   sourceCorrespondence?: SourceCorrespondence[];
   /** Replayable validated automation prefix; independent of bounded diagnostics. */
   automationProposals?: PlanEdits[];
@@ -670,6 +673,8 @@ export async function generatePlan(
     allowedOrigins?: string[];
     discoveryActor?: string;
     rehearse?: boolean;
+    /** Request one findings-only coverage review after the local checks. */
+    reviewCoverage?: boolean;
     allowManual?: boolean;
     /** Continue automatic case conversion without asking for a broad revision first. */
     automationOnly?: boolean;
@@ -697,6 +702,9 @@ export async function generatePlan(
     signal: options.signal,
   });
   let rehearsal: Rehearsal | undefined;
+  let rehearsalWarning: string | undefined;
+  let coverageReview: Review | undefined;
+  let coverageReviewWarning: string | undefined;
   let sourceCorrespondence: SourceCorrespondence[] = [];
   let discoveryComplete = false;
   let technicalRepairs = 0;
@@ -705,18 +713,15 @@ export async function generatePlan(
   let automationAttempts = 0;
   const automationProposals: PlanEdits[] = [];
   let recordingAutomationPrefix = true;
+  const secrets = [
+    options.key,
+    ...Object.values(options.bindings ?? {}).flatMap((binding) =>
+      [binding.password, binding.token].filter((secret): secret is string => Boolean(secret)),
+    ),
+  ];
   const automationCheckpoint = () =>
     automationProposals.length
-      ? {
-          automationProposals: redactValue(automationProposals, [
-            options.key,
-            ...Object.values(options.bindings ?? {}).flatMap((binding) =>
-              [binding.password, binding.token].filter((secret): secret is string =>
-                Boolean(secret),
-              ),
-            ),
-          ]),
-        }
+      ? { automationProposals: redactValue(automationProposals, secrets) }
       : {};
   const maxCaseWindows = 100;
   const authorizedRequirementChanges = changedRequirements(options.existingUrs, options.urs);
@@ -1205,86 +1210,9 @@ export async function generatePlan(
         await completeProtocol(generatedPlanSchema, prompt, input, 'protocol draft'),
       );
     }
-    for (let i = 0; i < PRESETS[tier].reviews; i++) {
-      options.onProgress?.(`Reviewing protocol coverage (${i + 1}/${PRESETS[tier].reviews}).`);
-      const reviewInstructions =
-        prompt +
-        '\nFor this request, review the candidate using the same authoring and runtime rules. Return review findings only. Do not invent role assignments or external approval gates, or downgrade automatable checks because discovery was read-only.\n' +
-        REVIEWS[i];
-      const reviewInput = {
-        ...input,
-        candidate: value,
-        structuralFindings: validatePlanStructure(value.plan, options.urs),
-      };
-      let found = false;
-      if (client.requestSize(reviewSchema, reviewInstructions, reviewInput) <= MAX_REQUEST_BYTES) {
-        const review = await completeProtocol(
-          reviewSchema,
-          reviewInstructions,
-          reviewInput,
-          'semantic review',
-        );
-        found = review.findings.length > 0;
-        if (found)
-          value = await checkedCandidate(
-            await requestEdits(
-              value,
-              'protocol revision',
-              {
-                mode: 'review',
-                allowDraftExpectationRevision: !options.existing,
-              },
-              { findings: review.findings },
-            ),
-          );
-      } else {
-        const reviewedCases = new Set<string>();
-        while (true) {
-          const next = value.plan.cases.find((item) => !reviewedCases.has(item.id));
-          if (!next) break;
-          if (reviewedCases.size >= maxCaseWindows)
-            throw new Error(
-              'The bounded coverage review reached its case limit. Completed work is retained; no candidate was published.',
-            );
-          reviewedCases.add(next.id);
-          options.onProgress?.(
-            `Reviewing protocol case ${next.id} (${reviewedCases.size}/${value.plan.cases.length}).`,
-          );
-          const review = await completeProtocol(
-            reviewSchema,
-            reviewInstructions,
-            {
-              ...input,
-              ...caseRequestView(value, [next.id]),
-              structuralFindings: validatePlanStructure(value.plan, options.urs),
-            },
-            'semantic review',
-          );
-          if (review.findings.length) {
-            found = true;
-            value = await checkedCandidate(
-              await requestEdits(
-                value,
-                'protocol revision',
-                {
-                  mode: 'review',
-                  scopedCaseIds: [next.id],
-                  allowDraftExpectationRevision: !options.existing,
-                },
-                { findings: review.findings },
-              ),
-            );
-          }
-        }
-      }
-      rounds++;
-      if (!found) break;
-    }
-    if (options.rehearse) {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        options.onProgress?.(
-          'Rehearsing the final candidate as authoring diagnostics, not qualification evidence.',
-        );
+    if (discoveryComplete && options.rehearse) {
+      options.onProgress?.('Rehearsing the candidate for authoring diagnostics.');
+      try {
         rehearsal = await rehearsePlan(
           options.root,
           value.plan,
@@ -1292,30 +1220,62 @@ export async function generatePlan(
           options.bindings,
           options.signal,
         );
-        if (attempt || !rehearsal.cases.some((item) => item.status === 'failed')) break;
-        const baseline: GeneratedPlan = value;
-        let revised: GeneratedPlan = value;
-        const failedCases = rehearsal.cases.filter((item) => item.status === 'failed');
-        for (const failed of failedCases) {
-          revised = await checkedCandidate(
-            await requestEdits(
-              revised,
-              'rehearsal procedural repair',
-              {
-                mode: 'review',
-                proceduralOnly: true,
-                scopedCaseIds: [failed.id],
-              },
-              {
-                rehearsal: rehearsalRequestView(rehearsal, [failed.id]),
-                repair_instructions:
-                  'Repair only procedural problems such as locators or missing waits supported by browser diagnostics. Expected results and fixtures are protected. Actual application defects must remain failures. Do not add questions, manual work, or alternate tests to conceal a failing assertion. Return no edits if the application violates the requirement.',
-              },
-            ),
-          );
+      } catch (error) {
+        const detail = options.signal?.aborted
+          ? 'Cancelled.'
+          : redact(reason(error, options.key), secrets);
+        rehearsalWarning = `Rehearsal did not complete. ${detail}`;
+      }
+    }
+    if (discoveryComplete && options.reviewCoverage) {
+      options.onProgress?.('Collecting advisory protocol coverage findings.');
+      const reviewInstructions =
+        BASE +
+        '\nReview the frozen candidate for the human reviewer. Return findings only and cite the relevant URS requirement ID for every finding. Prioritize material coverage gaps and unsupported expectations, and keep suggestions limited to behavior within the accepted requirements. Do not propose test edits or new approval gates. Rehearsal statuses describe execution only. ' +
+        REVIEWS.slice(0, PRESETS[tier].reviews).join(' ');
+      const reviewInput = {
+        ...input,
+        candidate: value,
+        rehearsal: rehearsal ? { cases: rehearsal.cases } : undefined,
+      };
+      try {
+        let request: Record<string, unknown> = reviewInput;
+        let instructions = reviewInstructions;
+        let limited = false;
+        if (client.requestSize(reviewSchema, reviewInstructions, reviewInput) > MAX_REQUEST_BYTES) {
+          limited = true;
+          instructions +=
+            '\nThis is a coverage mapping review. The full case procedures, individual predicates, fixture contents, and source excerpts are omitted. Base findings only on the supplied requirement, case, obligation, and assertion links. State this limited scope in your summary.';
+          request = {
+            urs: options.urs,
+            obligations: value.plan.obligations,
+            cases: value.plan.cases.map((item) => ({
+              id: item.id,
+              title: item.title,
+              requirements: item.requirements,
+              manual: item.manual,
+              assertion_ids: item.steps.flatMap((step) =>
+                step.assertions.map((assertion) => assertion.id),
+              ),
+            })),
+            rehearsal: reviewInput.rehearsal,
+          };
         }
-        if (isDeepStrictEqual(revised, baseline)) break;
-        value = revised;
+        coverageReview = redactValue(
+          await client.complete(reviewSchema, instructions, request),
+          secrets,
+        );
+        rounds++;
+        if (limited)
+          coverageReviewWarning =
+            'Coverage review used requirement and assertion links. Detailed procedures and fixtures were omitted from this review to fit the request limit.';
+      } catch (error) {
+        if (error instanceof ProviderOutputError)
+          error.diagnostic.operation = 'advisory coverage review';
+        const detail = options.signal?.aborted
+          ? 'Cancelled.'
+          : redact(reason(error, options.key), secrets);
+        coverageReviewWarning = `Advisory coverage review did not complete. ${detail}`;
       }
     }
     questions.push(
@@ -1333,6 +1293,9 @@ export async function generatePlan(
     return {
       ...finish(value, questions, budget, rounds, !discoveryComplete, client.diagnostics),
       rehearsal,
+      rehearsalWarning,
+      coverageReview,
+      coverageReviewWarning,
       sourceCorrespondence,
       ...automationCheckpoint(),
     };

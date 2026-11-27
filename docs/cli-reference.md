@@ -298,10 +298,18 @@ data. Protected applications can use `--access access.json`, a non-secret JSON
 array matching the documented access inventory, and `--discovery-actor <id>` to
 choose among multiple prepared sessions. Credentials never belong in this file.
 `--rehearse` authorizes candidate procedures as authoring diagnostics, separately
-from qualification runs. It remains an explicit option. Rehearsal runs after
-the final coverage edits and checks, and records the exact plan hash. Observed
-application failures remain failures; they do not authorize weakening expectations
-or substituting manual checks. A later revision needs its own rehearsal.
+from qualification runs. Rehearsal runs after local plan checks and records the
+exact plan hash and case outcomes. Failures and errors starting the rehearsal
+are visible in the authoring record for human review. A later revision needs its
+own rehearsal.
+
+Use `--review-coverage` to request one optional AI review after local checks and
+any requested rehearsal. The CLI prints the advisory findings and saves them in
+the authoring record. Large plans receive a review of their coverage links when
+the full procedures and fixtures exceed the request limit. A failed advisory
+request is reported separately, and the candidate remains available for human
+review. Request a specific revision with `--feedback` if you choose to act on a
+finding.
 
 Discovery also compares SHA-256 hashes of linked JavaScript with scripts served
 by the target application. Exact matches are retained as source correspondence
@@ -313,10 +321,10 @@ results from the implementation.
 Generation preserves the URS. Subsequent generation asks for revision feedback,
 or accepts `--feedback feedback.md`. Expectations from an existing reviewed plan
 remain frozen unless a reviewed URS revision changes the corresponding normative
-requirements. The first draft's proposed expectations can be corrected during
-semantic review to match the URS and accepted decisions before candidate publication.
+requirements. Technical corrections can repair a diagnosed invalid runtime
+predicate in a draft while preserving the intended check.
 
-Generated protocols default to zero manual cases. The authoring review converts
+Generated protocols default to zero manual cases. Generation converts
 supported browser work into executable steps, transferring its obligations to
 assertions and retaining the expected behavior. Persistent browser profiles,
 tabs, restarts, dialogs, storage failures, and file inspection are supported
@@ -368,15 +376,12 @@ boundary; local Zod validation still checks constraints and business rules that
 the provider schema cannot express. The document is not encoded as an
 unconstrained JSON string inside a `payload` field.
 
-Protocol review revisions and technical corrections return a list of typed,
-named edits. The CLI applies these atomically to the retained plan. Review edits
-can add coverage or update supported instructions and action bindings. An initial
-draft's provisional expectations and generated calculation fixtures can be revised
-against the URS and accepted decisions, with retained reasons and before/after
-records; they are not treated as prior human approvals. Existing reviewed
-expectations remain protected. No edit may delete or renumber a check, and
-converting a manual case must preserve its intended expected result while
-transferring every obligation to executable assertions. A genuine conflict with
+Revisions requested through feedback and technical corrections return a list of
+typed, named edits. The CLI applies these atomically to the retained plan.
+Feedback can request added coverage or updates to supported instructions and
+action bindings. Existing reviewed expectations remain protected. Edits preserve
+check numbers, and converting a manual case transfers every obligation to
+executable assertions with the original intended result. A genuine conflict with
 accepted policy remains a question for deliberate review. Technical edits are
 limited to the diagnosed repair scope. Unsupported or conflicting edits reject
 the entire proposal.
@@ -388,23 +393,17 @@ JSON, invalid structure, or rejected edits. Conversion remains bounded by the
 command's spending ceiling and progress limits; it cannot silently drop coverage
 or turn an unavailable external dependency into a passed automated check.
 
-Growing plans use bounded case views for editing and coverage review. A view
+Growing plans use bounded case views for editing. A view
 contains the selected case bodies plus plan-level obligations, questions, actors,
-fixtures, and an inventory of all case and assertion IDs. It is request material,
-not a replacement plan. The full candidate remains local, and scoped edits are
-validated against that complete baseline before application. Rehearsal repairs
-retain all case outcomes and focus on failed or blocked observations; the full
-rehearsal remains in the authoring record. The 200,000-byte request bound does not
-increase.
+fixtures, and an inventory of all case and assertion IDs. The full candidate
+remains local. The CLI validates scoped edits against that complete baseline
+before applying them. The request bound is 200,000 bytes.
 
-Retrying `generate --urs ... --url ...` normally reuses eligible completed
-conversions automatically; there is no new resume flag. The CLI prints the
-resumed conversion count and the source authoring record. New records include
-input fingerprints, and every resumed proposal must replay successfully against
-the unchanged current candidate. Legacy records require exact replay and
-unchanged inputs as well. Stale, edited, or incomplete proposal records are not
-resume points. Resumed work still goes through protocol review and `--rehearse`
-when requested, and the approved package remains unchanged until explicit approval.
+Retrying `generate --urs ... --url ...` with the same inputs reuses eligible
+completed conversions. The CLI prints the resumed count and the source record.
+If every conversion is complete, it packages the candidate without contacting a
+provider unless you request `--review-coverage`. A partially converted plan can
+continue through paid authoring for its remaining cases.
 
 `generate --urs` supplies the authoring model with the supported runtime contract
 and exact source bindings for the supplied requirements. Every initial and
@@ -417,10 +416,10 @@ included as bounded context excerpts.
 
 Unambiguous equivalent source notation is normalized locally. Other technical
 defects can trigger at most two correction requests across the entire command,
-including discovery, drafting, and review rounds. Malformed provider JSON and
+including discovery, drafting, and revisions. Malformed provider JSON and
 documents that fail the local schema use this same two-correction allowance;
 they do not receive a separate retry budget. These requests share the original
-spending cap.
+spending cap. The advisory coverage request gets one attempt.
 Corrections must preserve cases, requirement coverage, valid expected results,
 and expectations from an existing reviewed plan. An initial draft assertion
 with a diagnosed invalid runtime predicate can receive a corrected predicate
@@ -453,6 +452,22 @@ Read-only discovery limits what the authoring session does to the application.
 It does not prevent authoring automated fill, click, calculation, or download
 tests for later approved execution. Manual procedures are appropriate for
 operations the supported execution vocabulary cannot perform.
+
+## Recover saved conversions without AI
+
+Select a fully converted authoring record using its project-relative draft path.
+
+```sh
+provenarium generate --urs urs.yaml --resume drafts/<record>.json --rehearse
+```
+
+The original candidate must still be current. The reviewed URS, target URL, and
+source hashes must match. The CLI verifies input fingerprints for newer records
+and replays the saved edits against the original candidate. Legacy records
+require exact replay with unchanged inputs. This prepares an unapproved candidate
+without a provider request. Use `--rehearse` to include browser diagnostics.
+`--resume` cannot be combined with `--plan`, `--feedback`, `--allow-manual`, or
+`--review-coverage`.
 
 ## Offline reviewed-plan route
 

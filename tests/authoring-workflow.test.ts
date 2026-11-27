@@ -343,11 +343,7 @@ describe('answer-based requirements authoring', () => {
       key: 'test-key',
       urs: answeredUrs(),
       url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [
-        { action: 'finish' },
-        { plan, fixtures: [] },
-        { findings: [], summary: 'Reviewed' },
-      ]),
+      fetchImpl: transport('openai', [{ action: 'finish' }, { plan, fixtures: [] }]),
     });
     expect(result.value?.plan.questions[0]).toEqual({
       id: 'Q-ACCESS',
@@ -529,11 +525,7 @@ describe('authoring workflows', () => {
         urs,
         url: 'http://localhost:3210',
         thoroughness: 'quick',
-        fetchImpl: transport(provider, [
-          { action: 'finish' },
-          { plan, fixtures: [] },
-          { findings: [], summary: 'Reviewed' },
-        ]),
+        fetchImpl: transport(provider, [{ action: 'finish' }, { plan, fixtures: [] }]),
       });
       expect(result.incomplete).toBe(false);
       expect(result.value?.plan.target.url).toBe('http://localhost:3210/');
@@ -604,11 +596,7 @@ describe('authoring workflows', () => {
       key: 'test-key',
       urs: unresolved,
       url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [
-        { action: 'finish' },
-        { plan, fixtures: [] },
-        { findings: [], summary: 'Review' },
-      ]),
+      fetchImpl: transport('openai', [{ action: 'finish' }, { plan, fixtures: [] }]),
     });
     expect(result.value?.plan.questions).toContainEqual(unresolved.open_questions[0]);
     expect(result.questions.join()).toContain('Resolve URS questions');
@@ -627,11 +615,7 @@ describe('authoring workflows', () => {
       existingUrs: urs,
       existing: plan,
       url: 'http://localhost:3210',
-      fetchImpl: transport('openai', [
-        { action: 'finish' },
-        revision,
-        { findings: [], summary: 'Reviewed requirement change' },
-      ]),
+      fetchImpl: transport('openai', [{ action: 'finish' }, revision]),
     });
     expect(result.incomplete).toBe(false);
     expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(false);

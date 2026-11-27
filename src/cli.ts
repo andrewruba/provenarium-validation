@@ -32,7 +32,13 @@ import { repairUrsReferences } from './urs-reference-repair.js';
 import { extractContext } from './context.js';
 import { Discovery, type PageObservation } from './authoring/discovery.js';
 import { auditAutomation } from './authoring/automation-policy.js';
-import { automationCheckpoint, findAutomationResume } from './authoring/automation-resume.js';
+import {
+  automationCheckpoint,
+  findAutomationResume,
+  loadAutomationResume,
+} from './authoring/automation-resume.js';
+import { rehearsePlan } from './authoring/rehearsal.js';
+import { redact } from './authoring/security.js';
 import { validatePlanStructure } from './compiler.js';
 import {
   collectPlanInputCatalog,
@@ -62,6 +68,7 @@ import {
   Budget,
   type AuthoringOptions,
   type AuthoringResult,
+  type GeneratedPlan,
 } from './authoring/index.js';
 
 const abort = new AbortController();
@@ -642,8 +649,13 @@ discovery(
       .requiredOption('--urs <file>', 'Reviewed requirements')
       .option('--url <url>', 'Application target')
       .option('--plan <file>', 'Compile an existing reviewed typed plan offline')
+      .option(
+        '--resume <draft-file>',
+        'Package completed conversions from a saved authoring record without AI',
+      )
       .option('--feedback <file>', 'Feedback against requirement/case/step IDs')
       .option('--rehearse', 'Rehearse scoped synthetic procedures as authoring diagnostics')
+      .option('--review-coverage', 'Request optional AI coverage suggestions for human review')
       .option('--allow-manual', 'Allow explicit URS-grounded manual exceptions in generated tests')
       .option('--no-pdf', 'Render HTML only'),
   ),
@@ -661,6 +673,8 @@ discovery(
       opts.interactiveDiscovery ||
       opts.access ||
       opts.rehearse ||
+      opts.reviewCoverage ||
+      opts.resume ||
       opts.allowManual ||
       opts.url ||
       opts.feedback ||
@@ -676,6 +690,10 @@ discovery(
     for (const name of new Set([...plan.fixtures, ...plan.references]))
       files[name] = await readFile(await safePath(path.dirname(source), name));
   } else {
+    if (opts.resume && (opts.feedback || opts.reviewCoverage || opts.allowManual))
+      throw new Error(
+        '--resume packages completed conversions without AI and cannot be combined with --feedback, --review-coverage, or --allow-manual.',
+      );
     const structuralErrors = await checkUrsStructure(document, directory);
     const inputCatalog = await collectPlanInputCatalog(directory, document);
     if (structuralErrors.length || inputCatalog.errors.length)
@@ -685,9 +703,17 @@ discovery(
     const project = await loadProject(directory),
       url = opts.url ?? project.target_url;
     if (!url) throw new Error('Supply --url for application discovery.');
-    const bindings = await discoveryBindings(command, url);
     const prior = project.current_candidate ? await inspectCandidate(directory) : undefined;
     let existing = prior?.plan;
+    const automationOnly =
+      !!existing?.cases.some((item) => item.manual) &&
+      !opts.allowManual &&
+      !opts.feedback &&
+      isDeepStrictEqual(document, prior?.urs);
+    if (opts.resume && !automationOnly)
+      throw new Error(
+        '--resume requires the original candidate with manual cases and the same reviewed URS.',
+      );
     const normativePaths = new Set([
       ...inputCatalog.references.map((reference) => reference.path),
       ...(prior?.urs.families.flatMap((family) =>
@@ -727,9 +753,8 @@ discovery(
     if (existing?.cases.some((item) => item.manual) && !opts.allowManual && !feedback) {
       feedback =
         'Automate the existing manual cases using accepted requirements and decisions. Preserve every obligation and expected result; resolve preparation through supported browser automation. Do not introduce new product behavior or external approval tasks.';
-      console.log(
-        'Revising the current candidate to automate its manual checks; accepted requirements and expected results remain protected.',
-      );
+      if (!opts.resume)
+        console.log('Revising the current candidate to automate its manual checks.');
     } else if (existing && !feedback) {
       terminal();
       feedback = answer(
@@ -740,23 +765,16 @@ discovery(
         }),
       );
     }
-    const automationOnly =
-      !!prior?.plan.cases.some((item) => item.manual) &&
-      !opts.allowManual &&
-      !opts.feedback &&
-      isDeepStrictEqual(document, prior.urs);
     const baseForResume = prior
       ? { plan: prior.plan, fixtures: existingFixtures ?? [] }
       : undefined;
-    const authoringOptions = await authoring(command, {
-      referenceFiles: inputCatalog.references.map((reference) => reference.path),
+    const preview = { referenceFiles: inputCatalog.references.map((reference) => reference.path) };
+    const authoringOptions = automationOnly ? undefined : await authoring(command, preview);
+    if (opts.source?.some((id: string) => !project.context.some((source) => source.id === id)))
+      throw new Error('Unknown selected context source. Use provenarium context list.');
+    const selectedContext = await extractContext(directory, project.context, opts.source, {
+      signal: abort.signal,
     });
-    const selectedContext = await extractContext(
-      directory,
-      authoringOptions.sources ?? [],
-      authoringOptions.selectedSources,
-      { signal: authoringOptions.signal },
-    );
     const contextHashes = [...selectedContext.hashes];
     if (inputCatalog.references.length) {
       const used = new Set(selectedContext.passages.map((passage) => passage.source));
@@ -770,7 +788,7 @@ discovery(
         return { id, path: reference.path };
       });
       const material = await extractContext(directory, refs, undefined, {
-        signal: authoringOptions.signal,
+        signal: abort.signal,
         maxCharacters: Math.max(
           0,
           120_000 -
@@ -779,9 +797,9 @@ discovery(
       });
       contextHashes.push(...material.hashes);
     }
-    const resumed =
+    const resumeOptions =
       automationOnly && baseForResume && prior
-        ? await findAutomationResume({
+        ? {
             root: directory,
             base: baseForResume,
             urs: document,
@@ -792,31 +810,50 @@ discovery(
               (await stat(path.resolve(directory, opts.urs))).mtimeMs,
               (await stat(path.join(prior.directory, 'plan.json'))).mtimeMs,
             ),
-          })
+          }
         : undefined;
+    const resumed =
+      resumeOptions &&
+      (opts.resume
+        ? await loadAutomationResume({
+            ...resumeOptions,
+            file: path.relative(directory, path.resolve(directory, opts.resume)),
+          })
+        : await findAutomationResume(resumeOptions));
+    const recoverOffline =
+      resumed && !opts.reviewCoverage && resumed.value.plan.cases.every((item) => !item.manual);
     if (resumed) {
       existing = resumed.value.plan;
       existingFixtures = resumed.value.fixtures;
       console.log(
-        `Resuming ${resumed.converted} completed case conversion(s) from ${resumed.file}; ${existing.cases.filter((item) => item.manual).length} manual case(s) remain. The retained work will still be reviewed and rehearsed when requested.`,
+        `Resuming ${resumed.converted} completed case conversion(s) from ${resumed.file}. ${recoverOffline ? 'Preparing the candidate without a provider request.' : `${existing.cases.filter((item) => item.manual).length} manual case(s) remain.`}`,
       );
     }
-    const result = await generatePlan({
-      ...authoringOptions,
-      context: selectedContext,
-      urs: document,
-      url,
-      existing,
-      existingFixtures,
-      existingUrs: prior?.urs,
-      feedback,
-      bindings,
-      allowInteractions: !!opts.interactiveDiscovery || !!opts.rehearse,
-      rehearse: !!opts.rehearse,
-      allowManual: !!opts.allowManual,
-      automationOnly,
-      discoveryActor: opts.discoveryActor,
-    });
+    const result: AuthoringResult<GeneratedPlan> = recoverOffline
+      ? {
+          value: resumed.value,
+          incomplete: false,
+          questions: [],
+          spend: { actual: 0, reserved: 0, calls: 0, cap: 0 },
+          reviewRounds: 0,
+        }
+      : await generatePlan({
+          ...(authoringOptions ?? (await authoring(command, preview))),
+          context: selectedContext,
+          urs: document,
+          url,
+          existing,
+          existingFixtures,
+          existingUrs: prior?.urs,
+          feedback,
+          bindings: await discoveryBindings(command, url),
+          allowInteractions: !!opts.interactiveDiscovery || !!opts.rehearse,
+          rehearse: !!opts.rehearse,
+          reviewCoverage: !!opts.reviewCoverage,
+          allowManual: !!opts.allowManual,
+          automationOnly,
+          discoveryActor: opts.discoveryActor,
+        });
     if (result.value && !result.incomplete) {
       const generatedErrors = [
         ...validatePlanStructure(result.value.plan, document),
@@ -828,6 +865,34 @@ discovery(
         result.questions.push(
           'Generated protocol failed technical validation before packaging.',
           ...generatedErrors,
+        );
+      }
+    }
+    if (recoverOffline && opts.rehearse && result.value && !result.incomplete) {
+      const { plan: recoveredPlan, fixtures } = result.value;
+      console.log('Rehearsing the recovered candidate as authoring diagnostics.');
+      let bindings: Bindings = {};
+      try {
+        bindings = await prepareBindings(
+          recoveredPlan.access,
+          directory,
+          recoveredPlan.target.url,
+          recoveredPlan,
+        );
+        result.rehearsal = await rehearsePlan(
+          directory,
+          recoveredPlan,
+          fixtures,
+          bindings,
+          abort.signal,
+        );
+      } catch (error) {
+        const secrets = Object.values(bindings).flatMap(({ password, token }) =>
+          [password, token].filter((value): value is string => Boolean(value)),
+        );
+        result.rehearsalWarning = redact(
+          error instanceof Error ? error.message : 'The browser rehearsal could not finish.',
+          secrets,
         );
       }
     }
@@ -843,8 +908,9 @@ discovery(
             proposals: result.automationProposals,
           })
         : undefined;
-    await retainResult(directory, {
+    const authoringRecord = await retainResult(directory, {
       ...result,
+      ...(resumed ? { resumed_from: resumed.file } : {}),
       ...(checkpoint ? { generation_resume: checkpoint } : {}),
     });
     if (!result.value) return;
@@ -856,6 +922,19 @@ discovery(
       );
       return;
     }
+    if (result.rehearsal) {
+      const outcomes = result.rehearsal.cases.map(({ id, status }) => `${id} ${status}`);
+      console.log(
+        `Rehearsal outcomes (authoring diagnostics):\n${outcomes.map((outcome) => `  ${outcome}`).join('\n')}`,
+      );
+    }
+    if (result.rehearsalWarning) console.log(`Rehearsal warning: ${result.rehearsalWarning}`);
+    if (result.coverageReviewWarning)
+      console.log(`Advisory coverage review: ${result.coverageReviewWarning}`);
+    if (result.coverageReview)
+      console.log(
+        `Advisory coverage review: ${result.coverageReview.summary}\n${result.coverageReview.findings.map(({ requirement, severity, message }) => `  ${requirement} (${severity}): ${message}`).join('\n')}\nSaved in ${authoringRecord}`,
+      );
     for (const ref of plan.references)
       if (files[ref] === undefined) {
         const expected = inputCatalog.references.find((reference) => reference.path === ref);

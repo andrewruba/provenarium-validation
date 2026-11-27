@@ -258,42 +258,21 @@ document.querySelector('#export').onclick=()=>{if(!localStorage.getItem('records
       ],
       coverage: [{ obligation_id: 'OB-SAVE', assertion_ids: ['A-SAVED', 'A-ISOLATED'] }],
     };
+    const advice = {
+      findings: [
+        {
+          requirement: 'R-EMPTY',
+          severity: 'suggestion',
+          message: 'Also assert that the record set stays empty after the export attempt.',
+        },
+      ],
+      summary: 'Consider adding another observable state check.',
+    };
     const outputs: unknown[] = [
       { action: 'finish' },
       { plan: draft, fixtures: [] },
       { edits: [conversion] },
-      {
-        findings: [
-          {
-            requirement: 'R-EMPTY',
-            severity: 'suggestion',
-            message: 'Also assert that the record set stays empty after the export attempt.',
-          },
-        ],
-        summary: 'Add the remaining observable state check.',
-      },
-      {
-        edits: [
-          {
-            op: 'add_assertion',
-            case_id: 'OQ-EMPTY',
-            step_id: '01',
-            value: {
-              id: 'A-STILL-EMPTY',
-              locator: { by: 'css', value: '#records' },
-              comparison: 'equals',
-              expected: 'No records',
-            },
-          },
-          {
-            op: 'extend_obligation',
-            obligation_id: 'OB-EMPTY',
-            assertion_ids: ['A-STILL-EMPTY'],
-            manual_case_ids: [],
-          },
-        ],
-      },
-      { findings: [], summary: 'Every accepted requirement has executable coverage.' },
+      advice,
     ];
     const requests: Record<string, unknown>[] = [];
     const fetchImpl = vi.fn(async (_url: unknown, options?: RequestInit) => {
@@ -324,11 +303,14 @@ document.querySelector('#export').onclick=()=>{if(!localStorage.getItem('records
       url,
       allowInteractions: true,
       rehearse: true,
+      reviewCoverage: true,
       fetchImpl,
     });
     expect(result.incomplete, JSON.stringify(result.questions)).toBe(false);
     expect(outputs).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(result.coverageReview).toEqual(advice);
+    expect(requests[3].rehearsal).toEqual({ cases: result.rehearsal?.cases });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
     expect(
       requests.every((request) => (request.accepted_decisions as unknown[])?.length === 1),
     ).toBe(true);
@@ -338,12 +320,13 @@ document.querySelector('#export').onclick=()=>{if(!localStorage.getItem('records
     const final = result.value!.plan;
     expect(final.cases.every((testCase) => !testCase.manual)).toBe(true);
     expect(final.questions).toEqual([]);
+    expect(final.cases[1]).toEqual(draft.cases[1]);
     expect(final.cases[0].prerequisites).toEqual([]);
     expect(final.cases[0].manual_expected).toBe(draft.cases[0].manual_expected);
     expect(result.rehearsal?.cases.every((testCase) => testCase.status === 'passed')).toBe(true);
     expect(
-      result.rehearsal?.observations.find((record) => record.assertion_id === 'A-STILL-EMPTY'),
-    ).toMatchObject({ status: 'passed', expected: 'No records', actual: 'No records' });
+      result.rehearsal?.observations.find((record) => record.assertion_id === 'A-NO-DOWNLOAD'),
+    ).toMatchObject({ status: 'passed', expected: 0, actual: 0 });
     expect(result.rehearsal?.plan_sha256).toBe(
       createHash('sha256').update(JSON.stringify(final)).digest('hex'),
     );

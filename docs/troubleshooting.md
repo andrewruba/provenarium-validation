@@ -183,19 +183,30 @@ Older versions duplicated the existing plan and repeated requirement and manual
 procedure text in revision requests. Later, even deduplicated requests could
 grow past the limit as valid conversions added executable steps. Updated
 generation converts one manual case at a time and uses bounded case views for
-growing plans, coverage reviews, and rehearsal repairs. The complete plan stays
-local; each edit is checked against it. Requirements, source context, fixtures,
-and plan-level coverage remain available, and references replace repeated text.
+required edits. The CLI checks each edit against the complete local plan.
+Requirements, source context, fixtures, and plan-level coverage remain available,
+and references replace repeated text.
 If the assembled request still exceeds the bound, the authoring record contains
-a `request_size` diagnostic with total bytes and component sizes. Existing
-requirements and approved packages are preserved.
+a `request_size` diagnostic with total bytes and component sizes.
+
+The default flow prepares a candidate once local checks pass. When requested,
+rehearsal reports failures and blocked cases for review. `--review-coverage`
+requests one advisory review, with a coverage-link summary when the full plan
+exceeds the request limit. A review error appears as a warning alongside the
+candidate.
 
 Retry the same normal `generate` command after updating. Eligible completed
 conversions from a matching incomplete record are reused automatically, and the
 CLI prints the resumed count. New input fingerprints or strict legacy replay
 checks must match the current candidate, requirements, target, and context;
-stale or edited records are ignored. Reused work is still reviewed and rehearsed
-when requested. No retained draft is automatically approved or published.
+stale or edited records are ignored. If all conversions are complete, a normal
+retry prepares an unapproved candidate without a provider request unless you
+add `--review-coverage`. To recover a specific fully converted record and run
+the browser rehearsal without AI, use its project-relative path.
+
+```sh
+provenarium generate --urs urs.yaml --resume drafts/<record>.json --rehearse
+```
 
 ## Generation uses its correction allowance while manual cases remain
 

@@ -103,7 +103,6 @@ function candidate() {
   };
 }
 
-const reviewed = { findings: [], summary: 'No further findings.' };
 function transport(values: unknown[]) {
   return vi.fn(async (_url: unknown, _options?: RequestInit) => {
     const next = values.shift();
@@ -128,7 +127,7 @@ async function run(
   options: Partial<
     Pick<
       Parameters<typeof generatePlan>[0],
-      'existing' | 'existingUrs' | 'feedback' | 'allowManual' | 'urs'
+      'existing' | 'existingUrs' | 'feedback' | 'allowManual' | 'urs' | 'reviewCoverage'
     >
   > = {},
 ) {
@@ -220,41 +219,45 @@ function predicateEdits() {
   };
 }
 
-it('corrects an unapproved draft expectation during semantic review and records the change', async () => {
+it('returns advisory conflicts without rewriting draft expectations', async () => {
   const draft = candidate();
   draft.plan.cases[0].steps[0].assertions[0].expected = false;
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    draft,
-    {
-      findings: [
-        {
-          requirement: 'URS-001',
-          severity: 'conflict',
-          message:
-            'The URS requires the field to be visible, but this draft expects it to be hidden.',
-        },
-      ],
-      summary: 'Correct the draft visibility expectation.',
-    },
-    { edits: [{ op: 'revise_assertion', assertion_id: 'A-01', expected: true }] },
-  ]);
+  const advice = {
+    findings: [
+      {
+        requirement: 'URS-001',
+        severity: 'conflict',
+        message:
+          'The URS requires the field to be visible, but this draft expects it to be hidden.',
+      },
+    ],
+    summary: 'Correct the draft visibility expectation.',
+  };
+  const { result, fetchImpl } = await run([{ action: 'finish' }, draft, advice], {
+    reviewCoverage: true,
+  });
   expect(result.incomplete).toBe(false);
-  expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
-  const input = JSON.parse(requestBody(fetchImpl, 3).input[0].content[0].text);
-  expect(input.edit_catalog.provisional_expectation_revision).toBe(true);
-  expect(result.diagnostics?.some((diagnostic) => diagnostic.kind === 'protocol_edits')).toBe(true);
+  expect(result.reviewRounds).toBe(1);
+  expect(result.coverageReview).toEqual(advice);
+  expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(false);
+  expect(result.questions).toEqual([]);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  const schema = requestBody(fetchImpl, 2).text.format.schema;
+  expect(schema.properties).toHaveProperty('findings');
+  expect(schema.properties).not.toHaveProperty('edits');
+  expect(
+    result.diagnostics?.some((diagnostic) => diagnostic.kind === 'protocol_edits'),
+  ).toBeFalsy();
 });
 
 it('supplies exact source bindings and runtime rules and normalizes an unambiguous local source', async () => {
   const generated = candidate();
   generated.plan.obligations[0].source = 'statement';
-  const { result, fetchImpl } = await run([{ action: 'finish' }, generated, reviewed]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, generated]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value?.plan.obligations[0].source).toBe('URS-001/statement');
-  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
   const input = JSON.parse(requestBody(fetchImpl, 1).input[0].content[0].text);
   expect(JSON.stringify(input.obligation_sources)).toContain('URS-001/statement');
   expect(JSON.stringify(input.obligation_sources)).toContain('URS-001/details/0');
@@ -269,12 +272,7 @@ it('repairs invalid source bindings and prose references using validator feedbac
   malformed.plan.obligations[0].source = 'The form requirement above';
   malformed.plan.references = ['URS-SYNTHETIC, Draft 1, including accepted human resolutions.'];
   const corrected = candidate();
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    malformed,
-    sourceEdits(),
-    reviewed,
-  ]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, sourceEdits()]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value?.plan.references).toEqual([]);
@@ -308,34 +306,24 @@ it('retains an incomplete diagnostic after two unsuccessful technical correction
   expect(result.spend.calls).toBe(4);
 });
 
-it('rejects invalid new coverage atomically and retries a corrected scoped proposal', async () => {
+it('rejects invalid new coverage atomically and retries a corrected explicit revision', async () => {
   const initial = candidate();
   const added = structuredClone(initial.plan.obligations[0]);
   added.id = 'OB-02';
   added.source = 'An unbound additional clause';
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    initial,
-    {
-      findings: [
-        {
-          requirement: 'URS-001',
-          severity: 'suggestion',
-          message: 'Add a separate clause mapping.',
-        },
-      ],
-      summary: 'Improve coverage.',
-    },
-    { edits: [{ op: 'add_obligation', value: added }] },
-    {
-      edits: [{ op: 'add_obligation', value: { ...added, source: 'URS-001/details/0' } }],
-    },
-  ]);
+  const { result, fetchImpl } = await run(
+    [
+      { action: 'finish' },
+      { edits: [{ op: 'add_obligation', value: added }] },
+      { edits: [{ op: 'add_obligation', value: { ...added, source: 'URS-001/details/0' } }] },
+    ],
+    { existing: initial.plan, existingUrs: urs, feedback: 'Add a separate clause mapping.' },
+  );
 
   expect(result.incomplete).toBe(false);
-  expect(result.reviewRounds).toBe(1);
+  expect(result.reviewRounds).toBe(0);
   expect(result.value?.plan.obligations[1].source).toBe('URS-001/details/0');
-  const correction = JSON.parse(requestBody(fetchImpl, 4).input[0].content[0].text);
+  const correction = JSON.parse(requestBody(fetchImpl, 2).input[0].content[0].text);
   expect(correction.validation_errors.join('\n')).toContain('OB-02');
   expect(correction.candidate.plan.obligations).toEqual(initial.plan.obligations);
   expect(result.value?.plan.cases).toEqual(initial.plan.cases);
@@ -370,7 +358,6 @@ it('repairs a runtime-compatibility question instead of treating it as a user re
     { action: 'finish' },
     malformed,
     { edits: [{ op: 'remove_technical_question', question_id: 'IOQ-Q-RUNTIME' }] },
-    reviewed,
   ]);
 
   expect(result.incomplete).toBe(false);
@@ -389,12 +376,12 @@ it('keeps a genuine product question as an approval blocker without treating it 
       question: 'Should inactive users also be able to see the Sample ID field?',
     },
   ];
-  const { result, fetchImpl } = await run([{ action: 'finish' }, generated, reviewed]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, generated]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value?.plan.questions).toEqual(generated.plan.questions);
   expect(result.questions.join('\n')).toContain('Q-VISIBILITY');
-  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
 });
 
 it('does not weaken a manual expected result while repairing a source binding', async () => {
@@ -444,15 +431,10 @@ it('does not weaken a manual expected result while repairing a source binding', 
 it('repairs malformed CSV and text predicates while preserving valid expected results', async () => {
   const malformed = malformedPredicates();
   const corrected = correctedPredicates();
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    malformed,
-    predicateEdits(),
-    reviewed,
-  ]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, predicateEdits()]);
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
   expect(result.value?.plan.cases[0].steps[0].assertions).toEqual(
     corrected.plan.cases[0].steps[0].assertions,
   );
@@ -499,11 +481,10 @@ it('rejects an unrelated expected-result edit and uses the remaining correction 
     malformed,
     weakened,
     predicateEdits(),
-    reviewed,
   ]);
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(5);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
   expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
   const rejection = result.diagnostics?.find(
     (diagnostic) => diagnostic.kind === 'protected_expectation',
@@ -565,16 +546,10 @@ it('repairs a missing numeric tolerance without allowing its valid expected valu
   const correction = {
     edits: [{ op: 'repair_assertion', assertion_id: 'A-NUMERIC', tolerance: 0.001 }],
   };
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    malformed,
-    weakened,
-    correction,
-    reviewed,
-  ]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, weakened, correction]);
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(5);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
   expect(result.value?.plan.cases[0].steps[0].assertions[1]).toMatchObject({
     comparison: 'numeric',
     expected: 1.25,
@@ -667,17 +642,14 @@ it('resolves an IOQ-only question from explicit feedback while retaining its ori
     supporting_quote: 'Use the installed Chromium browser.',
     resolution: 'The preparer will use the installed Chromium browser.',
   };
-  const { result, fetchImpl } = await run(
-    [{ action: 'finish' }, { edits: [resolution] }, reviewed],
-    {
-      existing: existing.plan,
-      existingUrs: urs,
-      feedback: `IOQ-Q-01: ${resolution.supporting_quote}`,
-    },
-  );
+  const { result, fetchImpl } = await run([{ action: 'finish' }, { edits: [resolution] }], {
+    existing: existing.plan,
+    existingUrs: urs,
+    feedback: `IOQ-Q-01: ${resolution.supporting_quote}`,
+  });
 
   expect(result.incomplete, result.questions.join('\n')).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
   expect(result.value?.plan.questions).toEqual([]);
   expect(result.value?.plan.cases).toEqual(existing.plan.cases);
   expect(result.value?.plan.obligations).toEqual(existing.plan.obligations);
@@ -704,51 +676,33 @@ it('resolves an IOQ-only question from explicit feedback while retaining its ori
   );
 });
 
-it('does not let autonomous semantic review resolve an IOQ question, even when the initial revision received feedback', async () => {
+it('keeps an IOQ question open when advisory review suggests resolving it', async () => {
   const existing = candidate();
   existing.plan.questions = [
     { id: 'IOQ-Q-01', question: 'Which browser will the preparer use?', requirement: 'URS-001' },
   ];
-  const feedback = 'IOQ-Q-01: Use the installed Chromium browser.';
-  const proposal = {
-    edits: [
+  const advice = {
+    findings: [
       {
-        op: 'resolve_question',
-        question_id: 'IOQ-Q-01',
-        supporting_quote: 'Use the installed Chromium browser.',
-        resolution: 'Use Chromium.',
+        severity: 'suggestion',
+        requirement: 'URS-001',
+        message: 'Resolve the browser question.',
       },
     ],
+    summary: 'Question remains.',
   };
-  const { result, fetchImpl } = await run(
-    [
-      { action: 'finish' },
-      { edits: [] },
-      {
-        findings: [
-          {
-            severity: 'suggestion',
-            requirement: 'URS-001',
-            message: 'Resolve the browser question.',
-          },
-        ],
-        summary: 'Question remains.',
-      },
-      proposal,
-      proposal,
-      proposal,
-    ],
-    { existing: existing.plan, existingUrs: urs, feedback },
-  );
+  const { result, fetchImpl } = await run([{ action: 'finish' }, { edits: [] }, advice], {
+    existing: existing.plan,
+    existingUrs: urs,
+    feedback: 'Clarify the procedure.',
+    reviewCoverage: true,
+  });
 
-  expect(result.incomplete).toBe(true);
-  expect(fetchImpl).toHaveBeenCalledTimes(6);
+  expect(result.incomplete).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(result.coverageReview).toEqual(advice);
   expect(result.value?.plan.questions).toEqual(existing.plan.questions);
   expect(result.value?.plan.cases).toEqual(existing.plan.cases);
-  expect(JSON.stringify(requestBody(fetchImpl, 3).text.format.schema)).not.toContain(
-    'resolve_question',
-  );
-  expect(
-    result.diagnostics?.filter((diagnostic) => diagnostic.kind === 'document_schema'),
-  ).toHaveLength(3);
+  expect(result.questions).toContain('IOQ-Q-01: Which browser will the preparer use?');
+  expect(requestBody(fetchImpl, 2).text.format.schema.properties).not.toHaveProperty('edits');
 });

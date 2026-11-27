@@ -27,6 +27,7 @@ vi.mock('../src/authoring/discovery.js', async (importOriginal) => ({
 }));
 const roots: string[] = [];
 afterEach(async () => {
+  rehearsalMock.mockReset();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 const reviewed = { findings: [], summary: 'Every reviewed condition has executable coverage.' };
@@ -116,7 +117,8 @@ async function run(
     existing?: boolean;
     automationOnly?: boolean;
     rehearse?: boolean;
-    thoroughness?: 'quick' | 'standard';
+    thoroughness?: 'quick' | 'standard' | 'thorough';
+    reviewCoverage?: boolean;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'provenarium automation progress '));
@@ -160,6 +162,7 @@ async function run(
       : {}),
     automationOnly: options.automationOnly,
     rehearse: options.rehearse,
+    reviewCoverage: options.reviewCoverage,
     allowInteractions: options.rehearse,
     url: fixture.plan.target.url,
     thoroughness: options.thoroughness ?? 'quick',
@@ -182,7 +185,6 @@ it.each(['openai', 'anthropic'] as const)(
         { action: 'finish' },
         { plan: fixture.plan, fixtures: fixture.fixtures },
         ...Array.from({ length: 5 }, (_, i) => conversion(i + 1)),
-        reviewed,
       ],
       fixture,
     );
@@ -199,7 +201,7 @@ it.each(['openai', 'anthropic'] as const)(
     expect(
       progress.filter((message) => message.includes('Correcting generated protocol structure')),
     ).toEqual([]);
-    expect(transport).toHaveBeenCalledTimes(8);
+    expect(transport).toHaveBeenCalledTimes(7);
     expect(fixture).toEqual(baseline);
   },
 );
@@ -291,7 +293,7 @@ it('continues an existing partial automation plan without a broad revision reque
   const first = structuredClone(fixture.plan.cases[0]);
   const { result, transport, requests } = await run(
     'openai',
-    [{ action: 'finish' }, conversion(2), conversion(3), reviewed],
+    [{ action: 'finish' }, conversion(2), conversion(3)],
     fixture,
     { existing: true, automationOnly: true },
   );
@@ -299,10 +301,10 @@ it('continues an existing partial automation plan without a broad revision reque
   expect(result.value?.plan.cases[0]).toEqual(first);
   expect(result.value?.plan.cases.every((c) => !c.manual)).toBe(true);
   expect((requests[1].automation_task as { case_id: string }).case_id).toBe('OQ-2');
-  expect(transport).toHaveBeenCalledTimes(4);
+  expect(transport).toHaveBeenCalledTimes(3);
 });
 
-it('reviews every case after automation grows the full candidate beyond the request limit', async () => {
+it('uses one limited advisory request after automation grows the full candidate beyond the request limit', async () => {
   const fixture = example();
   const conversions = Array.from({ length: 5 }, (_, i) => {
     const edit = conversion(i + 1);
@@ -311,38 +313,24 @@ it('reviews every case after automation grows the full candidate beyond the requ
   });
   const { result, requests, requestBytes, transport } = await run(
     'openai',
-    [
-      { action: 'finish' },
-      { plan: fixture.plan, fixtures: [] },
-      ...conversions,
-      ...Array.from({ length: 5 }, () => reviewed),
-    ],
+    [{ action: 'finish' }, { plan: fixture.plan, fixtures: [] }, ...conversions, reviewed],
     fixture,
+    { reviewCoverage: true },
   );
   expect(result.incomplete, result.questions.join('\n')).toBe(false);
   expect(Buffer.byteLength(JSON.stringify(result.value))).toBeGreaterThan(200000);
   expect(requestBytes.every((bytes) => bytes <= 200000)).toBe(true);
-  const reviews = requests.slice(7);
-  expect(reviews).toHaveLength(5);
-  expect(
-    reviews.map(
-      (request) => (request.candidate as { plan: { cases: { id: string }[] } }).plan.cases[0].id,
-    ),
-  ).toEqual(['OQ-1', 'OQ-2', 'OQ-3', 'OQ-4', 'OQ-5']);
-  for (const request of reviews) {
-    expect((request.case_inventory as unknown[]).length).toBe(5);
-    expect(
-      (request.candidate as { plan: { obligations: unknown[] } }).plan.obligations,
-    ).toHaveLength(5);
-    expect(request.urs).toEqual(fixture.urs);
-  }
+  expect(requests.slice(7)).toHaveLength(1);
+  expect(requests[7].cases as unknown[]).toHaveLength(5);
+  expect(result.coverageReview).toEqual(reviewed);
+  expect(result.coverageReviewWarning).toContain('Detailed procedures and fixtures were omitted');
   expect(
     result.value?.plan.cases.every(
       (c, index) =>
         c.steps[0].instruction === conversions[index].edits[0].steps[0].instruction.trim(),
     ),
   ).toBe(true);
-  expect(transport).toHaveBeenCalledTimes(12);
+  expect(transport).toHaveBeenCalledTimes(8);
   expect(
     result.diagnostics?.some(
       (diagnostic) => diagnostic.kind === 'protocol_edits' && diagnostic.truncated,
@@ -382,11 +370,7 @@ it('splits a large existing-plan revision into scoped edits and keeps the comple
   const before = structuredClone(fixture.plan);
   const { result, requests, requestBytes, transport } = await run(
     'anthropic',
-    [
-      { action: 'finish' },
-      ...Array.from({ length: 5 }, () => ({ edits: [] })),
-      ...Array.from({ length: 5 }, () => reviewed),
-    ],
+    [{ action: 'finish' }, ...Array.from({ length: 5 }, () => ({ edits: [] }))],
     fixture,
     { existing: true },
   );
@@ -398,7 +382,7 @@ it('splits a large existing-plan revision into scoped edits and keeps the comple
     edits.map((request) => (request.request_scope as { case_ids: string[] }).case_ids),
   ).toEqual([['OQ-1'], ['OQ-2'], ['OQ-3'], ['OQ-4'], ['OQ-5']]);
   for (const request of edits) expect((request.case_inventory as unknown[]).length).toBe(5);
-  expect(transport).toHaveBeenCalledTimes(11);
+  expect(transport).toHaveBeenCalledTimes(6);
 });
 
 it.each(['schema', 'scoped-edit'] as const)(
@@ -439,7 +423,7 @@ it.each(['schema', 'scoped-edit'] as const)(
           };
     const { result, requests, requestBytes, transport } = await run(
       'openai',
-      [{ action: 'finish' }, rejected, { edits: [] }, reviewed],
+      [{ action: 'finish' }, rejected, { edits: [] }],
       fixture,
       { existing: true },
     );
@@ -460,11 +444,11 @@ it.each(['schema', 'scoped-edit'] as const)(
         bytes: expect.any(Number),
       });
     expect(result.diagnostics?.length).toBeGreaterThan(0);
-    expect(transport).toHaveBeenCalledTimes(4);
+    expect(transport).toHaveBeenCalledTimes(3);
   },
 );
 
-it('repairs failed rehearsal cases in isolated windows without resending successful observations', async () => {
+it('retains failed rehearsal assertions without another provider call', async () => {
   const fixture = example(2);
   fixture.plan = planSchema.parse({
     ...fixture.plan,
@@ -500,39 +484,23 @@ it('repairs failed rehearsal cases in isolated windows without resending success
     observations,
   };
   rehearsalMock.mockResolvedValueOnce(rehearsal);
-  const { result, requests, requestBytes, transport } = await run(
+  const { result, transport } = await run(
     'openai',
-    [{ action: 'finish' }, { edits: [] }, reviewed, { edits: [] }, { edits: [] }],
+    [{ action: 'finish' }, { edits: [] }],
     fixture,
     { existing: true, rehearse: true },
   );
   expect(result.incomplete, result.questions.join('\n')).toBe(false);
-  const repairs = requests.slice(3);
-  expect(repairs).toHaveLength(2);
-  expect(
-    repairs.map((request) => (request.request_scope as { case_ids: string[] }).case_ids),
-  ).toEqual([['OQ-1'], ['OQ-2']]);
-  for (const [index, request] of repairs.entries()) {
-    const input = request.rehearsal as {
-      observations: { case_id: string; status: string }[];
-      cases: unknown[];
-      observation_selection: { omitted_passed: number };
-    };
-    expect(input.observations).toEqual([observations[index]]);
-    expect(input.cases).toHaveLength(2);
-    expect(input.observation_selection.omitted_passed).toBe(1);
-  }
   expect(result.rehearsal).toEqual(rehearsal);
   expect(result.value?.plan.cases.map((c) => c.steps[0].assertions[0].expected)).toEqual([
     true,
     true,
   ]);
-  expect(requestBytes.every((bytes) => bytes <= 200000)).toBe(true);
-  expect(transport).toHaveBeenCalledTimes(5);
+  expect(transport).toHaveBeenCalledTimes(2);
   expect(rehearsalMock).toHaveBeenCalledTimes(1);
 });
 
-it('freezes the replayable automation prefix before intervening semantic edits', async () => {
+it('keeps the automation checkpoint intact when advisory review proposes changes', async () => {
   const fixture = example(1);
   const finding = {
     findings: [
@@ -544,51 +512,60 @@ it('freezes the replayable automation prefix before intervening semantic edits',
     ],
     summary: 'Clarify procedure.',
   };
-  const { result } = await run(
+  const { result, transport } = await run(
     'openai',
-    [
-      { action: 'finish' },
-      { plan: fixture.plan, fixtures: [] },
-      conversion(1),
-      finding,
-      {
-        edits: [
-          {
-            op: 'update_instruction',
-            case_id: 'OQ-1',
-            step_id: '01',
-            instruction: 'Open the form and inspect the visible labeled Field 1 entry.',
-          },
-        ],
-      },
-      finding,
-      {
-        edits: [
-          {
-            op: 'add_fixture',
-            value: {
-              path: 'fixtures/review-note.txt',
-              content: 'Retain the reviewed field visibility criterion.',
-            },
-          },
-        ],
-      },
-    ],
+    [{ action: 'finish' }, { plan: fixture.plan, fixtures: [] }, conversion(1), finding],
     fixture,
-    { thoroughness: 'standard' },
+    { thoroughness: 'standard', reviewCoverage: true },
   );
   expect(result.incomplete, result.questions.join('\n')).toBe(false);
+  expect(result.coverageReview).toEqual(finding);
   expect(result.automationProposals).toHaveLength(1);
-  expect(result.automationProposals![0].edits[0].op).toBe('automate_case');
   const replay = applyPlanEdits(
     { plan: fixture.plan, fixtures: [] },
     result.automationProposals![0],
     { urs: fixture.urs, mode: 'review', allowManualConversion: true },
   ).value;
-  expect(replay.plan.cases[0].steps[0].instruction).toBe('Open the form and inspect Field 1.');
-  expect(result.value?.plan.cases[0].steps[0].instruction).toBe(
-    'Open the form and inspect the visible labeled Field 1 entry.',
+  expect(result.value).toEqual(replay);
+  expect(transport).toHaveBeenCalledTimes(4);
+});
+
+it.each(['quick', 'standard', 'thorough'] as const)(
+  'makes advisory review optional on the %s preset',
+  async (thoroughness) => {
+    const fixture = example(1);
+    const { result, transport } = await run(
+      'openai',
+      [{ action: 'finish' }, { plan: fixture.plan, fixtures: [] }, conversion(1)],
+      fixture,
+      { thoroughness },
+    );
+    expect(result.incomplete).toBe(false);
+    expect(result.reviewRounds).toBe(0);
+    expect(transport).toHaveBeenCalledTimes(3);
+  },
+);
+
+it('retains a validated plan when Chromium cannot start or the optional provider call fails', async () => {
+  const fixture = example(1);
+  rehearsalMock.mockRejectedValueOnce(new Error('Chromium unavailable.'));
+  const { result, transport } = await run(
+    'openai',
+    [
+      { action: 'finish' },
+      { plan: fixture.plan, fixtures: [] },
+      conversion(1),
+      new Error('Synthetic provider failure.'),
+    ],
+    fixture,
+    { rehearse: true, reviewCoverage: true },
   );
-  expect(result.value?.fixtures).toHaveLength(1);
-  expect(replay.fixtures).toEqual([]);
+  expect(result.incomplete).toBe(false);
+  expect(result.value?.plan.cases[0].manual).toBe(false);
+  expect(result.rehearsalWarning).toContain('Chromium unavailable.');
+  expect(result.coverageReviewWarning).toBeDefined();
+  expect(result.rehearsal).toBeUndefined();
+  expect(result.coverageReview).toBeUndefined();
+  expect(result.questions).toEqual([]);
+  expect(transport).toHaveBeenCalledTimes(4);
 });

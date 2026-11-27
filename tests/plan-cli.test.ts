@@ -14,14 +14,15 @@ const mocks = vi.hoisted(() => ({
   fetchImpl: vi.fn(),
   perform: vi.fn(),
   close: vi.fn(),
+  rehearsePlan: vi.fn(),
+  prepareBindings: vi.fn(),
 }));
 vi.mock('../src/credentials.js', () => ({
   getProviderKey: mocks.getProviderKey,
   forgetProviderKey: vi.fn(),
-  prepareBindings: vi.fn(() => {
-    throw new Error('Unexpected application credential request.');
-  }),
+  prepareBindings: mocks.prepareBindings,
 }));
+vi.mock('../src/authoring/rehearsal.js', () => ({ rehearsePlan: mocks.rehearsePlan }));
 vi.mock('../src/authoring/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/authoring/index.js')>()),
   generatePlan: mocks.generatePlan,
@@ -151,6 +152,7 @@ async function runCli(
     projectFiles?: Record<string, string | Buffer>;
     retainedRecord?: unknown;
     omitFeedback?: boolean;
+    extraArguments?: string[];
   },
   allowManual = true,
 ) {
@@ -230,6 +232,7 @@ async function runCli(
     '--no-pdf',
     ...(allowManual ? ['--allow-manual'] : []),
     ...(prior && !prior.omitFeedback ? ['--feedback', 'feedback.txt'] : []),
+    ...(prior?.extraArguments ?? []),
   ];
   await import('../src/cli.js');
   return root;
@@ -371,16 +374,11 @@ it('persists redacted rejected responses and field diagnostics when schema corre
 it('publishes a repaired plan without turning technical diagnostics into approval questions', async () => {
   const malformed = candidate();
   malformed.plan.cases[0].classification = 'PQ' as never;
-  const root = await runCli(candidate(), [
-    { action: 'finish' },
-    malformed,
-    candidate(),
-    { findings: [], summary: 'No further findings.' },
-  ]);
+  const root = await runCli(candidate(), [{ action: 'finish' }, malformed, candidate()]);
 
   expect(process.exitCode).toBeUndefined();
   expect(console.error).not.toHaveBeenCalled();
-  expect(mocks.fetchImpl).toHaveBeenCalledTimes(4);
+  expect(mocks.fetchImpl).toHaveBeenCalledTimes(3);
   const record = await authoringRecord(root);
   expect(record.incomplete).toBe(false);
   expect(record.diagnostics).toHaveLength(1);
@@ -425,7 +423,6 @@ it('loads existing fixture and generated reference contents and preserves them t
           },
         ],
       },
-      { findings: [], summary: 'Coverage is complete.' },
     ],
     { plan: value.plan, fixtures },
   );
@@ -433,7 +430,7 @@ it('loads existing fixture and generated reference contents and preserves them t
   expect(process.exitCode).toBeUndefined();
   expect(console.error).not.toHaveBeenCalled();
   expect(mocks.generatePlan.mock.calls[0][0].existingFixtures).toEqual(fixtures);
-  expect(mocks.fetchImpl).toHaveBeenCalledTimes(3);
+  expect(mocks.fetchImpl).toHaveBeenCalledTimes(2);
   const project = await loadProject(root);
   const revisedDirectory = join(root, project.current_candidate!);
   const revised = planSchema.parse(
@@ -493,22 +490,18 @@ it('replaces retired normative DOCX references without decoding the old document
   nextUrs.families[0].requirements[0].references = ['references/new.docx'];
   const value = candidate();
   value.plan.references = ['references/old.docx'];
-  const root = await runCli(
-    value,
-    [{ action: 'finish' }, { edits: [] }, { findings: [], summary: 'Reference update reviewed.' }],
-    {
-      plan: value.plan,
-      fixtures: [{ path: 'references/old.docx', content: Buffer.from([0x50, 0x4b, 0xff, 0xfe]) }],
-      urs: previousUrs,
-      nextUrs,
-      projectFiles: { 'references/new.docx': nextDocx },
-    },
-  );
+  const root = await runCli(value, [{ action: 'finish' }, { edits: [] }], {
+    plan: value.plan,
+    fixtures: [{ path: 'references/old.docx', content: Buffer.from([0x50, 0x4b, 0xff, 0xfe]) }],
+    urs: previousUrs,
+    nextUrs,
+    projectFiles: { 'references/new.docx': nextDocx },
+  });
 
   expect(process.exitCode).toBeUndefined();
   expect(console.error).not.toHaveBeenCalled();
   expect(mocks.generatePlan.mock.calls[0][0].existingFixtures).toEqual([]);
-  expect(mocks.fetchImpl).toHaveBeenCalledTimes(3);
+  expect(mocks.fetchImpl).toHaveBeenCalledTimes(2);
   const project = await loadProject(root);
   const revisedDirectory = join(root, project.current_candidate!);
   const revised = planSchema.parse(
@@ -540,79 +533,101 @@ it('requires a grounded reason even with the manual opt-in', async () => {
   expect((await authoringRecord(root)).questions.join('\n')).toContain('manual_reason');
 });
 
-it('automatically replays completed conversions from a matching failure before requesting authoring', async () => {
-  const original = candidate();
-  const proposal: PlanEdits = {
-    edits: [
+it.each(['automatic', 'explicit'])(
+  'packages completed conversions through %s recovery, with rehearsal and no provider',
+  async (mode) => {
+    const original = candidate();
+    const proposal: PlanEdits = {
+      edits: [
+        {
+          op: 'automate_case',
+          case_id: 'OQ-01',
+          preserved_manual_expected: original.plan.cases[0].manual_expected!,
+          coverage: [{ obligation_id: 'OB-01', assertion_ids: ['A-LABEL'] }],
+          steps: [
+            {
+              id: '01',
+              instruction: 'Verify the labeled field.',
+              actions: [{ op: 'navigate', url: '/' }],
+              assertions: [
+                {
+                  id: 'A-LABEL',
+                  locator: { by: 'label', value: 'Sample ID' },
+                  read: 'visible',
+                  comparison: 'equals',
+                  expected: true,
+                },
+              ],
+              evidence: [],
+            },
+          ],
+        },
+      ],
+    };
+    const applied = applyPlanEdits(original, proposal, {
+      urs,
+      mode: 'review',
+      allowManualConversion: true,
+    });
+    const value = { ...original, plan: applied.value.plan };
+    const rehearsal = {
+      kind: 'authoring_diagnostics',
+      cases: [{ id: 'OQ-01', status: 'failed' }],
+      observations: [],
+    };
+    mocks.rehearsePlan.mockResolvedValue(rehearsal);
+    mocks.prepareBindings.mockResolvedValue({});
+    const root = await runCli(
+      value,
+      undefined,
       {
-        op: 'automate_case',
-        case_id: 'OQ-01',
-        preserved_manual_expected: original.plan.cases[0].manual_expected!,
-        coverage: [{ obligation_id: 'OB-01', assertion_ids: ['A-LABEL'] }],
-        steps: [
-          {
-            id: '01',
-            instruction: 'Verify the labeled field.',
-            actions: [{ op: 'navigate', url: '/' }],
-            assertions: [
-              {
-                id: 'A-LABEL',
-                locator: { by: 'label', value: 'Sample ID' },
-                read: 'visible',
-                comparison: 'equals',
-                expected: true,
-              },
-            ],
-            evidence: [],
-          },
+        plan: original.plan,
+        fixtures: [],
+        omitFeedback: true,
+        extraArguments: [
+          '--rehearse',
+          ...(mode === 'explicit' ? ['--resume', 'drafts/previous-failure.json'] : []),
         ],
+        retainedRecord: {
+          incomplete: true,
+          value,
+          diagnostics: [
+            {
+              kind: 'protocol_edits',
+              operation: 'existing plan revision',
+              issues: [],
+              truncated: false,
+              request: 2,
+              candidate: { proposal, changes: applied.changes },
+            },
+          ],
+        },
       },
-    ],
-  };
-  const applied = applyPlanEdits(original, proposal, {
-    urs,
-    mode: 'review',
-    allowManualConversion: true,
-  });
-  const value = { ...original, plan: applied.value.plan };
-  const root = await runCli(
-    value,
-    undefined,
-    {
-      plan: original.plan,
-      fixtures: [],
-      omitFeedback: true,
-      retainedRecord: {
-        incomplete: true,
-        value,
-        diagnostics: [
-          {
-            kind: 'protocol_edits',
-            operation: 'existing plan revision',
-            issues: [],
-            truncated: false,
-            request: 2,
-            candidate: { proposal, changes: applied.changes },
-          },
-        ],
-      },
-    },
-    false,
-  );
-  expect(process.exitCode).toBeUndefined();
-  expect(mocks.generatePlan.mock.calls[0][0]).toMatchObject({
-    automationOnly: true,
-    existing: value.plan,
-  });
-  expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
-    'Resuming 1 completed case conversion(s)',
-  );
-  const records = await readdir(join(root, 'drafts'));
-  const latest = records.find((name) => name !== 'previous-failure.json')!;
-  const retained = JSON.parse(await readFile(join(root, 'drafts', latest), 'utf8'));
-  expect(retained.generation_resume.proposals).toEqual([planEditsSchema.parse(proposal)]);
-  expect(retained.generation_resume.checkpoint.plan).toEqual(value.plan);
-});
+      false,
+    );
+    expect(process.exitCode).toBeUndefined();
+    expect(mocks.generatePlan).not.toHaveBeenCalled();
+    expect(mocks.getProviderKey).not.toHaveBeenCalled();
+    expect(mocks.rehearsePlan).toHaveBeenCalledOnce();
+    expect(mocks.rehearsePlan.mock.calls[0][1]).toEqual(value.plan);
+    expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+      'Resuming 1 completed case conversion(s)',
+    );
+    const records = await readdir(join(root, 'drafts'));
+    const latest = records.find((name) => name !== 'previous-failure.json')!;
+    const retained = JSON.parse(await readFile(join(root, 'drafts', latest), 'utf8'));
+    expect(retained.spend.calls).toBe(0);
+    expect(retained.rehearsal).toEqual(rehearsal);
+    expect(retained.generation_resume.proposals).toEqual([planEditsSchema.parse(proposal)]);
+    expect(retained.generation_resume.checkpoint.plan).toEqual(value.plan);
+    const project = await loadProject(root);
+    expect(project.current_package).toBeUndefined();
+    expect(project.current_candidate).toBeDefined();
+    expect(
+      JSON.parse(await readFile(join(root, project.current_candidate!, 'plan.json'), 'utf8')),
+    ).toEqual(value.plan);
+  },
+);
 
 it('keeps reviewed requirement revisions in the normal revision path instead of automation-only recovery', async () => {
   const revisedUrs = structuredClone(urs);

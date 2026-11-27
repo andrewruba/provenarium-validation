@@ -99,7 +99,6 @@ function candidate() {
 }
 
 type Provider = 'openai' | 'anthropic';
-const reviewed = { findings: [], summary: 'No further findings.' };
 function transport(provider: Provider, values: unknown[], usage = true) {
   return vi.fn(async (_url: unknown, options?: RequestInit) => {
     const value = values.shift();
@@ -130,6 +129,9 @@ async function run(
     maxSpend?: number;
     allowManual?: boolean;
     urs?: typeof urs;
+    existing?: ReturnType<typeof candidate>['plan'];
+    feedback?: string;
+    reviewCoverage?: boolean;
   } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'provenarium-schema-recovery-'));
@@ -142,6 +144,10 @@ async function run(
     key: 'synthetic-provider-key',
     urs: options.urs ?? urs,
     allowManual: options.allowManual,
+    existing: options.existing,
+    existingUrs: options.existing ? (options.urs ?? urs) : undefined,
+    feedback: options.feedback,
+    reviewCoverage: options.reviewCoverage,
     url: 'https://example.test/',
     thoroughness: 'quick',
     maxSpend: options.maxSpend,
@@ -223,7 +229,7 @@ it.each(['openai', 'anthropic'] as const)(
         },
       ],
     };
-    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, edit, reviewed], {
+    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, edit], {
       provider,
     });
     expect(result.incomplete).toBe(false);
@@ -238,7 +244,7 @@ it.each(['openai', 'anthropic'] as const)(
     expect(result.value?.plan.questions).toEqual([]);
     expect(result.value?.plan.cases[1].prerequisites).toEqual([]);
     expect(result.questions).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
     const input = inputAt(fetchImpl, 1, provider);
     expect(input.runtime_contract.question_kinds).toContain('execution_preparation');
     expect(input.runtime_contract.question_kinds).toContain('does not complete');
@@ -268,13 +274,12 @@ it.each(['openai', 'anthropic'] as const)(
       testCase.steps.flatMap((step) => step.assertions.map((assertion) => assertion.id)),
     );
     const original = structuredClone(draft);
-    const { result, fetchImpl } = await run([{ action: 'finish' }, draft, reviewed], { provider });
+    const { result, fetchImpl } = await run([{ action: 'finish' }, draft], { provider });
 
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(original);
     expect(result.diagnostics ?? []).toEqual([]);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(inputAt(fetchImpl, 2, provider).candidate).toEqual(original);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(browser.perform).not.toHaveBeenCalled();
   },
 );
@@ -284,14 +289,13 @@ it.each(['openai', 'anthropic'] as const)(
   async (provider) => {
     const malformed = candidate();
     malformed.plan.cases[0].steps[0].assertions[0].comparison = 'approximately' as never;
-    const { result, fetchImpl } = await run(
-      [{ action: 'finish' }, malformed, candidate(), reviewed],
-      { provider },
-    );
+    const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate()], {
+      provider,
+    });
 
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(candidate());
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(browser.perform).not.toHaveBeenCalled();
     const retry = inputAt(fetchImpl, 2, provider);
     expect(retry.rejected_output.kind).toBe('document_schema');
@@ -316,16 +320,11 @@ it.each(['missing field', 'unknown field'] as const)(
     const malformed = JSON.parse(JSON.stringify(candidate()));
     if (kind === 'missing field') delete malformed.plan.cases[0].steps[0].instruction;
     if (kind === 'unknown field') malformed.plan.cases[0].steps[0].execute = 'not-executed';
-    const { result, fetchImpl } = await run([
-      { action: 'finish' },
-      malformed,
-      candidate(),
-      reviewed,
-    ]);
+    const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate()]);
 
     expect(result.incomplete).toBe(false);
     expect(result.value).toEqual(candidate());
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(browser.perform).not.toHaveBeenCalled();
   },
 );
@@ -335,11 +334,10 @@ it('repairs malformed discovery output before executing any browser action', asy
     { action: 'unsupported-action', target: 'not-executed' },
     { action: 'finish' },
     candidate(),
-    reviewed,
   ]);
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
   expect(browser.perform).not.toHaveBeenCalled();
   const retry = inputAt(fetchImpl, 1, 'openai');
   expect(retry.rejected_output.kind).toBe('document_schema');
@@ -352,11 +350,11 @@ it('repairs malformed discovery output before executing any browser action', asy
 it('normalizes native nullable placeholders for omitted optional fields without a repair call', async () => {
   const nullable = JSON.parse(JSON.stringify(candidate()));
   nullable.plan.cases[0].actor = null;
-  const { result, fetchImpl } = await run([{ action: 'finish' }, nullable, reviewed]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, nullable]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value).toEqual(candidate());
-  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
   expect(result.diagnostics).toBeUndefined();
 });
 
@@ -373,10 +371,10 @@ it('repairs malformed document JSON while retaining the rejected text as diagnos
       ],
     }),
   );
-  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate(), reviewed]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, candidate()]);
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
   expect(browser.perform).not.toHaveBeenCalled();
   const retry = inputAt(fetchImpl, 2, 'openai');
   expect(retry.rejected_output).toMatchObject({ kind: 'document_json', raw: '{"plan":' });
@@ -427,41 +425,38 @@ it('shares the same two corrections between schema and structural failures', asy
   expect(inputAt(fetchImpl, 3, 'openai').validation_errors.join('\n')).toMatch(/source/i);
 });
 
-it('repairs a schema-invalid review response under the same command budget', async () => {
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    candidate(),
-    { findings: null, summary: 'Malformed review' },
-    reviewed,
-  ]);
+it('keeps the draft when advisory review returns malformed output without retrying', async () => {
+  const draft = candidate();
+  const { result, fetchImpl } = await run(
+    [{ action: 'finish' }, draft, { findings: null, summary: 'Malformed review' }],
+    { reviewCoverage: true },
+  );
 
   expect(result.incomplete).toBe(false);
-  expect(result.reviewRounds).toBe(1);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
-  const retry = inputAt(fetchImpl, 3, 'openai');
-  expect(retry.validation_errors.join('\n')).toContain('/findings');
-  expect(retry.candidate.plan.id).toBe('PLAN-SCHEMA');
+  expect(result.value).toEqual(draft);
+  expect(result.reviewRounds).toBe(0);
+  expect(result.coverageReviewWarning).toMatch(/schema/i);
+  expect(fetchImpl).toHaveBeenCalledTimes(3);
+  expect(result.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'document_schema',
+        issues: expect.arrayContaining([expect.objectContaining({ path: '/findings' })]),
+      }),
+    ]),
+  );
 });
 
-it('rejects a review edit that tries to change a protected expectation after schema recovery', async () => {
+it('rejects an explicit edit that tries to change a protected expectation after schema recovery', async () => {
   const malformed = { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01' }] };
   const forbidden = { edits: [{ op: 'repair_assertion', assertion_id: 'A-01', expected: false }] };
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    candidate(),
-    {
-      findings: [
-        { requirement: 'URS-001', severity: 'suggestion', message: 'Clarify instruction.' },
-      ],
-      summary: 'Clarify procedure.',
-    },
-    malformed,
-    forbidden,
-    forbidden,
-  ]);
+  const { result, fetchImpl } = await run([{ action: 'finish' }, malformed, forbidden, forbidden], {
+    existing: candidate().plan,
+    feedback: 'Clarify instruction.',
+  });
 
   expect(result.incomplete).toBe(true);
-  expect(fetchImpl).toHaveBeenCalledTimes(6);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
   expect(result.value?.plan.cases[0].steps[0].assertions[0].expected).toBe(true);
   expect(result.questions.join('\n')).toMatch(/review|protect|assertion/i);
   expect(result.diagnostics?.some((diagnostic) => diagnostic.kind === 'document_schema')).toBe(
@@ -473,22 +468,13 @@ it.each(['delete_case', 'replace_case'] as const)(
   'rejects the unsupported %s operation instead of replacing existing checks',
   async (op) => {
     const forbidden = { edits: [{ op, case_id: 'IQ-01', manual: true }] };
-    const { result, fetchImpl } = await run([
-      { action: 'finish' },
-      candidate(),
-      {
-        findings: [
-          { requirement: 'URS-001', severity: 'suggestion', message: 'Clarify instruction.' },
-        ],
-        summary: 'Clarify procedure.',
-      },
-      forbidden,
-      forbidden,
-      forbidden,
-    ]);
+    const { result, fetchImpl } = await run(
+      [{ action: 'finish' }, forbidden, forbidden, forbidden],
+      { existing: candidate().plan, feedback: 'Clarify instruction.' },
+    );
 
     expect(result.incomplete).toBe(true);
-    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
     expect(result.value?.plan.cases).toEqual(candidate().plan.cases);
     expect(result.diagnostics?.every((diagnostic) => diagnostic.kind === 'document_schema')).toBe(
       true,
@@ -500,63 +486,52 @@ it('uses the remaining correction for a scoped instruction edit after a rejected
   const malformed = { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01' }] };
   const forbidden = { edits: [{ op: 'repair_assertion', assertion_id: 'A-01', expected: false }] };
   const instruction = 'Open the form and inspect its labeled Sample ID entry.';
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    candidate(),
-    {
-      findings: [
-        { requirement: 'URS-001', severity: 'suggestion', message: 'Clarify instruction.' },
-      ],
-      summary: 'Clarify procedure.',
-    },
-    malformed,
-    forbidden,
-    { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01', instruction }] },
-  ]);
+  const { result, fetchImpl } = await run(
+    [
+      { action: 'finish' },
+      malformed,
+      forbidden,
+      { edits: [{ op: 'update_instruction', case_id: 'IQ-01', step_id: 'S-01', instruction }] },
+    ],
+    { existing: candidate().plan, feedback: 'Clarify instruction.' },
+  );
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(6);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
   expect(result.value?.plan.cases[0].steps[0].instruction).toBe(instruction);
   expect(result.value?.plan.cases[0].steps[0].assertions).toEqual(
     candidate().plan.cases[0].steps[0].assertions,
   );
   expect(result.questions).toEqual([]);
-  const correction = inputAt(fetchImpl, 5, 'openai');
+  const correction = inputAt(fetchImpl, 3, 'openai');
   expect(correction.validation_errors.join('\n')).toContain('/edits/0/op');
   expect(correction.rejected_output.candidate.edits[0].op).toBe('repair_assertion');
-  expect(correction.findings).toHaveLength(1);
+  expect(correction.feedback).toBe('Clarify instruction.');
 });
 
-it('allows a scoped review edit to add automated cases while retaining existing checks', async () => {
+it('allows an explicit scoped edit to add automated cases while retaining existing checks', async () => {
   const initial = candidate();
   const additional = structuredClone(initial.plan.cases[0]);
   additional.id = 'IQ-02';
   additional.steps[0].id = 'S-02';
   additional.steps[0].assertions[0].id = 'A-02';
   additional.steps[0].evidence[0].id = 'E-02';
-  const { result, fetchImpl } = await run([
-    { action: 'finish' },
-    initial,
-    {
-      findings: [
-        { requirement: 'URS-001', severity: 'suggestion', message: 'Add another relevant check.' },
-      ],
-      summary: 'Expand coverage.',
-    },
-    { edits: [{ op: 'add_case', value: additional }] },
-  ]);
+  const { result, fetchImpl } = await run(
+    [{ action: 'finish' }, { edits: [{ op: 'add_case', value: additional }] }],
+    { existing: initial.plan, feedback: 'Add another relevant check.' },
+  );
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
   expect(result.value?.plan.cases[0]).toEqual(initial.plan.cases[0]);
   expect(result.value?.plan.cases[1]).toEqual(additional);
   expect(result.value?.plan.obligations).toEqual(initial.plan.obligations);
-  const reviewRequest = JSON.parse(String(fetchImpl.mock.calls[3][1]?.body));
+  const reviewRequest = JSON.parse(String(fetchImpl.mock.calls[1][1]?.body));
   expect(reviewRequest.text.format.schema.properties).toHaveProperty('edits');
   expect(reviewRequest.text.format.schema.properties).not.toHaveProperty('plan');
 });
 
-it('retains A16 and manual expected text verbatim while a review adds coverage', async () => {
+it('retains A16 and manual expected text verbatim while an explicit revision adds coverage', async () => {
   const manualUrs = structuredClone(urs);
   const explicitHumanRequirement =
     'A human must inspect the physical workstation display to verify the saved record remains SYNTHETIC-1 with value 1.250 after application restart.';
@@ -593,26 +568,17 @@ it('retains A16 and manual expected text verbatim while a review adds coverage',
   additional.steps[0].assertions[0].id = 'A-05';
   additional.steps[0].evidence[0].id = 'E-05';
   const { result, fetchImpl } = await run(
-    [
-      { action: 'finish' },
-      initial,
-      {
-        findings: [
-          {
-            requirement: 'URS-001',
-            severity: 'suggestion',
-            message: 'Add a boundary check without changing reviewed expectations.',
-          },
-        ],
-        summary: 'Expand coverage.',
-      },
-      { edits: [{ op: 'add_case', value: additional }] },
-    ],
-    { allowManual: true, urs: manualUrs },
+    [{ action: 'finish' }, { edits: [{ op: 'add_case', value: additional }] }],
+    {
+      allowManual: true,
+      urs: manualUrs,
+      existing: initial.plan,
+      feedback: 'Add a boundary check.',
+    },
   );
 
   expect(result.incomplete).toBe(false);
-  expect(fetchImpl).toHaveBeenCalledTimes(4);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
   expect(result.value?.plan.cases.slice(0, 2)).toEqual(initial.plan.cases);
   expect(result.value?.plan.cases[0].steps[0].assertions[0]).toMatchObject({
     id: 'A16',
@@ -639,12 +605,11 @@ it('retains the original structure errors while repairing a schema-invalid techn
         { op: 'repair_obligation_source', obligation_id: 'OB-01', source: 'URS-001/statement' },
       ],
     },
-    reviewed,
   ]);
 
   expect(result.incomplete).toBe(false);
   expect(result.value).toEqual(candidate());
-  expect(fetchImpl).toHaveBeenCalledTimes(5);
+  expect(fetchImpl).toHaveBeenCalledTimes(4);
   const finalCorrection = inputAt(fetchImpl, 3, 'openai');
   expect(finalCorrection.validation_errors.join('\n')).toContain(
     'OB-01: source must point to existing text or a table in its requirement.',
@@ -676,8 +641,24 @@ it.each(['network', 'refusal', 'incomplete'] as const)(
   },
 );
 
+it('keeps the draft when the remaining spending cap cannot cover advisory review', async () => {
+  const draft = candidate();
+  const probe = await run([{ action: 'finish' }, draft], { usage: false });
+  const { result, fetchImpl } = await run([{ action: 'finish' }, draft], {
+    usage: false,
+    maxSpend: probe.result.spend.reserved + 0.01,
+    reviewCoverage: true,
+  });
+  expect(result.incomplete).toBe(false);
+  expect(result.value).toEqual(draft);
+  expect(result.questions).toEqual([]);
+  expect(result.reviewRounds).toBe(0);
+  expect(result.coverageReviewWarning).toMatch(/spending cap/i);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
+
 it('does not dispatch a correction when uncertain reservations consume the remaining cap', async () => {
-  const probe = await run([{ action: 'finish' }, candidate(), reviewed]);
+  const probe = await run([{ action: 'finish' }, candidate()]);
   const reservation = (index: number) => {
     const body = String(probe.fetchImpl.mock.calls[index][1]?.body);
     const request = JSON.parse(body);

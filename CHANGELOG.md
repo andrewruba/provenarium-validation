@@ -2,10 +2,18 @@
 
 ## Unreleased
 
+- Made protocol coverage review optional. `generate --review-coverage` requests
+  one advisory review after local checks and any requested rehearsal. Findings
+  and review errors are recorded for the human reviewer without editing or
+  blocking the candidate. Browser rehearsal records failures directly.
+- Added `generate --resume <draft-file>` to package verified completed
+  conversions without a provider call. A normal matching retry can do the same
+  automatically. Add `--rehearse` to test the recovered procedures before human
+  approval.
 - Converted manual cases one at a time, retaining each valid result without
   treating the remaining cases as technical failures. Growing plans use bounded
-  case views for edits, coverage review, and rehearsal diagnostics; full-plan
-  validation, protected expectations, request limits, and spending caps remain.
+  case views for edits. Every edit is validated against the complete plan and
+  existing expectations.
 - Added automatic reuse of completed conversions when retrying a matching
   incomplete generation. Input fingerprints and strict edit replay reject stale
   work; legacy records require exact replay with unchanged inputs. The CLI prints
@@ -24,10 +32,6 @@
   restarts, dialog decisions, storage denial, negative-download observation, and
   byte-level download metadata. Table snapshots wait for the table to appear.
   Source-script correspondence is checked automatically with exact byte hashes.
-- Moved optional rehearsal after the final coverage review. Bounded rehearsal
-  repairs can change instructions and locators only; application defects remain
-  failures. Fresh unapproved draft expectations can be corrected against the URS
-  with a retained before/after record; prior candidate expectations stay protected.
 - Separated missing requirement decisions from preparation for defined manual
   tests. Protocols retain setup needs and linked cases without blocking approval;
   those cases remain `manual_pending`. Existing questions stay blocking unless
@@ -58,9 +62,9 @@
 - Replaced the unconstrained JSON-string payload envelope with provider-native
   structured output for the actual typed document. Local validation remains the
   authority for semantic rules and execution readiness.
-- Replaced whole-plan review rewrites with typed, scoped edits applied atomically
-  by the CLI. Existing IDs, checks, coverage, and protected expectations remain
-  unchanged; unsupported edit proposals retain actionable diagnostics.
+- Replaced whole-plan revisions with typed, scoped edits applied atomically by
+  the CLI. Existing IDs, checks, coverage, and protected expectations remain
+  unchanged. Unsupported edit proposals retain actionable diagnostics.
 - Fixed invalid draft predicates being frozen as accepted expected results during
   protocol correction. Scoped repairs preserve valid and reviewed expectations;
   rejected changes retain assertion IDs and before/proposed values and can use
