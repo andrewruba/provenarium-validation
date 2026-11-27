@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.1 — prerelease
+## 0.1.2 — prerelease
+
+- Corrected the Chromium regression fixture that verifies the demo’s storage-denied state on both builds.
+
+## 0.1.1 — unpublished build
 
 - Batched browser-confirmed locator repairs into one dry-run rerun while preserving
   expected results. Alert and status checks can match visible message text.

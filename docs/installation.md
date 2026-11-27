@@ -5,7 +5,7 @@ Use Node.js 26 and npm on macOS or Linux. Build and install from the checkout.
 ```sh
 npm ci
 npm pack
-npm install --global ./provenarium-validation-0.1.1.tgz
+npm install --global ./provenarium-validation-0.1.2.tgz
 ```
 
 For a published build, download the named `.tgz` and `SHA256SUMS` from the
@@ -14,7 +14,7 @@ Check the release notes for its commands, verify the archive, and install it.
 
 ```sh
 shasum --algorithm 256 --check SHA256SUMS
-npm install --global ./provenarium-validation-0.1.1.tgz
+npm install --global ./provenarium-validation-0.1.2.tgz
 ```
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the archive. To update,

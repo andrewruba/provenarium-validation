@@ -57,6 +57,7 @@ it.each(['correct', 'faulty'])(
     const browser = await chromium.launch();
     try {
       const page = await browser.newPage();
+      page.setDefaultTimeout(5000);
       await page.goto(`${base}/${mode}/?workspace=unreadable-storage#records`);
       const empty = page.locator('#empty-records');
       const count = page.locator('#record-count');
@@ -64,10 +65,12 @@ it.each(['correct', 'faulty'])(
       expect(await count.innerText()).toBe('0 saved preparations');
 
       const session = await page.context().newCDPSession(page);
+      await session.send('Page.enable');
       const { identifier } = await session.send('Page.addScriptToEvaluateOnNewDocument', {
         source: `Object.defineProperty(window, 'localStorage', {
-        get() { throw new DOMException('Storage denied', 'SecurityError'); }
-      });`,
+          configurable: true,
+          get() { throw new DOMException('Storage denied', 'SecurityError'); }
+        });`,
       });
       await page.reload();
       expect(await page.getByRole('alert').innerText()).toContain('Browser storage is unavailable');
