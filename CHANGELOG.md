@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Converted manual cases one at a time, retaining each valid result without
+  treating the remaining cases as technical failures. Growing plans use bounded
+  case views for edits, coverage review, and rehearsal diagnostics; full-plan
+  validation, protected expectations, request limits, and spending caps remain.
+- Added automatic reuse of completed conversions when retrying a matching
+  incomplete generation. Input fingerprints and strict edit replay reject stale
+  work; legacy records require exact replay with unchanged inputs. The CLI prints
+  the resumed count, and reused work still requires review and explicit approval.
 - Removed duplicated prior plans and repeated requirement/decision/catalog text
   from protocol revision requests. Requests retain the complete URS, context,
   current candidate, and fixtures, with explicit references for repeated text.

@@ -37,6 +37,19 @@ Semantic review can correct the first draft's provisional expectations and
 calculation fixtures against the URS and accepted decisions, with before/after
 records. Expectations and fixture contents from a prior candidate stay protected.
 
+When revising manual cases, generation converts one case at a time and keeps each
+successful conversion. Remaining manual cases are unfinished work, not malformed
+output that consumes the technical-correction allowance. As a plan grows, edits,
+coverage review, and rehearsal diagnostics use bounded case views; the complete
+plan stays local and every edit is checked against it. The request-size bound and
+command spending ceiling stay unchanged.
+
+Retrying the normal `generate` command can reuse completed conversions from a
+matching incomplete authoring record. The CLI verifies the current requirements,
+candidate, target, and context, replays the retained edits, and prints how many
+conversions it resumed. Reused work still receives review and optional rehearsal;
+it is never automatically approved.
+
 Protocol generation checks requirement links, actor declarations, and required
 files before creating a candidate. It corrects unambiguous source notation and
 can request up to two technical corrections under the same spending ceiling.

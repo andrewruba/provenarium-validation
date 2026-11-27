@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { stringify } from 'yaml';
 import { planSchema, ursSchema, type Plan, type Urs } from '../src/schema.js';
 import { createCandidate, loadProject } from '../src/project.js';
+import { applyPlanEdits, planEditsSchema, type PlanEdits } from '../src/authoring/plan-edits.js';
 
 const mocks = vi.hoisted(() => ({
   generatePlan: vi.fn(),
@@ -148,6 +149,8 @@ async function runCli(
     urs?: Urs;
     nextUrs?: Urs;
     projectFiles?: Record<string, string | Buffer>;
+    retainedRecord?: unknown;
+    omitFeedback?: boolean;
   },
   allowManual = true,
 ) {
@@ -164,6 +167,13 @@ async function runCli(
       pdf: false,
     });
     await writeFile(join(root, 'feedback.txt'), 'Add a second manual accessibility review.');
+    if (prior.retainedRecord) {
+      await mkdir(join(root, 'drafts'), { recursive: true });
+      await writeFile(
+        join(root, 'drafts', 'previous-failure.json'),
+        JSON.stringify(prior.retainedRecord),
+      );
+    }
   }
   if (providerValues) {
     const { generatePlan } = await vi.importActual<typeof import('../src/authoring/index.js')>(
@@ -219,7 +229,7 @@ async function runCli(
     '--yes',
     '--no-pdf',
     ...(allowManual ? ['--allow-manual'] : []),
-    ...(prior ? ['--feedback', 'feedback.txt'] : []),
+    ...(prior && !prior.omitFeedback ? ['--feedback', 'feedback.txt'] : []),
   ];
   await import('../src/cli.js');
   return root;
@@ -528,4 +538,99 @@ it('requires a grounded reason even with the manual opt-in', async () => {
   expect(process.exitCode).toBe(1);
   expect(await readdir(root)).not.toContain('candidates');
   expect((await authoringRecord(root)).questions.join('\n')).toContain('manual_reason');
+});
+
+it('automatically replays completed conversions from a matching failure before requesting authoring', async () => {
+  const original = candidate();
+  const proposal: PlanEdits = {
+    edits: [
+      {
+        op: 'automate_case',
+        case_id: 'OQ-01',
+        preserved_manual_expected: original.plan.cases[0].manual_expected!,
+        coverage: [{ obligation_id: 'OB-01', assertion_ids: ['A-LABEL'] }],
+        steps: [
+          {
+            id: '01',
+            instruction: 'Verify the labeled field.',
+            actions: [{ op: 'navigate', url: '/' }],
+            assertions: [
+              {
+                id: 'A-LABEL',
+                locator: { by: 'label', value: 'Sample ID' },
+                read: 'visible',
+                comparison: 'equals',
+                expected: true,
+              },
+            ],
+            evidence: [],
+          },
+        ],
+      },
+    ],
+  };
+  const applied = applyPlanEdits(original, proposal, {
+    urs,
+    mode: 'review',
+    allowManualConversion: true,
+  });
+  const value = { ...original, plan: applied.value.plan };
+  const root = await runCli(
+    value,
+    undefined,
+    {
+      plan: original.plan,
+      fixtures: [],
+      omitFeedback: true,
+      retainedRecord: {
+        incomplete: true,
+        value,
+        diagnostics: [
+          {
+            kind: 'protocol_edits',
+            operation: 'existing plan revision',
+            issues: [],
+            truncated: false,
+            request: 2,
+            candidate: { proposal, changes: applied.changes },
+          },
+        ],
+      },
+    },
+    false,
+  );
+  expect(process.exitCode).toBeUndefined();
+  expect(mocks.generatePlan.mock.calls[0][0]).toMatchObject({
+    automationOnly: true,
+    existing: value.plan,
+  });
+  expect(vi.mocked(console.log).mock.calls.flat().join('\n')).toContain(
+    'Resuming 1 completed case conversion(s)',
+  );
+  const records = await readdir(join(root, 'drafts'));
+  const latest = records.find((name) => name !== 'previous-failure.json')!;
+  const retained = JSON.parse(await readFile(join(root, 'drafts', latest), 'utf8'));
+  expect(retained.generation_resume.proposals).toEqual([planEditsSchema.parse(proposal)]);
+  expect(retained.generation_resume.checkpoint.plan).toEqual(value.plan);
+});
+
+it('keeps reviewed requirement revisions in the normal revision path instead of automation-only recovery', async () => {
+  const revisedUrs = structuredClone(urs);
+  revisedUrs.document.revision = '2';
+  revisedUrs.families[0].requirements[0].statement =
+    'Show an updated Sample ID label for manual review.';
+  const value = candidate();
+  value.plan.urs_revision = '2';
+  await runCli(
+    value,
+    undefined,
+    { plan: candidate().plan, fixtures: [], nextUrs: revisedUrs, omitFeedback: true },
+    false,
+  );
+  expect(mocks.generatePlan.mock.calls[0][0]).toMatchObject({
+    automationOnly: false,
+    urs: revisedUrs,
+    existingUrs: urs,
+  });
+  expect(vi.mocked(console.log).mock.calls.flat().join('\n')).not.toContain('Resuming');
 });

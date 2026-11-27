@@ -205,6 +205,10 @@ export type PlanEditOptions = {
   allowDraftExpectationRevision?: boolean;
   /** After final semantic review, only instructions and locator bindings may change. */
   proceduralOnly?: boolean;
+  /** Author one manual conversion at a time against the complete local baseline. */
+  automationCaseId?: string;
+  /** Restrict an oversized request to these existing cases; apply still sees the full plan. */
+  scopedCaseIds?: readonly string[];
 };
 export type PlanEditChange = {
   op: PlanEdits['edits'][number]['op'];
@@ -237,9 +241,41 @@ export function makePlanEditsSchema(
     | 'allowManualExceptions'
     | 'allowDraftExpectationRevision'
     | 'proceduralOnly'
+    | 'automationCaseId'
+    | 'scopedCaseIds'
   >,
 ): z.ZodType<PlanEdits> {
-  if (options.proceduralOnly) return proceduralEditsSchema;
+  if (options.proceduralOnly) return narrowScopedSchema(proceduralEditsSchema, base, options);
+  if (options.automationCaseId !== undefined) {
+    const c = base.plan.cases.find((item) => item.id === options.automationCaseId);
+    if (!options.allowManualConversion || !c?.manual)
+      throw new PlanEditError([
+        {
+          path: ['scope'],
+          code: 'invalid_scope',
+          message:
+            'An automation request needs one existing manual case and explicit conversion permission.',
+        },
+      ]);
+    if (options.scopedCaseIds && !options.scopedCaseIds.includes(c.id))
+      throw new PlanEditError([
+        {
+          path: ['scope'],
+          code: 'invalid_scope',
+          message: 'The automation case is outside the selected case scope.',
+        },
+      ]);
+    return z.strictObject({
+      edits: z
+        .array(
+          z.discriminatedUnion('op', [
+            automationOperations[0].extend({ case_id: z.literal(c.id) }),
+            operations[10],
+          ]),
+        )
+        .max(51),
+    });
+  }
   const mayRevise =
     (options.mode === 'review' && options.allowDraftExpectationRevision) ||
     base.plan.cases.some(
@@ -266,29 +302,218 @@ export function makePlanEditsSchema(
     !options.allowManualConversion &&
     !options.allowManualExceptions
   )
-    return planReviewEditsSchema;
+    return narrowScopedSchema(planReviewEditsSchema, base, options);
+  return narrowScopedSchema(
+    z.strictObject({
+      edits: z
+        .array(
+          z.discriminatedUnion('op', [
+            ...operations,
+            ...(options.mode === 'technical' ? repairs : []),
+            ...(mayRevise ? requirementRevisions.slice(0, 2) : []),
+            ...(options.mode === 'review' && options.allowDraftExpectationRevision
+              ? [requirementRevisions[2]]
+              : []),
+            ...(options.allowManualConversion ? automationOperations : []),
+            ...(options.allowManualExceptions ? manualJustificationOperations : []),
+            ...(mayResolve
+              ? [questionResolutions[0].extend({ question_id: z.enum(resolvableQuestionIds) })]
+              : []),
+            ...(preparationQuestionIds.length
+              ? [questionResolutions[1].extend({ question_id: z.enum(preparationQuestionIds) })]
+              : []),
+          ]),
+        )
+        .max(100),
+    }),
+    base,
+    options,
+  );
+}
+
+type ScopeOptions = Pick<PlanEditOptions, 'scopedCaseIds' | 'automationCaseId'>;
+function selectedScope(
+  base: GeneratedPlanDocument,
+  options: ScopeOptions,
+): Set<string> | undefined {
+  const selected =
+    options.automationCaseId !== undefined ? [options.automationCaseId] : options.scopedCaseIds;
+  if (
+    options.automationCaseId !== undefined &&
+    options.scopedCaseIds &&
+    !options.scopedCaseIds.includes(options.automationCaseId)
+  )
+    throw new PlanEditError([
+      {
+        path: ['scope'],
+        code: 'invalid_scope',
+        message: 'The automation case is outside the selected case scope.',
+      },
+    ]);
+  if (!selected) return;
+  if (
+    !selected.length ||
+    new Set(selected).size !== selected.length ||
+    selected.some((id) => !base.plan.cases.some((c) => c.id === id))
+  )
+    throw new PlanEditError([
+      {
+        path: ['scope'],
+        code: 'invalid_scope',
+        message: 'Case scope must contain unique existing case IDs.',
+      },
+    ]);
+  return new Set(selected);
+}
+
+/** Native schemas narrow known targets; the full-baseline guard below checks cross-links. */
+function narrowScopedSchema(
+  schema: z.ZodType<PlanEdits>,
+  base: GeneratedPlanDocument,
+  options: ScopeOptions,
+): z.ZodType<PlanEdits> {
+  const selected = selectedScope(base, options);
+  if (!selected) return schema;
+  const cases = base.plan.cases.filter((c) => selected.has(c.id));
+  const assertions = cases.flatMap((c) => c.steps.flatMap((s) => s.assertions.map((a) => a.id)));
+  const actors = base.plan.access
+    .filter((a) => a.cases.length && a.cases.every((id) => selected.has(id)))
+    .map((a) => a.id);
+  const variants: z.ZodObject[] = [];
+  for (const original of (schema as typeof planEditsSchema).shape.edits.element.options) {
+    const op = original.shape.op.value;
+    if (op === 'set_input_declarations' || op === 'revise_fixture') continue;
+    if (op === 'repair_actor' && !actors.length) continue;
+    if ('assertion_id' in original.shape && !assertions.length) continue;
+    let variant: z.ZodObject = original;
+    if ('case_id' in original.shape) variant = variant.extend({ case_id: z.enum([...selected]) });
+    if ('assertion_id' in original.shape)
+      variant = variant.extend({ assertion_id: z.enum(assertions) });
+    if (op === 'repair_actor') variant = variant.extend({ actor_id: z.enum(actors) });
+    variants.push(variant);
+  }
   return z.strictObject({
     edits: z
-      .array(
-        z.discriminatedUnion('op', [
-          ...operations,
-          ...(options.mode === 'technical' ? repairs : []),
-          ...(mayRevise ? requirementRevisions.slice(0, 2) : []),
-          ...(options.mode === 'review' && options.allowDraftExpectationRevision
-            ? [requirementRevisions[2]]
-            : []),
-          ...(options.allowManualConversion ? automationOperations : []),
-          ...(options.allowManualExceptions ? manualJustificationOperations : []),
-          ...(mayResolve
-            ? [questionResolutions[0].extend({ question_id: z.enum(resolvableQuestionIds) })]
-            : []),
-          ...(preparationQuestionIds.length
-            ? [questionResolutions[1].extend({ question_id: z.enum(preparationQuestionIds) })]
-            : []),
-        ]),
-      )
+      .array(z.discriminatedUnion('op', variants as [z.ZodObject, ...z.ZodObject[]]))
       .max(100),
-  });
+  }) as unknown as z.ZodType<PlanEdits>;
+}
+
+function enforceEditScope(
+  base: GeneratedPlanDocument,
+  proposal: PlanEdits,
+  options: ScopeOptions,
+): Set<string> | undefined {
+  const selected = selectedScope(base, options);
+  if (!selected) return;
+  const requirements = new Set(
+    base.plan.cases.filter((c) => selected.has(c.id)).flatMap((c) => c.requirements),
+  );
+  const allowedCases = new Set(selected);
+  for (const edit of proposal.edits) if (edit.op === 'add_case') allowedCases.add(edit.value.id);
+  const assertionOwners = new Map(
+    base.plan.cases.flatMap((c) =>
+      c.steps.flatMap((s) => s.assertions.map((a) => [a.id, c.id] as const)),
+    ),
+  );
+  for (const edit of proposal.edits) {
+    if (edit.op === 'add_case')
+      for (const s of edit.value.steps)
+        for (const a of s.assertions) assertionOwners.set(a.id, edit.value.id);
+    else if (edit.op === 'add_step')
+      for (const a of edit.value.assertions) assertionOwners.set(a.id, edit.case_id);
+    else if (edit.op === 'add_assertion') assertionOwners.set(edit.value.id, edit.case_id);
+    else if (edit.op === 'automate_case')
+      for (const s of edit.steps)
+        for (const a of s.assertions) assertionOwners.set(a.id, edit.case_id);
+  }
+  const questionInScope = (q: Plan['questions'][number] | undefined) =>
+    Boolean(
+      q &&
+      ((q.requirement && requirements.has(q.requirement)) ||
+        q.case_ids?.some((id) => selected.has(id))),
+    );
+  for (const [index, edit] of proposal.edits.entries()) {
+    const fail = (message: string): never => {
+      throw new PlanEditError([{ path: ['edits', index], code: 'out_of_scope_edit', message }]);
+    };
+    const requireCase = (id: string) => {
+      if (!allowedCases.has(id)) fail(`Case ${id} is outside the selected case scope.`);
+    };
+    const requireRequirement = (id: string) => {
+      if (!requirements.has(id)) fail(`Requirement ${id} is outside the selected case scope.`);
+    };
+    const requireAssertion = (id: string) => {
+      const owner = assertionOwners.get(id);
+      if (!owner || !allowedCases.has(owner))
+        fail(`Assertion ${id} is outside the selected case scope.`);
+    };
+    const requireQuestion = (id: string) => {
+      if (!questionInScope(base.plan.questions.find((q) => q.id === id)))
+        fail(`Question ${id} is outside the selected case scope.`);
+    };
+    if ('case_id' in edit) requireCase(edit.case_id);
+    if ('assertion_id' in edit) requireAssertion(edit.assertion_id);
+    switch (edit.op) {
+      case 'add_case':
+        edit.value.requirements.forEach(requireRequirement);
+        break;
+      case 'add_case_requirement':
+        requireRequirement(edit.requirement_id);
+        break;
+      case 'add_obligation':
+        requireRequirement(edit.value.requirement_id);
+        edit.value.assertion_ids.forEach(requireAssertion);
+        edit.value.manual_case_ids.forEach(requireCase);
+        break;
+      case 'extend_obligation':
+      case 'repair_obligation_source': {
+        const obligation = base.plan.obligations.find((o) => o.id === edit.obligation_id);
+        if (!obligation) fail(`Unknown scoped obligation ${edit.obligation_id}.`);
+        requireRequirement(obligation!.requirement_id);
+        if (edit.op === 'extend_obligation') {
+          edit.assertion_ids.forEach(requireAssertion);
+          edit.manual_case_ids.forEach(requireCase);
+        }
+        break;
+      }
+      case 'add_question':
+        if (edit.value.requirement) requireRequirement(edit.value.requirement);
+        else if (!edit.value.case_ids?.length)
+          fail('A scoped request cannot add an unbound global question.');
+        edit.value.case_ids?.forEach(requireCase);
+        break;
+      case 'resolve_question':
+      case 'remove_technical_question':
+        requireQuestion(edit.question_id);
+        break;
+      case 'repair_question_requirement':
+        requireQuestion(edit.question_id);
+        requireRequirement(edit.requirement_id);
+        break;
+      case 'reclassify_question_as_preparation':
+        requireQuestion(edit.question_id);
+        edit.case_ids.forEach(requireCase);
+        break;
+      case 'add_actor':
+        if (!edit.value.cases.length) fail('A scoped actor must name its case consumers.');
+        edit.value.cases.forEach(requireCase);
+        break;
+      case 'repair_actor': {
+        const actor = base.plan.access.find((a) => a.id === edit.actor_id);
+        if (!actor?.cases.length || actor.cases.some((id) => !selected.has(id)))
+          fail(`Actor ${edit.actor_id} has consumers outside the selected case scope.`);
+        edit.cases?.forEach(requireCase);
+        break;
+      }
+      case 'set_input_declarations':
+      case 'revise_fixture':
+        fail(
+          `${edit.op} is not available in a scoped case request; shared inputs remain protected.`,
+        );
+    }
+  }
+  return selected;
 }
 
 function feedbackNamesQuestion(feedback: string | undefined, questionId: string): boolean {
@@ -368,6 +593,21 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
       authorizedRequirementChanges: undefined,
       questionResolutionFeedback: undefined,
     };
+  const selected = selectedScope(base, options);
+  const inScope = (c: Plan['cases'][number]) => !selected || selected.has(c.id);
+  const scopeRequirements = new Set(base.plan.cases.filter(inScope).flatMap((c) => c.requirements));
+  const scopeAssertions = new Set(
+    base.plan.cases
+      .filter(inScope)
+      .flatMap((c) => c.steps.flatMap((s) => s.assertions.map((a) => a.id))),
+  );
+  const questionInScope = (q: Plan['questions'][number]) =>
+    !selected ||
+    Boolean(
+      (q.requirement && scopeRequirements.has(q.requirement)) ||
+      q.case_ids?.some((id) => selected.has(id)),
+    );
+  const conversionOnly = options.automationCaseId !== undefined && !options.proceduralOnly;
   const reqs = new Set(
     options.urs.families.flatMap((family) =>
       family.requirements.map((requirement) => requirement.id),
@@ -377,6 +617,8 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
   return {
     mode: options.mode,
     procedural_only: Boolean(options.proceduralOnly),
+    ...(selected ? { scoped_case_ids: [...selected] } : {}),
+    ...(conversionOnly ? { permitted_operations: ['automate_case', 'add_fixture'] } : {}),
     ...(options.proceduralOnly
       ? {
           permitted_operations: [
@@ -386,7 +628,7 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
           ],
         }
       : {}),
-    cases: base.plan.cases.map((c) => ({
+    cases: base.plan.cases.filter(inScope).map((c) => ({
       id: c.id,
       manual: c.manual,
       steps: c.steps.map((s) => ({
@@ -395,12 +637,14 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
         assertions: s.assertions.map((a) => a.id),
       })),
     })),
-    obligations: base.plan.obligations.map((obligation) => obligation.id),
+    obligations: base.plan.obligations
+      .filter((o) => !selected || scopeRequirements.has(o.requirement_id))
+      .map((obligation) => obligation.id),
     actors: base.plan.access.map((actor) => actor.id),
     requirements: [...reqs],
     automatable_cases: options.allowManualConversion
       ? base.plan.cases
-          .filter((c) => c.manual)
+          .filter((c) => c.manual && inScope(c))
           .map((c) => ({
             id: c.id,
             manual_procedure: c.manual_procedure,
@@ -414,20 +658,23 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
               .map((q) => ({ id: q.id, question: q.question, case_ids: q.case_ids })),
           }))
       : [],
-    manual_justification_cases: options.allowManualExceptions
-      ? base.plan.cases
-          .filter((c) => c.manual)
-          .map((c) => ({
-            id: c.id,
-            sources: obligationSourceCatalog(options.urs).filter((source) =>
-              c.requirements.includes(source.requirement_id),
-            ),
-          }))
-      : [],
+    manual_justification_cases:
+      options.allowManualExceptions && !conversionOnly
+        ? base.plan.cases
+            .filter((c) => c.manual && inScope(c))
+            .map((c) => ({
+              id: c.id,
+              sources: obligationSourceCatalog(options.urs).filter((source) =>
+                c.requirements.includes(source.requirement_id),
+              ),
+            }))
+        : [],
     provisional_expectation_revision:
-      options.mode === 'review' && Boolean(options.allowDraftExpectationRevision),
+      !conversionOnly &&
+      options.mode === 'review' &&
+      Boolean(options.allowDraftExpectationRevision),
     revisable_fixtures:
-      options.mode === 'review' && options.allowDraftExpectationRevision
+      !selected && options.mode === 'review' && options.allowDraftExpectationRevision
         ? base.fixtures
             .filter(
               (fixture) =>
@@ -440,7 +687,12 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
             .map((fixture) => fixture.path)
         : [],
     resolvable_questions: base.plan.questions
-      .filter((question) => feedbackNamesQuestion(options.questionResolutionFeedback, question.id))
+      .filter(
+        (question) =>
+          !conversionOnly &&
+          questionInScope(question) &&
+          feedbackNamesQuestion(options.questionResolutionFeedback, question.id),
+      )
       .map((question) => ({
         id: question.id,
         question: question.question,
@@ -450,6 +702,8 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
       .filter(
         (question) =>
           question.kind !== 'execution_preparation' &&
+          !conversionOnly &&
+          questionInScope(question) &&
           feedbackNamesQuestion(options.questionResolutionFeedback, question.id),
       )
       .map((question) => ({
@@ -462,6 +716,8 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
     requirement_revision_cases: base.plan.cases
       .filter(
         (c) =>
+          !conversionOnly &&
+          inScope(c) &&
           c.requirements.length &&
           ((options.mode === 'review' && options.allowDraftExpectationRevision) ||
             c.requirements.every((id) => options.authorizedRequirementChanges?.has(id))),
@@ -472,7 +728,7 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
         manual: c.manual,
       })),
     repairable_assertions:
-      options.mode === 'technical'
+      !conversionOnly && options.mode === 'technical'
         ? [...diagnosedFields(base.plan)]
             .map(([id, fields]) => ({
               id,
@@ -482,15 +738,17 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
                   options.repairableAssertionFields.get(id)?.has(field),
               ),
             }))
-            .filter((item) => item.fields.length)
+            .filter((item) => item.fields.length && (!selected || scopeAssertions.has(item.id)))
         : [],
     repairable_sources:
-      options.mode === 'technical'
+      !conversionOnly && options.mode === 'technical'
         ? base.plan.obligations
-            .filter((obligation) =>
-              errors.has(
-                `${obligation.id}: source must point to existing text or a table in its requirement.`,
-              ),
+            .filter(
+              (obligation) =>
+                (!selected || scopeRequirements.has(obligation.requirement_id)) &&
+                errors.has(
+                  `${obligation.id}: source must point to existing text or a table in its requirement.`,
+                ),
             )
             .map((obligation) => ({
               id: obligation.id,
@@ -500,9 +758,14 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
             }))
         : [],
     repairable_questions:
-      options.mode === 'technical'
+      !conversionOnly && options.mode === 'technical'
         ? base.plan.questions
-            .filter((question) => question.requirement && !reqs.has(question.requirement))
+            .filter(
+              (question) =>
+                questionInScope(question) &&
+                question.requirement &&
+                !reqs.has(question.requirement),
+            )
             .map((question) => ({
               id: question.id,
               removable:
@@ -512,8 +775,11 @@ export function planEditCatalog(base: GeneratedPlanDocument, options: PlanEditOp
             }))
         : [],
     input_declarations_repairable:
-      options.mode === 'technical' && invalidInputDeclarations(base, options.urs),
+      !selected && options.mode === 'technical' && invalidInputDeclarations(base, options.urs),
     instructions:
+      (selected
+        ? `This request may edit only cases ${[...selected].join(', ')} and coverage for their requirements. Other cases and shared inputs remain protected; create any additional case as a complete object under these same requirements. `
+        : '') +
       (options.proceduralOnly
         ? 'This is a post-review procedural repair. Only update_instruction, update_action_locator, and update_assertion_locator are permitted. All test behavior, expectations, actions, coverage, questions, fixtures, and case membership are frozen. '
         : '') +
@@ -572,6 +838,7 @@ export function applyPlanEdits(
       })),
     );
   const proposal = parsed.data as PlanEdits;
+  const scopedCases = enforceEditScope(base, proposal, options);
   const value = structuredClone(base);
   const changes: PlanEditChange[] = [];
   const catalog = planEditCatalog(base, options);
@@ -1236,5 +1503,20 @@ export function applyPlanEdits(
         message,
       })),
     );
+  if (scopedCases)
+    for (const original of base.plan.cases.filter((c) => !scopedCases.has(c.id)))
+      if (
+        !isDeepStrictEqual(
+          original,
+          value.plan.cases.find((c) => c.id === original.id),
+        )
+      )
+        throw new PlanEditError([
+          {
+            path: ['cases', original.id],
+            code: 'out_of_scope_edit',
+            message: `Scoped edits changed unrelated case ${original.id}.`,
+          },
+        ]);
   return { value, changes };
 }

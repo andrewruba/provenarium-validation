@@ -357,7 +357,7 @@ export type ProviderOptions = {
   secrets?: readonly string[];
 };
 const MAX_OUTPUT = 24000;
-const MAX_REQUEST = 200000;
+export const MAX_REQUEST_BYTES = 200000;
 const PROVIDER_FORMATTING_ALLOWANCE = 32768;
 const usageSchema = z.object({
   input_tokens: z.number().int().nonnegative(),
@@ -544,8 +544,7 @@ export class ProviderClient {
       operation,
     );
   }
-  async complete<T>(schema: z.ZodType<T>, instructions: string, input: unknown): Promise<T> {
-    this.options.signal?.throwIfAborted();
+  private prepareRequest<T>(schema: z.ZodType<T>, instructions: string, input: unknown) {
     const cleanInput = redactValue(input, [this.options.key, ...(this.options.secrets ?? [])]);
     const prompt = JSON.stringify(cleanInput) ?? 'null';
     let contract: ReturnType<typeof compileStructuredOutput<T>>;
@@ -588,13 +587,27 @@ export class ProviderClient {
           };
     const encoded = JSON.stringify(body);
     const bytes = Buffer.byteLength(encoded);
-    if (bytes > MAX_REQUEST) {
+    return { contract, encoded, bytes, cleanInput, prompt, system };
+  }
+  /** Exact wire size, with no request, budget reservation, or retained diagnostic. */
+  requestSize<T>(schema: z.ZodType<T>, instructions: string, input: unknown): number {
+    this.options.signal?.throwIfAborted();
+    return this.prepareRequest(schema, instructions, input).bytes;
+  }
+  async complete<T>(schema: z.ZodType<T>, instructions: string, input: unknown): Promise<T> {
+    this.options.signal?.throwIfAborted();
+    const { contract, encoded, bytes, cleanInput, prompt, system } = this.prepareRequest(
+      schema,
+      instructions,
+      input,
+    );
+    if (bytes > MAX_REQUEST_BYTES) {
       // Retain sizes only, never an additional copy of the input or credential material.
       const diagnostic = this.retainDiagnostic(
         'request_size',
         {
           request_bytes: bytes,
-          limit_bytes: MAX_REQUEST,
+          limit_bytes: MAX_REQUEST_BYTES,
           input_json_bytes: Buffer.byteLength(prompt),
           instructions_bytes: Buffer.byteLength(system),
           response_schema_bytes: Buffer.byteLength(JSON.stringify(contract.schema)),
@@ -612,7 +625,7 @@ export class ProviderClient {
             {
               path: '',
               code: 'request_too_large',
-              message: `Assembled request ${bytes} bytes exceeds local ${MAX_REQUEST}-byte limit before dispatch.`,
+              message: `Assembled request ${bytes} bytes exceeds local ${MAX_REQUEST_BYTES}-byte limit before dispatch.`,
             },
           ],
           truncated: false,
@@ -620,12 +633,12 @@ export class ProviderClient {
         false,
         'request preparation',
       );
-      throw new ProviderRequestSizeError(diagnostic, bytes, MAX_REQUEST);
+      throw new ProviderRequestSizeError(diagnostic, bytes, MAX_REQUEST_BYTES);
     }
     // One token per UTF-8 byte plus 32K tokens for provider formatting is a deliberately
     // conservative bound for the supported text-only byte-tokenized models. Prices use
     // the highest documented applicable rates, not cache or tier discounts.
-    // MAX_REQUEST + allowance = 232,768 input tokens, below OpenAI's documented
+    // MAX_REQUEST_BYTES + allowance = 232,768 input tokens, below OpenAI's documented
     // 272K long-context pricing threshold. Unexpected usage outside this bound
     // retains the reservation and stops authoring rather than reclaiming budget.
     const rates = MODEL_CATALOG[this.model];

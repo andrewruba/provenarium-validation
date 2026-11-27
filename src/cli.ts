@@ -1,9 +1,10 @@
 import { Command, Option } from 'commander';
 import { confirm, isCancel, select, text } from '@clack/prompts';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { isDeepStrictEqual } from 'node:util';
 import { spawn } from 'node:child_process';
 import { stringify } from 'yaml';
 import { z } from 'zod';
@@ -31,6 +32,7 @@ import { repairUrsReferences } from './urs-reference-repair.js';
 import { extractContext } from './context.js';
 import { Discovery, type PageObservation } from './authoring/discovery.js';
 import { auditAutomation } from './authoring/automation-policy.js';
+import { automationCheckpoint, findAutomationResume } from './authoring/automation-resume.js';
 import { validatePlanStructure } from './compiler.js';
 import {
   collectPlanInputCatalog,
@@ -685,14 +687,14 @@ discovery(
     if (!url) throw new Error('Supply --url for application discovery.');
     const bindings = await discoveryBindings(command, url);
     const prior = project.current_candidate ? await inspectCandidate(directory) : undefined;
-    const existing = prior?.plan;
+    let existing = prior?.plan;
     const normativePaths = new Set([
       ...inputCatalog.references.map((reference) => reference.path),
       ...(prior?.urs.families.flatMap((family) =>
         family.requirements.flatMap((requirement) => requirement.references),
       ) ?? []),
     ]);
-    const existingFixtures = prior
+    let existingFixtures = prior
       ? await Promise.all(
           [...new Set([...prior.plan.fixtures, ...prior.plan.references])]
             .filter((name) => !normativePaths.has(name))
@@ -738,10 +740,70 @@ discovery(
         }),
       );
     }
+    const automationOnly =
+      !!prior?.plan.cases.some((item) => item.manual) &&
+      !opts.allowManual &&
+      !opts.feedback &&
+      isDeepStrictEqual(document, prior.urs);
+    const baseForResume = prior
+      ? { plan: prior.plan, fixtures: existingFixtures ?? [] }
+      : undefined;
+    const authoringOptions = await authoring(command, {
+      referenceFiles: inputCatalog.references.map((reference) => reference.path),
+    });
+    const selectedContext = await extractContext(
+      directory,
+      authoringOptions.sources ?? [],
+      authoringOptions.selectedSources,
+      { signal: authoringOptions.signal },
+    );
+    const contextHashes = [...selectedContext.hashes];
+    if (inputCatalog.references.length) {
+      const used = new Set(selectedContext.passages.map((passage) => passage.source));
+      let sequence = 0;
+      const refs = inputCatalog.references.map((reference) => {
+        let id: string;
+        do {
+          id = `normative-input-${++sequence}`;
+        } while (used.has(id));
+        used.add(id);
+        return { id, path: reference.path };
+      });
+      const material = await extractContext(directory, refs, undefined, {
+        signal: authoringOptions.signal,
+        maxCharacters: Math.max(
+          0,
+          120_000 -
+            selectedContext.passages.reduce((total, passage) => total + passage.text.length, 0),
+        ),
+      });
+      contextHashes.push(...material.hashes);
+    }
+    const resumed =
+      automationOnly && baseForResume && prior
+        ? await findAutomationResume({
+            root: directory,
+            base: baseForResume,
+            urs: document,
+            previousUrs: prior.urs,
+            target: url,
+            contextHashes,
+            inputsModifiedAt: Math.max(
+              (await stat(path.resolve(directory, opts.urs))).mtimeMs,
+              (await stat(path.join(prior.directory, 'plan.json'))).mtimeMs,
+            ),
+          })
+        : undefined;
+    if (resumed) {
+      existing = resumed.value.plan;
+      existingFixtures = resumed.value.fixtures;
+      console.log(
+        `Resuming ${resumed.converted} completed case conversion(s) from ${resumed.file}; ${existing.cases.filter((item) => item.manual).length} manual case(s) remain. The retained work will still be reviewed and rehearsed when requested.`,
+      );
+    }
     const result = await generatePlan({
-      ...(await authoring(command, {
-        referenceFiles: inputCatalog.references.map((reference) => reference.path),
-      })),
+      ...authoringOptions,
+      context: selectedContext,
       urs: document,
       url,
       existing,
@@ -752,6 +814,7 @@ discovery(
       allowInteractions: !!opts.interactiveDiscovery || !!opts.rehearse,
       rehearse: !!opts.rehearse,
       allowManual: !!opts.allowManual,
+      automationOnly,
       discoveryActor: opts.discoveryActor,
     });
     if (result.value && !result.incomplete) {
@@ -768,7 +831,22 @@ discovery(
         );
       }
     }
-    await retainResult(directory, result);
+    const checkpoint =
+      automationOnly && baseForResume
+        ? automationCheckpoint({
+            base: baseForResume,
+            urs: document,
+            target: url,
+            contextHashes,
+            prior: resumed?.checkpoint,
+            diagnostics: result.diagnostics,
+            proposals: result.automationProposals,
+          })
+        : undefined;
+    await retainResult(directory, {
+      ...result,
+      ...(checkpoint ? { generation_resume: checkpoint } : {}),
+    });
     if (!result.value) return;
     plan = result.value.plan;
     files = Object.fromEntries(result.value.fixtures.map((f) => [f.path, f.content]));

@@ -180,11 +180,33 @@ limit. A rejected local request makes no API call or budget reservation for that
 step. Earlier completed calls remain in the spending record.
 
 Older versions duplicated the existing plan and repeated requirement and manual
-procedure text in revision requests. Updated versions keep the full URS, source
-context, candidate, and fixtures once, using references for repeated text.
+procedure text in revision requests. Later, even deduplicated requests could
+grow past the limit as valid conversions added executable steps. Updated
+generation converts one manual case at a time and uses bounded case views for
+growing plans, coverage reviews, and rehearsal repairs. The complete plan stays
+local; each edit is checked against it. Requirements, source context, fixtures,
+and plan-level coverage remain available, and references replace repeated text.
 If the assembled request still exceeds the bound, the authoring record contains
 a `request_size` diagnostic with total bytes and component sizes. Existing
 requirements and approved packages are preserved.
+
+Retry the same normal `generate` command after updating. Eligible completed
+conversions from a matching incomplete record are reused automatically, and the
+CLI prints the resumed count. New input fingerprints or strict legacy replay
+checks must match the current candidate, requirements, target, and context;
+stale or edited records are ignored. Reused work is still reviewed and rehearsed
+when requested. No retained draft is automatically approved or published.
+
+## Generation uses its correction allowance while manual cases remain
+
+Older versions counted each remaining manual case as a structural error. A valid
+conversion could therefore consume a correction attempt without finishing the
+other cases. Updated generation treats successful conversions as progress and
+continues case by case under the existing spending ceiling. Genuine schema and
+structural errors still use the bounded correction allowance. If a case cannot
+be automated without changing an accepted requirement, generation remains
+incomplete rather than inventing evidence or quietly leaving manual work for
+execution. `--allow-manual` still requires an explicit, requirement-backed exception.
 
 ## Provider request returned HTTP 400
 

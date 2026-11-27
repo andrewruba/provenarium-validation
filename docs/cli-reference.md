@@ -381,6 +381,31 @@ accepted policy remains a question for deliberate review. Technical edits are
 limited to the diagnosed repair scope. Unsupported or conflicting edits reject
 the entire proposal.
 
+Existing manual cases are converted in separate requests, one case at a time.
+Each valid conversion is retained, and the next request addresses the remaining
+work. Unconverted cases do not consume the two-correction allowance for malformed
+JSON, invalid structure, or rejected edits. Conversion remains bounded by the
+command's spending ceiling and progress limits; it cannot silently drop coverage
+or turn an unavailable external dependency into a passed automated check.
+
+Growing plans use bounded case views for editing and coverage review. A view
+contains the selected case bodies plus plan-level obligations, questions, actors,
+fixtures, and an inventory of all case and assertion IDs. It is request material,
+not a replacement plan. The full candidate remains local, and scoped edits are
+validated against that complete baseline before application. Rehearsal repairs
+retain all case outcomes and focus on failed or blocked observations; the full
+rehearsal remains in the authoring record. The 200,000-byte request bound does not
+increase.
+
+Retrying `generate --urs ... --url ...` normally reuses eligible completed
+conversions automatically; there is no new resume flag. The CLI prints the
+resumed conversion count and the source authoring record. New records include
+input fingerprints, and every resumed proposal must replay successfully against
+the unchanged current candidate. Legacy records require exact replay and
+unchanged inputs as well. Stale, edited, or incomplete proposal records are not
+resume points. Resumed work still goes through protocol review and `--rehearse`
+when requested, and the approved package remains unchanged until explicit approval.
+
 `generate --urs` supplies the authoring model with the supported runtime contract
 and exact source bindings for the supplied requirements. Every initial and
 revised response is checked for structural validity and readable package inputs

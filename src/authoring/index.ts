@@ -18,14 +18,16 @@ import {
   ProviderClient,
   ProviderError,
   ProviderOutputError,
+  MAX_REQUEST_BYTES,
   type ProviderOutputDiagnostic,
   type Provider,
   type Spend,
   type Thoroughness,
 } from './provider.js';
 import { Discovery, discoveryActionSchema, type PageObservation } from './discovery.js';
-import { redact, safeUrl } from './security.js';
+import { redact, redactValue, safeUrl } from './security.js';
 import { rehearsePlan, type Rehearsal } from './rehearsal.js';
+import { caseRequestView, rehearsalRequestView } from './request-windows.js';
 import { protocolContractExamples } from './contract-examples.js';
 import { acceptedDecisionLedger } from '../decisions.js';
 import { auditAutomation, automationCapabilities } from './automation-policy.js';
@@ -36,6 +38,7 @@ import {
   planEditRequestCatalog,
   PlanEditError,
   type PlanEditOptions,
+  type PlanEdits,
 } from './plan-edits.js';
 import {
   validatePlan,
@@ -105,6 +108,8 @@ export type AuthoringResult<T> = {
   reviewRounds: number;
   rehearsal?: Rehearsal;
   sourceCorrespondence?: SourceCorrespondence[];
+  /** Replayable validated automation prefix; independent of bounded diagnostics. */
+  automationProposals?: PlanEdits[];
   diagnostics?: ProviderOutputDiagnostic[];
 };
 const findingSchema = z.strictObject({
@@ -666,6 +671,8 @@ export async function generatePlan(
     discoveryActor?: string;
     rehearse?: boolean;
     allowManual?: boolean;
+    /** Continue automatic case conversion without asking for a broad revision first. */
+    automationOnly?: boolean;
   },
 ): Promise<AuthoringResult<GeneratedPlan>> {
   if (options.rehearse && !options.allowInteractions)
@@ -693,6 +700,25 @@ export async function generatePlan(
   let sourceCorrespondence: SourceCorrespondence[] = [];
   let discoveryComplete = false;
   let technicalRepairs = 0;
+  let automationStalls = 0;
+  let stalledAutomationCase: string | undefined;
+  let automationAttempts = 0;
+  const automationProposals: PlanEdits[] = [];
+  let recordingAutomationPrefix = true;
+  const automationCheckpoint = () =>
+    automationProposals.length
+      ? {
+          automationProposals: redactValue(automationProposals, [
+            options.key,
+            ...Object.values(options.bindings ?? {}).flatMap((binding) =>
+              [binding.password, binding.token].filter((secret): secret is string =>
+                Boolean(secret),
+              ),
+            ),
+          ]),
+        }
+      : {};
+  const maxCaseWindows = 100;
   const authorizedRequirementChanges = changedRequirements(options.existingUrs, options.urs);
   const protectedExistingAssertions = new Set(
     (options.existing?.cases ?? [])
@@ -714,6 +740,24 @@ export async function generatePlan(
     let request = input;
     let guidance = instructions;
     while (true) {
+      if (
+        request.rejected_output &&
+        client.requestSize(schema, guidance, request) > MAX_REQUEST_BYTES
+      ) {
+        const diagnostic = request.rejected_output as ProviderOutputDiagnostic;
+        const { candidate: rejectedCandidate, raw, ...metadata } = diagnostic;
+        request = {
+          ...request,
+          rejected_output: {
+            ...metadata,
+            output_omitted: {
+              bytes: Buffer.byteLength(JSON.stringify({ candidate: rejectedCandidate, raw })),
+              reason:
+                'Untrusted rejected output was omitted from this retry to fit the bounded request. Every validation issue and the full authoritative input are retained; the available redacted output snapshot remains in the authoring record. Regenerate the requested object from those inputs and issues.',
+            },
+          },
+        };
+      }
       try {
         return await client.complete(schema, guidance, request);
       } catch (error) {
@@ -896,29 +940,77 @@ export async function generatePlan(
         ...editOptions,
         urs: options.urs,
       };
+      const scope = permissions.automationCaseId
+        ? [permissions.automationCaseId]
+        : permissions.scopedCaseIds;
+      const view = scope ? caseRequestView(candidate, scope) : { candidate };
       const schema = makePlanEditsSchema(candidate, permissions);
+      const guidance =
+        prompt +
+        '\nReturn only the requested scoped edit proposal, never a replacement plan. Application code applies the proposal atomically. Existing IDs, expectations, manual expected results, requirement links, and fixture contents stay unchanged unless edit_catalog explicitly authorizes a diagnosed technical repair, correction of a provisional unapproved draft, or a reviewed requirement change. Prior-candidate fixture contents remain immutable. When fresh-draft review corrects an independent derivation, update its provisional text fixture consistently using revise_fixture and retain the correction reason; never adjust a derivation to match application output. Add missing coverage as new cases, steps, assertions, and obligation links. Fresh, unapproved draft expectations may be revised only when edit_catalog explicitly permits it and the reviewed URS supports the correction. Prior candidate expectations and rehearsal expectations stay protected. Use automate_case to replace manual procedures with executable assertions while preserving every covered obligation and the original expected text. Resolve linked execution preparation with the concrete automation rationale; never reopen it as a behavior question. Use automate_case.automated_prerequisites to identify exact original prerequisite instructions completed by the new executable steps or supplied source_correspondence, with a concrete explanation for each. Remove completed human setup instructions instead of leaving them in the protocol. Preserve real environment/access prerequisites and unavailable external dependencies; never claim they were fulfilled without evidence. Use update_instruction or locator operations for procedural corrections. Do not reproduce unchanged content, remove tests, downgrade automation, or use edits to evade validation. Use the supplied IDs and edit_catalog; return an empty edits array if no permitted change is needed.';
       let rejected: unknown;
       let errors: string[] = [];
       while (true) {
-        const proposal = await completeProtocol(
-          schema,
-          prompt +
-            '\nReturn only the requested scoped edit proposal, never a replacement plan. Application code applies the proposal atomically. Existing IDs, expectations, manual expected results, requirement links, and fixture contents stay unchanged unless edit_catalog explicitly authorizes a diagnosed technical repair, correction of a provisional unapproved draft, or a reviewed requirement change. Prior-candidate fixture contents remain immutable. When fresh-draft review corrects an independent derivation, update its provisional text fixture consistently using revise_fixture and retain the correction reason; never adjust a derivation to match application output. Add missing coverage as new cases, steps, assertions, and obligation links. Fresh, unapproved draft expectations may be revised only when edit_catalog explicitly permits it and the reviewed URS supports the correction. Prior candidate expectations and rehearsal expectations stay protected. Use automate_case to replace manual procedures with executable assertions while preserving every covered obligation and the original expected text. Resolve linked execution preparation with the concrete automation rationale; never reopen it as a behavior question. Use automate_case.automated_prerequisites to identify exact original prerequisite instructions completed by the new executable steps or supplied source_correspondence, with a concrete explanation for each. Remove completed human setup instructions instead of leaving them in the protocol. Preserve real environment/access prerequisites and unavailable external dependencies; never claim they were fulfilled without evidence. Use update_instruction or locator operations for procedural corrections. Do not reproduce unchanged content, remove tests, downgrade automation, or use edits to evade validation. Use the supplied IDs and edit_catalog; return an empty edits array if no permitted change is needed.',
-          {
-            ...input,
-            ...extra,
-            candidate,
-            edit_catalog: planEditRequestCatalog(candidate, permissions),
-            rejected_proposal: rejected,
-            validation_errors: [
-              ...(Array.isArray(extra.validation_errors) ? extra.validation_errors : []),
-              ...errors,
-            ],
-          },
-          operation,
-        );
+        let request = {
+          ...input,
+          ...extra,
+          ...view,
+          edit_catalog: planEditRequestCatalog(view.candidate, permissions),
+          rejected_proposal: rejected,
+          validation_errors: [
+            ...(Array.isArray(extra.validation_errors) ? extra.validation_errors : []),
+            ...errors,
+          ],
+        };
+        if (
+          rejected !== undefined &&
+          client.requestSize(schema, guidance, request) > MAX_REQUEST_BYTES
+        ) {
+          request = {
+            ...request,
+            rejected_proposal: {
+              omitted: true,
+              bytes: Buffer.byteLength(JSON.stringify(rejected)),
+              reason:
+                'The rejected proposal is omitted from this retry to fit the bounded request. Its available redacted snapshot is retained in the authoring record. Correct the listed validation errors using the complete authoritative candidate and original task.',
+            },
+          };
+        }
+        if (!scope && client.requestSize(schema, guidance, request) > MAX_REQUEST_BYTES) {
+          let revised = candidate;
+          const completed = new Set<string>();
+          while (true) {
+            const next = revised.plan.cases.find((item) => !completed.has(item.id));
+            if (!next) return revised;
+            if (completed.size >= maxCaseWindows)
+              throw new Error(
+                'The bounded protocol editing pass reached its case limit. Completed work is retained; no candidate was published.',
+              );
+            completed.add(next.id);
+            options.onProgress?.(
+              `Revising protocol case ${next.id} (${completed.size}/${revised.plan.cases.length}).`,
+            );
+            revised = await requestEdits(
+              revised,
+              operation,
+              { ...editOptions, scopedCaseIds: [next.id] },
+              extra,
+            );
+            value = revised;
+          }
+        }
+        const proposal = await completeProtocol(schema, guidance, request, operation);
         try {
           const applied = applyPlanEdits(candidate, proposal, permissions);
+          if (applied.changes.length && recordingAutomationPrefix) {
+            if (
+              proposal.edits.every(
+                (edit) => edit.op === 'automate_case' || edit.op === 'add_fixture',
+              )
+            )
+              automationProposals.push(structuredClone(proposal));
+            else recordingAutomationPrefix = false;
+          }
           if (applied.changes.length)
             client.recordValidationFailure(
               'protocol_edits',
@@ -968,10 +1060,56 @@ export async function generatePlan(
         value = candidate;
         const errors = [
           ...validatePlanStructure(candidate.plan, options.urs),
-          ...auditAutomation(candidate.plan, options.urs, { allowManual: options.allowManual }),
+          ...(options.allowManual
+            ? auditAutomation(candidate.plan, options.urs, { allowManual: true })
+            : []),
           ...(await validateGeneratedPlanInputs(options.root, candidate, inputCatalog)),
         ];
-        if (!errors.length) return candidate;
+        if (!errors.length) {
+          const remaining = candidate.plan.cases.filter((item) => item.manual);
+          if (options.allowManual || !remaining.length) return candidate;
+          const target = remaining[0];
+          if (++automationAttempts > maxCaseWindows + 1)
+            throw new Error(
+              'The bounded automation pass reached its case limit. Completed conversions are retained; no candidate was published.',
+            );
+          options.onProgress?.(
+            `Automating protocol case ${target.id} (${remaining.length} remaining).`,
+          );
+          const converted = await requestEdits(
+            candidate,
+            'case automation',
+            {
+              mode: 'review',
+              automationCaseId: target.id,
+            },
+            {
+              automation_task: {
+                case_id: target.id,
+                remaining_case_ids: remaining.map((item) => item.id),
+                previous_attempt_did_not_convert_case: stalledAutomationCase === target.id,
+                instructions:
+                  'Convert this one selected manual case completely using automate_case. Preserve its original expected result, transfer every obligation, and resolve preparation performed by the automated steps. Other manual cases are separate upcoming work, not structure errors. If previous_attempt_did_not_convert_case is true, the previous response left this case manual; complete its conversion instead of repeating an empty or fixture-only proposal. Do not add cases, remove coverage, change intended behavior, or claim external evidence exists.',
+              },
+            },
+          );
+          value = converted;
+          const progressed =
+            converted.plan.cases.some((item) => item.id === target.id && !item.manual) &&
+            converted.plan.cases.filter((item) => item.manual).length < remaining.length;
+          candidate = converted;
+          if (!progressed) {
+            stalledAutomationCase = target.id;
+            if (automationStalls++ >= 1)
+              throw new Error(
+                `Automation made no progress on ${target.id}. Completed conversions and the remaining cases are retained; no candidate was published.`,
+              );
+            options.onProgress?.(
+              `Retrying automation for ${target.id}; the previous response did not convert the case.`,
+            );
+          }
+          continue;
+        }
         client.recordValidationFailure(
           'document_structure',
           'protocol validation',
@@ -1049,16 +1187,18 @@ export async function generatePlan(
       }
       value = baseline;
       value = await checkedCandidate(
-        await requestEdits(
-          baseline,
-          'existing plan revision',
-          {
-            mode: 'review',
-            authorizedRequirementChanges,
-            questionResolutionFeedback: options.feedback,
-          },
-          { feedback: options.feedback },
-        ),
+        options.automationOnly
+          ? baseline
+          : await requestEdits(
+              baseline,
+              'existing plan revision',
+              {
+                mode: 'review',
+                authorizedRequirementChanges,
+                questionResolutionFeedback: options.feedback,
+              },
+              { feedback: options.feedback },
+            ),
       );
     } else {
       value = await checkedCandidate(
@@ -1067,32 +1207,78 @@ export async function generatePlan(
     }
     for (let i = 0; i < PRESETS[tier].reviews; i++) {
       options.onProgress?.(`Reviewing protocol coverage (${i + 1}/${PRESETS[tier].reviews}).`);
-      const review = await completeProtocol(
-        reviewSchema,
+      const reviewInstructions =
         prompt +
-          '\nFor this request, review the candidate using the same authoring and runtime rules. Return review findings only. Do not invent role assignments or external approval gates, or downgrade automatable checks because discovery was read-only.\n' +
-          REVIEWS[i],
-        {
-          ...input,
-          candidate: value,
-          rehearsal,
-          structuralFindings: validatePlanStructure(value.plan, options.urs),
-        },
-        'semantic review',
-      );
+        '\nFor this request, review the candidate using the same authoring and runtime rules. Return review findings only. Do not invent role assignments or external approval gates, or downgrade automatable checks because discovery was read-only.\n' +
+        REVIEWS[i];
+      const reviewInput = {
+        ...input,
+        candidate: value,
+        structuralFindings: validatePlanStructure(value.plan, options.urs),
+      };
+      let found = false;
+      if (client.requestSize(reviewSchema, reviewInstructions, reviewInput) <= MAX_REQUEST_BYTES) {
+        const review = await completeProtocol(
+          reviewSchema,
+          reviewInstructions,
+          reviewInput,
+          'semantic review',
+        );
+        found = review.findings.length > 0;
+        if (found)
+          value = await checkedCandidate(
+            await requestEdits(
+              value,
+              'protocol revision',
+              {
+                mode: 'review',
+                allowDraftExpectationRevision: !options.existing,
+              },
+              { findings: review.findings },
+            ),
+          );
+      } else {
+        const reviewedCases = new Set<string>();
+        while (true) {
+          const next = value.plan.cases.find((item) => !reviewedCases.has(item.id));
+          if (!next) break;
+          if (reviewedCases.size >= maxCaseWindows)
+            throw new Error(
+              'The bounded coverage review reached its case limit. Completed work is retained; no candidate was published.',
+            );
+          reviewedCases.add(next.id);
+          options.onProgress?.(
+            `Reviewing protocol case ${next.id} (${reviewedCases.size}/${value.plan.cases.length}).`,
+          );
+          const review = await completeProtocol(
+            reviewSchema,
+            reviewInstructions,
+            {
+              ...input,
+              ...caseRequestView(value, [next.id]),
+              structuralFindings: validatePlanStructure(value.plan, options.urs),
+            },
+            'semantic review',
+          );
+          if (review.findings.length) {
+            found = true;
+            value = await checkedCandidate(
+              await requestEdits(
+                value,
+                'protocol revision',
+                {
+                  mode: 'review',
+                  scopedCaseIds: [next.id],
+                  allowDraftExpectationRevision: !options.existing,
+                },
+                { findings: review.findings },
+              ),
+            );
+          }
+        }
+      }
       rounds++;
-      if (!review.findings.length) break;
-      value = await checkedCandidate(
-        await requestEdits(
-          value,
-          'protocol revision',
-          { mode: 'review', allowDraftExpectationRevision: !options.existing },
-          {
-            findings: review.findings,
-            rehearsal,
-          },
-        ),
-      );
+      if (!found) break;
     }
     if (options.rehearse) {
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -1107,19 +1293,27 @@ export async function generatePlan(
           options.signal,
         );
         if (attempt || !rehearsal.cases.some((item) => item.status === 'failed')) break;
-        const baseline = value;
-        const revised = await checkedCandidate(
-          await requestEdits(
-            baseline,
-            'rehearsal procedural repair',
-            { mode: 'review', proceduralOnly: true },
-            {
-              rehearsal,
-              repair_instructions:
-                'Repair only procedural problems such as locators or missing waits supported by browser diagnostics. Expected results and fixtures are protected. Actual application defects must remain failures. Do not add questions, manual work, or alternate tests to conceal a failing assertion. Return no edits if the application violates the requirement.',
-            },
-          ),
-        );
+        const baseline: GeneratedPlan = value;
+        let revised: GeneratedPlan = value;
+        const failedCases = rehearsal.cases.filter((item) => item.status === 'failed');
+        for (const failed of failedCases) {
+          revised = await checkedCandidate(
+            await requestEdits(
+              revised,
+              'rehearsal procedural repair',
+              {
+                mode: 'review',
+                proceduralOnly: true,
+                scopedCaseIds: [failed.id],
+              },
+              {
+                rehearsal: rehearsalRequestView(rehearsal, [failed.id]),
+                repair_instructions:
+                  'Repair only procedural problems such as locators or missing waits supported by browser diagnostics. Expected results and fixtures are protected. Actual application defects must remain failures. Do not add questions, manual work, or alternate tests to conceal a failing assertion. Return no edits if the application violates the requirement.',
+              },
+            ),
+          );
+        }
         if (isDeepStrictEqual(revised, baseline)) break;
         value = revised;
       }
@@ -1140,6 +1334,7 @@ export async function generatePlan(
       ...finish(value, questions, budget, rounds, !discoveryComplete, client.diagnostics),
       rehearsal,
       sourceCorrespondence,
+      ...automationCheckpoint(),
     };
   } catch (error) {
     questions.push(reason(error, options.key));
@@ -1147,6 +1342,7 @@ export async function generatePlan(
       ...finish(value, questions, budget, rounds, true, client.diagnostics),
       rehearsal,
       sourceCorrespondence,
+      ...automationCheckpoint(),
     };
   } finally {
     await browser.close();
