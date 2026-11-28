@@ -1,7 +1,7 @@
 schema_version: 1
 document:
   id: URS-DILUTION-PAGES
-  revision: "1"
+  revision: "2"
   title: Browser dilution planner requirements
   intended_use: Prepare synthetic single-step laboratory dilutions with C1V1 = C2V2, retain
     calculations in local browser storage, and export a preparation worksheet. This is a generic
@@ -53,12 +53,14 @@ families:
       - id: URS-INPUT-001
         title: Numerical input validation
         statement: Stock concentration, target concentration and final volume are required finite decimal or
-          scientific-notation numbers. Each normalized value shall be greater than zero and at most
-          1000000000 in its canonical unit (mg/mL or mL). Target concentration shall not exceed
-          stock concentration. Empty, negative, nonfinite, over-limit and hexadecimal numerical
-          inputs shall be rejected with a visible nonempty error without saving a record. Zero stock
-          or target concentration shall be rejected. Zero final volume shall be rejected with Final
-          volume must be greater than zero.
+          scientific-notation numbers. Each normalized value shall be positive and finite in its
+          canonical unit (mg/mL or mL). Do not impose a separate numeric maximum. Target
+          concentration shall not exceed stock concentration. Empty, negative, nonfinite and
+          hexadecimal numerical inputs shall be rejected with a visible nonempty error without
+          saving a record. Zero stock or target concentration shall be rejected. Zero final volume
+          shall be rejected with Final volume must be greater than zero. With stock 1e10 mg/mL,
+          target 5e9 mg/mL and final volume 2 mL, save the preparation and show 1.000 mL stock and
+          1.000 mL diluent.
       - id: URS-ID-001
         title: Identifier syntax and case sensitivity
         statement: Trim Sample ID, then accept 1 to 32 ASCII characters beginning with a letter or digit and

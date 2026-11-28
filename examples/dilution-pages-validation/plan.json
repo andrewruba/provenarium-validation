@@ -3,7 +3,7 @@
   "runtime_version": 1,
   "id": "PLAN-DILUTION-PAGES",
   "title": "Browser dilution planner qualification",
-  "urs_revision": "1",
+  "urs_revision": "2",
   "target": {
     "url": "http://127.0.0.1:4176/correct/",
     "allowed_origins": [
@@ -108,7 +108,7 @@
       "id": "CL-URS-INPUT-001",
       "requirement_id": "URS-INPUT-001",
       "source": "URS-INPUT-001/statement",
-      "statement": "Stock concentration, target concentration and final volume are required finite decimal or scientific-notation numbers. Each normalized value shall be greater than zero and at most 1000000000 in its canonical unit (mg/mL or mL). Target concentration shall not exceed stock concentration. Empty, negative, nonfinite, over-limit and hexadecimal numerical inputs shall be rejected with a visible nonempty error without saving a record. Zero stock or target concentration shall be rejected. Zero final volume shall be rejected with Final volume must be greater than zero.",
+      "statement": "Stock concentration, target concentration and final volume are required finite decimal or scientific-notation numbers. Each normalized value shall be positive and finite in its canonical unit (mg/mL or mL). Do not impose a separate numeric maximum. Target concentration shall not exceed stock concentration. Empty, negative, nonfinite and hexadecimal numerical inputs shall be rejected with a visible nonempty error without saving a record. Zero stock or target concentration shall be rejected. Zero final volume shall be rejected with Final volume must be greater than zero. With stock 1e10 mg/mL, target 5e9 mg/mL and final volume 2 mL, save the preparation and show 1.000 mL stock and 1.000 mL diluent.",
       "assertion_ids": [
         "OQ-ZERO-VOLUME-S1-A1",
         "OQ-ZERO-VOLUME-S2-A1",
@@ -148,7 +148,11 @@
         "OQ-INVALID-INPUTS-S34-A1",
         "OQ-INVALID-INPUTS-S35-A1",
         "OQ-INVALID-INPUTS-S35-A2",
-        "OQ-INVALID-INPUTS-S35-A3"
+        "OQ-INVALID-INPUTS-S35-A3",
+        "OQ-INVALID-INPUTS-S36-A1",
+        "OQ-INVALID-INPUTS-S36-A2",
+        "OQ-INVALID-INPUTS-S36-A3",
+        "OQ-INVALID-INPUTS-S36-A4"
       ]
     },
     {
@@ -1492,7 +1496,7 @@
     },
     {
       "id": "OQ-INVALID-INPUTS",
-      "title": "Reject invalid numerical inputs and accept the inclusive maximum",
+      "title": "Reject invalid numerical inputs and accept large finite values",
       "classification": "OQ",
       "requirements": [
         "URS-INPUT-001"
@@ -1922,7 +1926,7 @@
         },
         {
           "id": "OQ-INVALID-INPUTS-S7",
-          "instruction": "Reject numerical input {\"stockConcentration\":\"1000000001\"} and preserve the empty register.",
+          "instruction": "Reject numerical input {\"stockConcentration\":\"1e309\"} and preserve the empty register.",
           "actions": [
             {
               "op": "click",
@@ -1946,7 +1950,7 @@
                 "by": "label",
                 "value": "Stock concentration"
               },
-              "value": "1000000001"
+              "value": "1e309"
             },
             {
               "op": "select",
@@ -2474,7 +2478,7 @@
         },
         {
           "id": "OQ-INVALID-INPUTS-S15",
-          "instruction": "Reject numerical input {\"targetConcentration\":\"1000000001\"} and preserve the empty register.",
+          "instruction": "Reject numerical input {\"targetConcentration\":\"1e309\"} and preserve the empty register.",
           "actions": [
             {
               "op": "click",
@@ -2514,7 +2518,7 @@
                 "by": "label",
                 "value": "Target concentration"
               },
-              "value": "1000000001"
+              "value": "1e309"
             },
             {
               "op": "select",
@@ -3026,7 +3030,7 @@
         },
         {
           "id": "OQ-INVALID-INPUTS-S23",
-          "instruction": "Reject numerical input {\"finalVolume\":\"1000000001\"} and preserve the empty register.",
+          "instruction": "Reject numerical input {\"finalVolume\":\"1e309\"} and preserve the empty register.",
           "actions": [
             {
               "op": "click",
@@ -3082,7 +3086,7 @@
                 "by": "label",
                 "value": "Final volume"
               },
-              "value": "1000000001"
+              "value": "1e309"
             },
             {
               "op": "select",
@@ -3854,7 +3858,7 @@
         },
         {
           "id": "OQ-INVALID-INPUTS-S35",
-          "instruction": "Accept the exact maximum for all normalized quantities.",
+          "instruction": "Accept large finite equal concentrations and a large final volume.",
           "actions": [
             {
               "op": "click",
@@ -3870,7 +3874,7 @@
                 "by": "label",
                 "value": "Sample ID"
               },
-              "value": "MAXIMUM"
+              "value": "LARGE-EQUAL"
             },
             {
               "op": "fill",
@@ -3964,6 +3968,124 @@
           "evidence": [
             {
               "id": "OQ-INVALID-INPUTS-S35-OBS",
+              "kind": "observation"
+            }
+          ]
+        },
+        {
+          "id": "OQ-INVALID-INPUTS-S36",
+          "instruction": "Save the large finite preparation and check the visible result for Large-1.",
+          "actions": [
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Sample ID"
+              },
+              "value": "Large-1"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Stock concentration"
+              },
+              "value": " +1e10 "
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Stock unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Target concentration"
+              },
+              "value": "5E+9"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Target unit"
+              },
+              "value": "mg/mL"
+            },
+            {
+              "op": "fill",
+              "locator": {
+                "by": "label",
+                "value": "Final volume"
+              },
+              "value": "2"
+            },
+            {
+              "op": "select",
+              "locator": {
+                "by": "label",
+                "value": "Volume unit"
+              },
+              "value": "mL"
+            },
+            {
+              "op": "click",
+              "locator": {
+                "by": "role",
+                "role": "button",
+                "value": "Calculate and save"
+              }
+            }
+          ],
+          "assertions": [
+            {
+              "id": "OQ-INVALID-INPUTS-S36-A1",
+              "locator": {
+                "by": "css",
+                "value": "#results"
+              },
+              "read": "visible",
+              "comparison": "equals",
+              "expected": true
+            },
+            {
+              "id": "OQ-INVALID-INPUTS-S36-A2",
+              "locator": {
+                "by": "testId",
+                "value": "result-sample-id"
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "Large-1"
+            },
+            {
+              "id": "OQ-INVALID-INPUTS-S36-A3",
+              "locator": {
+                "by": "testId",
+                "value": "result-stock-volume"
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "1.000"
+            },
+            {
+              "id": "OQ-INVALID-INPUTS-S36-A4",
+              "locator": {
+                "by": "testId",
+                "value": "result-diluent-volume"
+              },
+              "read": "text",
+              "comparison": "equals",
+              "expected": "1.000"
+            }
+          ],
+          "evidence": [
+            {
+              "id": "OQ-INVALID-INPUTS-S36-OBS",
               "kind": "observation"
             }
           ]

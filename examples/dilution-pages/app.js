@@ -18,7 +18,13 @@
   const form = document.querySelector('#preparation-form');
   const messages = document.querySelector('#messages');
   const result = document.querySelector('#results');
-  const decimal = (value) => value.toFixed(3);
+  const largeDecimal = new Intl.NumberFormat('en-US', {
+    useGrouping: false,
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  });
+  const decimal = (value) =>
+    value >= 1e21 && Number.isFinite(value) ? largeDecimal.format(value) : value.toFixed(3);
   const recordCells = (record, stockFactor = 1) => [
     record.sampleId,
     decimal(record.stockMgMl),
@@ -43,11 +49,7 @@
     typeof record !== 'object' ||
     !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$/.test(record.sampleId) ||
     ['stockMgMl', 'targetMgMl', 'finalMl', 'stockMl', 'diluentMl'].some(
-      (field) =>
-        typeof record[field] !== 'number' ||
-        !Number.isFinite(record[field]) ||
-        record[field] < 0 ||
-        record[field] > 1e9,
+      (field) => !Number.isFinite(record[field]) || record[field] < 0,
     );
   function loadRecords() {
     let stored;
@@ -126,8 +128,7 @@
         throw new Error(`${label} unit must be mg/mL or ug/mL.`);
       // Seeded defect: a misplaced decimal produces a tenfold microgram conversion error.
       const normalized = unit === 'ug/mL' ? value / (faulty ? 100 : 1000) : value;
-      if (normalized <= 0 || normalized > 1e9)
-        throw new Error(`${label} must be greater than zero and no more than 1,000,000,000 mg/mL.`);
+      if (normalized <= 0) throw new Error(`${label} must be greater than zero.`);
       return normalized;
     };
     const stockMgMl = concentration(
@@ -147,7 +148,6 @@
     // Seeded defect: zero is accepted as a final preparation volume.
     if (faulty ? finalMl < 0 : finalMl <= 0)
       throw new Error('Final volume must be greater than zero.');
-    if (finalMl > 1e9) throw new Error('Final volume must be no more than 1,000,000,000 mL.');
     // Seeded defect: duplicate detection is skipped and the original record is replaced on save.
     if (!faulty && records.some((record) => record.sampleId === sampleId))
       throw new Error('Sample ID already exists. The original record is unchanged.');

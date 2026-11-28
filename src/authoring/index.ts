@@ -628,6 +628,8 @@ export async function generatePlan(
           'Step IDs are unique within each case; different cases may each use 01, 02, etc. Address a step by case_id and step_id together. Case, assertion, evidence, actor, obligation, and question IDs must remain globally unique across the plan.',
         locator_syntax:
           'For by: role, value filters the accessible name by default. To read role text, count matches, or check visibility by message text, add match: text and put the message in value. Use this for alert and status elements populated using textContent. With match: text, exact: true matches the whole normalized text case-sensitively, and exact: false matches a case-insensitive substring. Use a stable observed selector when the check needs to verify the full message independently. For CSS, use by: css and omit role and match.',
+        submission_checks:
+          'After a submission expected to succeed, assert that the result is visible and, when the UI exposes a record identifier, that it identifies the submitted record. Put these assertions before any assertions that read result values so hidden or stale output cannot satisfy the check.',
         source_syntax:
           'Copy an exact source from obligation_sources, such as URS-001/statement, URS-001/details/0, or URS-001/table. Read its authoritative text in the matching requirement in urs; the catalog lists bindings without duplicating their content. Do not use free-form clause labels.',
         input_references:

@@ -6,3 +6,4 @@ Microlitre volume,10,mg/mL,2,mg/mL,1000,uL,0.200,0.800,2.000,1000 uL = 1 mL; (2 
 Equal concentrations,2,mg/mL,2,mg/mL,1,mL,1.000,0.000,2.000,(2 x 1) / 2 = 1; 1 - 1 = 0
 Rounding,3,mg/mL,1,mg/mL,1,mL,0.333,0.667,1.000,(1 x 1) / 3 = 1/3; 1 - 1/3 = 2/3
 Retained preparation,8,mg/mL,2,mg/mL,4,mL,1.000,3.000,2.000,(2 x 4) / 8 = 1; 4 - 1 = 3
+Large finite concentrations,1e10,mg/mL,5e9,mg/mL,2,mL,1.000,1.000,5000000000.000,(5e9 x 2) / 1e10 = 1; 2 - 1 = 1
