@@ -156,6 +156,81 @@ it('saves and reloads valid finite dilutions above the old numeric cap', async (
   }
 });
 
+it('explains when a positive preparation input cannot be represented after unit conversion', async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(5000);
+    await page.goto(`${base}/correct/?workspace=normalization-underflow`);
+    const sampleId = page.locator('#sampleId');
+    const stock = page.locator('#stockConcentration');
+    const target = page.locator('#targetConcentration');
+    const volume = page.locator('#finalVolume');
+    const save = page.getByRole('button', { name: 'Calculate and save' });
+    const result = page.locator('#results');
+    const alert = page.getByRole('alert');
+
+    await sampleId.fill('Control');
+    await stock.fill('2');
+    await target.fill('1');
+    await volume.fill('2');
+    await save.click();
+    expect(await result.isVisible()).toBe(true);
+
+    await sampleId.fill('Underflow');
+    const inputs = [
+      {
+        label: 'Stock concentration',
+        field: stock,
+        unitId: '#stockUnit',
+        small: 'ug/mL',
+        base: 'mg/mL',
+        value: '2',
+      },
+      {
+        label: 'Target concentration',
+        field: target,
+        unitId: '#targetUnit',
+        small: 'ug/mL',
+        base: 'mg/mL',
+        value: '1',
+      },
+      {
+        label: 'Final volume',
+        field: volume,
+        unitId: '#volumeUnit',
+        small: 'uL',
+        base: 'mL',
+        value: '2',
+      },
+    ];
+    for (const { label, field, unitId, small, base, value } of inputs) {
+      const unit = page.locator(unitId);
+      await unit.selectOption(small);
+      await field.fill('1e-323');
+      await save.click();
+      expect(await result.isVisible()).toBe(false);
+      expect(await alert.innerText()).toBe(
+        `${label} cannot be represented after unit normalization.`,
+      );
+
+      await field.fill('0');
+      await save.click();
+      expect(await alert.innerText()).toBe(`${label} must be greater than zero.`);
+
+      await field.fill(value);
+      await unit.selectOption(base);
+    }
+
+    await page.getByRole('link', { name: 'Saved preparations' }).click();
+    await page.reload();
+    expect(await page.locator('#record-count').innerText()).toBe('1 saved preparation');
+    expect(await page.getByTestId('record-Control').isVisible()).toBe(true);
+  } finally {
+    await browser.close();
+  }
+});
+
 it('runs both static qualification fixtures under a repository subpath', async () => {
   const comparison = await validatePagesDilution({
     correctUrl: `${base}/correct/`,

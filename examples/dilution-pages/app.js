@@ -123,11 +123,17 @@
         throw new Error(`${label} must be a finite number.`);
       return value;
     };
+    const normalize = (value, divisor, label) => {
+      const normalized = value / divisor;
+      if (value > 0 && normalized === 0)
+        throw new Error(`${label} cannot be represented after unit normalization.`);
+      return normalized;
+    };
     const concentration = (value, unit, label) => {
       if (!['mg/mL', 'ug/mL'].includes(unit))
         throw new Error(`${label} unit must be mg/mL or ug/mL.`);
       // Seeded defect: a misplaced decimal produces a tenfold microgram conversion error.
-      const normalized = unit === 'ug/mL' ? value / (faulty ? 100 : 1000) : value;
+      const normalized = normalize(value, unit === 'ug/mL' ? (faulty ? 100 : 1000) : 1, label);
       if (normalized <= 0) throw new Error(`${label} must be greater than zero.`);
       return normalized;
     };
@@ -144,7 +150,11 @@
     if (targetMgMl > stockMgMl)
       throw new Error('Target concentration must not exceed stock concentration.');
     if (!['mL', 'uL'].includes(fields.volumeUnit)) throw new Error('Volume unit must be mL or uL.');
-    const finalMl = number('finalVolume', 'Final volume') / (fields.volumeUnit === 'uL' ? 1000 : 1);
+    const finalMl = normalize(
+      number('finalVolume', 'Final volume'),
+      fields.volumeUnit === 'uL' ? 1000 : 1,
+      'Final volume',
+    );
     // Seeded defect: zero is accepted as a final preparation volume.
     if (faulty ? finalMl < 0 : finalMl <= 0)
       throw new Error('Final volume must be greater than zero.');

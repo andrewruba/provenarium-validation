@@ -18,6 +18,7 @@ import {
 } from './provider.js';
 import { Discovery, type PageObservation } from './discovery.js';
 import { redact, safeUrl } from './security.js';
+import { normalizeBlankNavigations } from './navigation.js';
 import { caseRequestView } from './request-windows.js';
 import { protocolContractExamples } from './contract-examples.js';
 import { acceptedDecisionLedger } from '../decisions.js';
@@ -426,6 +427,7 @@ function validateGenerated(
   if (plan.urs_revision !== urs.document.revision)
     throw new Error('Generated plan references the wrong URS revision.');
   plan.target = { url: safeUrl(url).href, allowed_origins: origins };
+  normalizeBlankNavigations(plan);
   for (const item of plan.cases) {
     if (item.requirements.some((id) => !requirementIds.has(id)))
       throw new Error(`Case ${item.id} references an unknown requirement.`);
@@ -436,9 +438,19 @@ function validateGenerated(
           action.op === 'request' ||
           (action.op === 'browser' && action.url)
         ) {
-          const target = safeUrl(action.url!, url);
+          let target: URL;
+          try {
+            target = safeUrl(action.url!, url);
+          } catch (error) {
+            throw new Error(
+              `${item.id}/${step.id}: ${action.op} requires an HTTP(S) URL on an approved origin without credentials.`,
+              { cause: error },
+            );
+          }
           if (!origins.includes(target.origin))
-            throw new Error('Generated plan attempted to expand allowed origins.');
+            throw new Error(
+              `${item.id}/${step.id}: ${action.op} attempted to expand allowed origins.`,
+            );
         }
       }
   }
@@ -628,6 +640,8 @@ export async function generatePlan(
           'Step IDs are unique within each case; different cases may each use 01, 02, etc. Address a step by case_id and step_id together. Case, assertion, evidence, actor, obligation, and question IDs must remain globally unique across the plan.',
         locator_syntax:
           'For by: role, value filters the accessible name by default. To read role text, count matches, or check visibility by message text, add match: text and put the message in value. Use this for alert and status elements populated using textContent. With match: text, exact: true matches the whole normalized text case-sensitively, and exact: false matches a case-insensitive substring. Use a stable observed selector when the check needs to verify the full message independently. For CSS, use by: css and omit role and match.',
+        navigation:
+          'Use only HTTP(S) pages on the approved origin. For a persistence check that needs a fresh document, navigate through the approved app entry when its path or query differs from the destination, or restart a named persistent profile. Do not use about:blank or other browser-internal URLs.',
         submission_checks:
           'After a submission expected to succeed, assert that the result is visible and, when the UI exposes a record identifier, that it identifies the submitted record. Put these assertions before any assertions that read result values so hidden or stale output cannot satisfy the check.',
         source_syntax:

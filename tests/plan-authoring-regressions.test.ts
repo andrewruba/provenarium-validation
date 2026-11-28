@@ -225,9 +225,62 @@ it('supplies exact source bindings and runtime rules and normalizes an unambiguo
   expect(input.available_reference_files).toEqual([]);
   expect(input.runtime_contract).toHaveProperty('source_syntax');
   expect(input.runtime_contract.locator_syntax).toContain('match: text');
+  expect(input.runtime_contract.navigation).toContain('Do not use about:blank');
   expect(input.runtime_contract.submission_checks).toContain('identifies the submitted record');
   expect(input.runtime_contract).toHaveProperty('anonymous_access');
   expect(input.runtime_contract).toHaveProperty('artifact_rules');
+});
+
+it('repairs a blank navigation using the approved entry document in one authoring request', async () => {
+  const generated = candidate();
+  const step = generated.plan.cases[0].steps[0];
+  const assertions = structuredClone(step.assertions);
+  step.actions = [
+    { op: 'navigate', url: 'about:blank' },
+    { op: 'navigate', url: '/?workspace=cleared#records' },
+  ];
+  generated.plan.target = {
+    url: 'https://outside.test/',
+    allowed_origins: ['https://outside.test'],
+  };
+  const { result, fetchImpl } = await run([generated]);
+
+  expect(result.incomplete).toBe(false);
+  expect(fetchImpl).toHaveBeenCalledOnce();
+  expect(result.value?.plan.target).toEqual({
+    url: 'https://example.test/',
+    allowed_origins: ['https://example.test'],
+  });
+  expect(result.value?.plan.cases[0].steps[0].actions).toEqual([
+    { op: 'navigate', url: 'https://example.test/' },
+    { op: 'navigate', url: '/?workspace=cleared#records' },
+  ]);
+  expect(result.value?.plan.cases[0].steps[0].assertions).toEqual(assertions);
+});
+
+it.each([
+  ['a fragment change within the entry document', '/#records'],
+  ['a different origin', 'https://outside.test/records'],
+  ['an authentication query parameter', '/?token=synthetic-token'],
+])('rejects a blank navigation followed by %s', async (_scenario, url) => {
+  const generated = candidate();
+  generated.plan.cases[0].steps[0].actions = [
+    { op: 'navigate', url: 'about:blank' },
+    { op: 'navigate', url },
+  ];
+  const { result } = await run([generated]);
+
+  expect(result.incomplete).toBe(true);
+  expect(result.diagnostics).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'document_structure',
+        issues: expect.arrayContaining([
+          expect.objectContaining({ message: expect.stringContaining('IQ-01/S-01') }),
+        ]),
+      }),
+    ]),
+  );
 });
 
 it('repairs invalid source bindings and prose references using validator feedback before review', async () => {
