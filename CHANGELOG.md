@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.3 — prerelease
+
+- Updated IOQ authoring guidance to check result visibility and the submitted
+  record's identity before comparing values.
+- Removed the hosted dilution demo's fixed numeric cap and verified that large
+  finite preparations save, reload, and retain three-decimal formatting.
+- Added guidance to the Calculation reference on positive volumes that round
+  to `0.000 mL`.
+
 ## 0.1.2 — prerelease
 
 - Corrected the Chromium regression fixture that verifies the demo’s storage-denied state on both builds.
